@@ -1,0 +1,178 @@
+"""Hybrid retrieval: BM25 + vector + RRF fusion."""
+from typing import Optional
+from app.models.factory import ModelFactory
+from app.rag.bm25 import bm25_store
+from app.config import settings
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+
+
+class HybridRetriever:
+    """BM25 + vector retrieval + RRF fusion."""
+
+    def __init__(self):
+        self._qdrant_client: Optional[QdrantClient] = None
+        self._embedding = None
+
+    @property
+    def qdrant(self):
+        if self._qdrant_client is None:
+            self._qdrant_client = QdrantClient(
+                host=settings.QDRANT_HOST,
+                port=settings.QDRANT_PORT,
+            )
+        return self._qdrant_client
+
+    @property
+    def embedding(self):
+        if self._embedding is None:
+            self._embedding = ModelFactory.create_embedding()
+        return self._embedding
+
+    def _collection_name(self, kb_id: int) -> str:
+        return f"chunks_kb_{kb_id}"
+
+    def _ensure_collection(self, kb_id: int):
+        """Ensure collection exists, create if not."""
+        name = self._collection_name(kb_id)
+        try:
+            self.qdrant.get_collection(name)
+        except Exception:
+            self.qdrant.create_collection(
+                collection_name=name,
+                vectors_config=VectorParams(
+                    size=settings.EMBEDDING_DIM,
+                    distance=Distance.COSINE,
+                ),
+            )
+
+    async def retrieve(self, query: str, kb_id: int,
+                       top_k: int = 10) -> list[dict]:
+        """Run hybrid retrieval and return fused top-k chunks."""
+        vec_results = await self._vector_search(query, kb_id, top_k * 2)
+        bm25_results = await bm25_store.search(kb_id, query, top_k * 2)
+        merged = self._rrf_fuse(vec_results, bm25_results)
+        return merged[:top_k]
+
+    async def _vector_search(self, query: str, kb_id: int,
+                             top_k: int) -> list[dict]:
+        try:
+            query_vec = await self.embedding.embed([query])
+            self._ensure_collection(kb_id)
+            results = self.qdrant.search(
+                collection_name=self._collection_name(kb_id),
+                query_vector=query_vec[0],
+                limit=top_k,
+                with_payload=True,
+            )
+            chunks = []
+            for point in results:
+                payload = point.payload or {}
+                chunks.append({
+                    "chunk_id": payload.get("chunk_id", point.id),
+                    "doc_id": payload.get("doc_id"),
+                    "kb_id": payload.get("kb_id", kb_id),
+                    "filename": payload.get("filename", ""),
+                    "content": payload.get("content", ""),
+                    "page": payload.get("page"),
+                    "score": point.score,
+                    "source": "vector",
+                })
+            return chunks
+        except Exception as e:
+            print(f"[WARN] vector search failed: {e}")
+            return []
+
+    async def add_chunks(self, kb_id: int, chunks: list[dict], vectors: list[list[float]]):
+        """Add chunks to Qdrant collection."""
+        self._ensure_collection(kb_id)
+        points = []
+        for i, (chunk, vec) in enumerate(zip(chunks, vectors)):
+            point_id = chunk.get("chunk_id") or chunk.get("id") or i + 1
+            points.append(PointStruct(
+                id=point_id,
+                vector=vec,
+                payload={
+                    "chunk_id": point_id,
+                    "doc_id": chunk.get("doc_id"),
+                    "kb_id": kb_id,
+                    "filename": chunk.get("filename", ""),
+                    "content": chunk.get("content", ""),
+                    "chunk_index": chunk.get("chunk_index", i),
+                    "file_type": chunk.get("file_type", ""),
+                    "page": chunk.get("page"),
+                },
+            ))
+        self.qdrant.upsert(
+            collection_name=self._collection_name(kb_id),
+            points=points,
+        )
+
+    def delete_by_doc_id(self, kb_id: int, doc_id: int):
+        """Delete all chunks for a document."""
+        try:
+            self.qdrant.delete(
+                collection_name=self._collection_name(kb_id),
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="doc_id",
+                            match=MatchValue(value=doc_id),
+                        ),
+                    ],
+                ),
+            )
+        except Exception as e:
+            print(f"[WARN] delete_by_doc_id failed: {e}")
+
+    def delete_collection(self, kb_id: int):
+        """Delete entire collection for a knowledge base."""
+        try:
+            self.qdrant.delete_collection(self._collection_name(kb_id))
+        except Exception as e:
+            print(f"[WARN] delete_collection failed: {e}")
+
+    def _rrf_fuse(self, vec_results: list[dict],
+                  bm25_results: list[dict], k: int = 60) -> list[dict]:
+        """Reciprocal Rank Fusion.
+
+        Both vec_results and bm25_results are lists of dicts with 'chunk_id' key.
+        Score = sum of 1/(k + rank + 1) for each list.
+        """
+        rrf_scores = {}
+        chunk_map = {}
+
+        # Vector results
+        for rank, r in enumerate(vec_results):
+            cid = r["chunk_id"]
+            rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (k + rank + 1)
+            if cid not in chunk_map:
+                chunk_map[cid] = dict(r)
+
+        # BM25 results (now dicts, not tuples)
+        for rank, r in enumerate(bm25_results):
+            cid = r.get("chunk_id")
+            if cid is None:
+                continue
+            rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (k + rank + 1)
+            if cid not in chunk_map:
+                chunk_map[cid] = {
+                    "chunk_id": cid,
+                    "doc_id": r.get("doc_id"),
+                    "filename": r.get("filename", ""),
+                    "content": r.get("content", ""),
+                    "page": r.get("page"),
+                    "score": r.get("score", 0),
+                    "source": "bm25",
+                }
+
+        sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
+        result = []
+        for cid in sorted_ids:
+            chunk = dict(chunk_map.get(cid, {"chunk_id": cid}))
+            chunk["rrf_score"] = rrf_scores[cid]
+            result.append(chunk)
+        return result
+
+
+retriever = HybridRetriever()

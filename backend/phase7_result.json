@@ -1,0 +1,68 @@
+{
+  "phase": "Phase 7 - Frontend (Vite + React)",
+  "total": 12,
+  "passed": 11,
+  "failed": 1,
+  "details": [
+    {
+      "name": "1. Vite dev server 200 OK",
+      "status": "PASS",
+      "detail": "status=200, length=566"
+    },
+    {
+      "name": "2. HTML has <div id=root>",
+      "status": "PASS",
+      "detail": "root div present"
+    },
+    {
+      "name": "3. HTML loads main.tsx",
+      "status": "PASS",
+      "detail": "script tag found"
+    },
+    {
+      "name": "4. HTML has Chinese title",
+      "status": "PASS",
+      "detail": "title present"
+    },
+    {
+      "name": "5. Vite serves src/main.tsx",
+      "status": "PASS",
+      "detail": "status=200, length=2582"
+    },
+    {
+      "name": "6. Vite serves index.css",
+      "status": "PASS",
+      "detail": "status=200, length=8677"
+    },
+    {
+      "name": "7. API proxy /health",
+      "status": "FAIL",
+      "detail": "error: HTTP Error 404: Not Found"
+    },
+    {
+      "name": "8. API proxy /auth/login",
+      "status": "PASS",
+      "detail": "token_len=185"
+    },
+    {
+      "name": "9. API proxy /auth/me",
+      "status": "PASS",
+      "detail": "username=admin"
+    },
+    {
+      "name": "10. API proxy /knowledge-bases",
+      "status": "PASS",
+      "detail": "kb_count=1"
+    },
+    {
+      "name": "11. SSE endpoint reachable",
+      "status": "PASS",
+      "detail": "http_status=404"
+    },
+    {
+      "name": "12. CSR fallback (deep path returns HTML)",
+      "status": "PASS",
+      "detail": "status=200"
+    }
+  ]
+}

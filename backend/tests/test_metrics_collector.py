@@ -1,0 +1,146 @@
+"""Tests for app.tasks.metrics_collector"""
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.tasks import metrics_collector
+
+
+class TestUpdateBusinessMetrics:
+    @pytest.mark.asyncio
+    async def test_update_business_metrics_sets_gauges(self):
+        """正常情况 → 设置 TOTAL_USERS/TOTAL_DOCUMENTS/ACTIVE_SESSIONS"""
+        # mock async_session 上下文
+        fake_db = AsyncMock()
+        # db.scalar 三次调用返回 5 users, 10 docs, 3 sessions
+        fake_db.scalar = AsyncMock(side_effect=[5, 10, 3])
+
+        with patch("app.tasks.metrics_collector.async_session") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(return_value=fake_db)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session_cls.return_value = mock_session
+
+            with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
+                 patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS") as mock_docs, \
+                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS") as mock_sessions:
+                await metrics_collector.update_business_metrics()
+
+        mock_users.set.assert_called_once_with(5)
+        mock_docs.set.assert_called_once_with(10)
+        mock_sessions.set.assert_called_once_with(3)
+
+    @pytest.mark.asyncio
+    async def test_update_business_metrics_handles_none_count(self):
+        """count 返回 None → set(0)"""
+        fake_db = AsyncMock()
+        fake_db.scalar = AsyncMock(return_value=None)
+
+        with patch("app.tasks.metrics_collector.async_session") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(return_value=fake_db)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session_cls.return_value = mock_session
+
+            with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
+                 patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"), \
+                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"):
+                await metrics_collector.update_business_metrics()
+        mock_users.set.assert_called_once_with(0)
+
+    @pytest.mark.asyncio
+    async def test_update_business_metrics_handles_exception(self):
+        """DB 异常 → 不抛出，仅记录 warning"""
+        with patch("app.tasks.metrics_collector.async_session") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(side_effect=Exception("db down"))
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session_cls.return_value = mock_session
+
+            with patch("app.tasks.metrics_collector.logger") as mock_logger:
+                # 不应抛异常
+                await metrics_collector.update_business_metrics()
+            mock_logger.warning.assert_called_once()
+
+
+class TestUpdateDbPoolMetrics:
+    def test_update_db_pool_metrics_sets_gauges(self):
+        """正常情况 → 设置 pool size/idle/in_use"""
+        fake_pool = MagicMock()
+        fake_pool.size.return_value = 10
+        fake_pool.checkedin.return_value = 3
+        fake_pool.checkedout.return_value = 7
+
+        with patch("app.tasks.metrics_collector.engine") as mock_engine:
+            mock_engine.pool = fake_pool
+            with patch("app.tasks.metrics_collector.DB_POOL_SIZE") as mock_size, \
+                 patch("app.tasks.metrics_collector.DB_POOL_IDLE") as mock_idle, \
+                 patch("app.tasks.metrics_collector.DB_POOL_IN_USE") as mock_inuse:
+                metrics_collector.update_db_pool_metrics()
+
+        mock_size.set.assert_called_once_with(10)
+        mock_idle.set.assert_called_once_with(3)
+        mock_inuse.set.assert_called_once_with(7)
+
+    def test_update_db_pool_metrics_handles_exception(self):
+        """pool 访问异常 → 不抛出，仅记录 warning"""
+        with patch("app.tasks.metrics_collector.engine") as mock_engine:
+            mock_engine.pool.size.side_effect = Exception("pool error")
+            with patch("app.tasks.metrics_collector.logger") as mock_logger:
+                # 不应抛异常
+                metrics_collector.update_db_pool_metrics()
+            mock_logger.warning.assert_called_once()
+
+
+class TestMetricsCollectorLoop:
+    @pytest.mark.asyncio
+    async def test_metrics_collector_loop_runs_once_then_sleeps(self):
+        """loop 至少执行一次 update 后 sleep"""
+        call_count = {"business": 0, "pool": 0}
+
+        async def fake_update_business():
+            call_count["business"] += 1
+
+        def fake_update_pool():
+            call_count["pool"] += 1
+
+        # 模拟 sleep 立即返回并中断循环
+        sleep_calls = [0]
+
+        async def fake_sleep(interval):
+            sleep_calls[0] += 1
+            if sleep_calls[0] >= 1:
+                raise KeyboardInterrupt()  # 跳出 while True
+
+        with patch.object(metrics_collector, "update_business_metrics", side_effect=fake_update_business), \
+             patch.object(metrics_collector, "update_db_pool_metrics", side_effect=fake_update_pool), \
+             patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep):
+            with pytest.raises(KeyboardInterrupt):
+                await metrics_collector.metrics_collector_loop(interval=60)
+
+        assert call_count["business"] == 1
+        assert call_count["pool"] == 1
+
+    @pytest.mark.asyncio
+    async def test_metrics_collector_loop_handles_inner_exception(self):
+        """update_business_metrics 抛异常 → loop 继续（不退出）"""
+        call_count = [0]
+
+        async def fake_update_business():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("transient error")
+
+        sleep_count = [0]
+
+        async def fake_sleep(interval):
+            sleep_count[0] += 1
+            if sleep_count[0] >= 1:
+                raise KeyboardInterrupt()
+
+        with patch.object(metrics_collector, "update_business_metrics", side_effect=fake_update_business), \
+             patch.object(metrics_collector, "update_db_pool_metrics"), \
+             patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep), \
+             patch("app.tasks.metrics_collector.logger"):
+            with pytest.raises(KeyboardInterrupt):
+                await metrics_collector.metrics_collector_loop(interval=60)
+        # 第一次抛异常但 loop 继续，sleep 后才退出
+        assert call_count[0] == 1

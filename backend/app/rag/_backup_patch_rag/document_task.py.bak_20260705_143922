@@ -1,0 +1,179 @@
+"""Celery task: parse -> chunk -> embed -> store.
+
+Uses synchronous SQLAlchemy session (psycopg2) for Celery worker.
+Embeddings fetched via sync HTTP requests.
+Progress tracked via Redis (doc:progress:{doc_id}).
+"""
+import json
+import requests
+import redis as redis_sync
+
+from app.tasks.celery_app import celery_app
+from app.config import settings
+from app.rag.retriever import retriever
+from app.db.sync_session import get_sync_session
+from app.db.document import Document
+from app.db.document_chunk import DocumentChunk
+from app.parsers import get_parser
+from app.parsers.chunker import chunker
+
+
+def _get_redis_sync():
+    """Get sync Redis client for progress tracking."""
+    try:
+        return redis_sync.from_url(settings.redis_url, decode_responses=True)
+    except Exception:
+        return None
+
+
+def _update_progress(doc_id: int, status: str, progress: int,
+                     chunk_count: int = 0, error: str | None = None):
+    """Update progress in both PG and Redis."""
+    session = get_sync_session()
+    try:
+        doc = session.get(Document, doc_id)
+        if not doc:
+            return
+        doc.status = status
+        if chunk_count:
+            doc.chunk_count = chunk_count
+        if error:
+            doc.error_message = error
+        session.commit()
+    finally:
+        session.close()
+
+    r = _get_redis_sync()
+    if r:
+        data = {
+            "status": status,
+            "progress": progress,
+            "chunk_count": chunk_count,
+            "error_message": error or "",
+        }
+        r.setex(f"doc:progress:{doc_id}", 3600, json.dumps(data))
+
+
+def _cleanup_old_chunks(doc_id: int, kb_id: int):
+    """Delete old chunks (PG + Qdrant) before re-parsing."""
+    session = get_sync_session()
+    try:
+        from sqlalchemy import delete
+        session.execute(
+            delete(DocumentChunk).where(DocumentChunk.doc_id == doc_id)
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    try:
+        retriever.delete_by_doc_id(kb_id, doc_id)
+    except Exception as e:
+        print(f"[WARN] Qdrant cleanup failed: {e}")
+
+
+def _parse_and_chunk(doc_id: int) -> list[dict]:
+    """Parse the file and split into chunks. Persist chunks to PG."""
+    session = get_sync_session()
+    try:
+        doc = session.get(Document, doc_id)
+        if not doc:
+            raise ValueError(f"Document {doc_id} not found")
+
+        _cleanup_old_chunks(doc_id, doc.kb_id)
+
+        parser = get_parser(doc.file_path)
+        if not parser:
+            raise ValueError(f"Unsupported file type: {doc.file_type}")
+
+        text = parser.parse(doc.file_path)
+        chunks = chunker.chunk(text)
+
+        chunk_records = []
+        for i, c in enumerate(chunks):
+            chunk = DocumentChunk(
+                doc_id=doc_id,
+                kb_id=doc.kb_id,
+                chunk_index=i,
+                content=c["content"],
+                char_count=c["char_count"],
+                page=c.get("page"),
+            )
+            session.add(chunk)
+            chunk_records.append(c)
+        session.commit()
+
+        from sqlalchemy import select
+        result = session.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.doc_id == doc_id)
+            .order_by(DocumentChunk.chunk_index)
+        )
+        db_chunks = result.scalars().all()
+        for i, dc in enumerate(db_chunks):
+            chunk_records[i]["chunk_id"] = dc.id
+            chunk_records[i]["doc_id"] = doc.id
+            chunk_records[i]["kb_id"] = doc.kb_id
+            chunk_records[i]["filename"] = doc.filename
+            chunk_records[i]["file_type"] = doc.file_type
+
+        return chunk_records
+    finally:
+        session.close()
+
+
+def _embed_texts_sync(texts: list[str]) -> list[list[float]]:
+    """Call Ollama embeddings API synchronously."""
+    results = []
+    url = f"{settings.OLLAMA_HOST}/api/embeddings"
+    for text in texts:
+        resp = requests.post(
+            url,
+            json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        results.append(resp.json()["embedding"])
+    return results
+
+
+def _embed_and_store(doc_id: int, chunks: list[dict]):
+    """Embed all chunks and store in Qdrant + rebuild BM25 index."""
+    if not chunks:
+        return
+
+    texts = [c["content"] for c in chunks]
+    vectors = _embed_texts_sync(texts)
+
+    kb_id = chunks[0]["kb_id"]
+
+    import asyncio
+    async def _add():
+        await retriever.add_chunks(kb_id, chunks, vectors)
+    asyncio.run(_add())
+
+    try:
+        from app.rag.bm25 import bm25_store
+        bm25_store.rebuild_sync(kb_id, chunks)
+    except Exception as e:
+        print(f"[WARN] BM25 rebuild failed: {e}")
+
+
+@celery_app.task(bind=True, max_retries=3,
+                 name="app.tasks.document_task.parse_document")
+def parse_document_task(self, doc_id: int):
+    """Parse -> chunk -> embed -> store. Tracks progress via Redis."""
+    try:
+        _update_progress(doc_id, "parsing", 10)
+        chunks = _parse_and_chunk(doc_id)
+
+        _update_progress(doc_id, "chunking", 30, chunk_count=len(chunks))
+
+        _update_progress(doc_id, "embedding", 60, chunk_count=len(chunks))
+        _embed_and_store(doc_id, chunks)
+
+        _update_progress(doc_id, "done", 100, chunk_count=len(chunks))
+        return {"doc_id": doc_id, "chunk_count": len(chunks), "status": "done"}
+    except Exception as e:
+        _update_progress(doc_id, "failed", 100, error=str(e))
+        raise self.retry(exc=e, countdown=60)

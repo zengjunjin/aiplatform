@@ -1,0 +1,53 @@
+import json
+from typing import Any
+from app.redis_client import get_redis
+
+
+async def cache_get(key: str) -> Any | None:
+    try:
+        redis = get_redis()  # get_redis is sync, returns Redis | None
+        if not redis:
+            return None
+        data = await redis.get(key)
+        if data:
+            return json.loads(data)
+        return None
+    except Exception:
+        return None
+
+
+async def cache_set(key: str, value: Any, ttl: int = 300) -> bool:
+    try:
+        redis = get_redis()
+        if not redis:
+            return False
+        await redis.setex(key, ttl, json.dumps(value, ensure_ascii=False, default=str))
+        return True
+    except Exception:
+        return False
+
+
+async def cache_delete(key: str) -> bool:
+    try:
+        redis = get_redis()
+        if not redis:
+            return False
+        await redis.delete(key)
+        return True
+    except Exception:
+        return False
+
+
+async def cache_delete_pattern(pattern: str) -> int:
+    try:
+        redis = get_redis()
+        if not redis:
+            return 0
+        keys = []
+        async for key in redis.scan_iter(match=pattern):
+            keys.append(key)
+        if keys:
+            await redis.delete(*keys)
+        return len(keys)
+    except Exception:
+        return 0

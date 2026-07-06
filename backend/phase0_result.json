@@ -1,0 +1,67 @@
+{
+  "passed": 12,
+  "total": 12,
+  "all_pass": true,
+  "results": [
+    {
+      "name": "Health",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "Routes",
+      "ok": true,
+      "detail": "21 routes"
+    },
+    {
+      "name": "Login",
+      "ok": true,
+      "detail": "token_len=185"
+    },
+    {
+      "name": "ValidJWT",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "InvalidJWT",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "NoJWT",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "WrongPwd",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "OllamaModels",
+      "ok": true,
+      "detail": "models=['bge-m3:latest', 'qwen2.5:7b', 'qwen2.5:1.5b']"
+    },
+    {
+      "name": "Embedding",
+      "ok": true,
+      "detail": "dim=1024,time=3.620s"
+    },
+    {
+      "name": "LLM",
+      "ok": true,
+      "detail": "time=2.464s,resp=Hello! How can I help you toda"
+    },
+    {
+      "name": "UsersList",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "KBList",
+      "ok": true,
+      "detail": "status=200"
+    }
+  ]
+}

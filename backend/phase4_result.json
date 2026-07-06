@@ -1,0 +1,66 @@
+{
+  "steps": [
+    {
+      "name": "login",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "name": "kb",
+      "ok": true,
+      "kb_id": 1,
+      "action": "existing"
+    },
+    {
+      "name": "test_file",
+      "ok": true,
+      "size": 1267
+    },
+    {
+      "name": "upload",
+      "ok": false,
+      "status": 400,
+      "response": {
+        "code": 409,
+        "message": "File already exists in this knowledge base",
+        "data": null
+      }
+    },
+    {
+      "name": "reuse_doc",
+      "ok": true,
+      "doc_id": 1
+    },
+    {
+      "name": "reparse",
+      "ok": true,
+      "task_id": "3de201e8-4ba7-4bcd-bec2-9f2b8adaa133"
+    },
+    {
+      "name": "pipeline",
+      "ok": true,
+      "status": "done",
+      "chunks": 4,
+      "error": null,
+      "polls": 1
+    },
+    {
+      "name": "chroma",
+      "ok": true,
+      "collections": [
+        "chunks_kb_1"
+      ],
+      "count": 4
+    },
+    {
+      "name": "pg_chunks",
+      "ok": true,
+      "count": 4
+    },
+    {
+      "name": "bm25_search",
+      "ok": true,
+      "hits": 4
+    }
+  ]
+}

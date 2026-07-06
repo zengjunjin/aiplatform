@@ -1,0 +1,5 @@
+# 入口文件: 实际配置在 deploy/docker-compose.yml
+# 使用: docker compose -f deploy/docker-compose.yml up -d
+# 或直接进入 deploy 目录执行
+include:
+  - deploy/docker-compose.yml
