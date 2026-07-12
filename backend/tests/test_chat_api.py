@@ -227,6 +227,8 @@ class TestSendMessage:
                 yield tok
 
         fake_llm = MagicMock()
+        fake_llm.provider_name = "test-provider"
+        fake_llm.model_name = "test-model"
         fake_llm.chat_stream = fake_chat_stream
 
         with patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)), \
@@ -238,12 +240,10 @@ class TestSendMessage:
              patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=fake_chunks)), \
              patch("app.rag.reranker.reranker.rerank", new=AsyncMock(return_value=fake_reranked)), \
              patch("app.rag.context_manager.context_manager.build_messages", return_value=fake_messages), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
+             patch("app.core.model_router.ModelRouter.select", new=AsyncMock(return_value=fake_llm)), \
              patch("app.rag.reference_parser.parse_references", return_value=[]), \
-             patch("app.utils.token_counter.count_tokens", return_value=5), \
-             patch("app.db.chat_session.ChatSession") as mock_session_cls:
-            # db.execute 用于 session.title 自动更新
-            db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: session))
+             patch("app.utils.token_counter.count_tokens", return_value=5):
+            # session.title 为 "test"（非"新对话"），不会触发标题更新
             response = await chat.send_message(
                 request=request_mock, session_id=1, req=req, user=user, db=db
             )
@@ -274,6 +274,8 @@ class TestSendMessage:
             yield "answer"
 
         fake_llm = MagicMock()
+        fake_llm.provider_name = "test-provider"
+        fake_llm.model_name = "test-model"
         fake_llm.chat_stream = fake_chat_stream
 
         with patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)), \
@@ -283,7 +285,7 @@ class TestSendMessage:
              patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)), \
              patch("app.services.chat_service.clear_cancel", new=AsyncMock()), \
              patch("app.rag.context_manager.context_manager.build_messages", return_value=fake_messages), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
+             patch("app.core.model_router.ModelRouter.select", new=AsyncMock(return_value=fake_llm)), \
              patch("app.rag.reference_parser.parse_references", return_value=[]), \
              patch("app.utils.token_counter.count_tokens", return_value=5):
             response = await chat.send_message(
@@ -301,8 +303,9 @@ class TestSendMessage:
 
     @pytest.mark.asyncio
     async def test_send_message_stream_yields_cancelled_mid_generation(self, user, db, request_mock):
-        """生成过程中（第 2 个 token 后）取消 → yields cancelled 事件。
-        is_cancelled 第 1 次 False（pre-check），第 2 次 True（mid-generation）。"""
+        """生成过程中（第 16 个 token 后取消检查）取消 → yields cancelled 事件。
+        CANCEL_CHECK_INTERVAL=16，每 16 个 token 检查一次取消。
+        is_cancelled: False (pre-check), True (after tok16)。"""
         session = _make_session(session_id=1, kb_id=None, title="t")
         req = MagicMock()
         req.content = "hello"
@@ -310,14 +313,16 @@ class TestSendMessage:
         fake_messages = [{"role": "user", "content": "hi"}]
 
         async def fake_chat_stream(msgs, *args, **kwargs):
-            for tok in ["tok1", "tok2", "tok3", "tok4"]:
-                yield tok
+            for i in range(1, 19):  # 18 tokens
+                yield f"tok{i}"
 
         fake_llm = MagicMock()
+        fake_llm.provider_name = "test-provider"
+        fake_llm.model_name = "test-model"
         fake_llm.chat_stream = fake_chat_stream
 
-        # is_cancelled 依次：False (pre-check), False (after tok1), True (after tok2)
-        cancel_states = iter([False, False, True])
+        # is_cancelled: False (pre-check), True (after 16th token → cancel)
+        cancel_states = iter([False, True])
 
         async def fake_is_cancelled(*args, **kwargs):
             return next(cancel_states)
@@ -329,7 +334,7 @@ class TestSendMessage:
              patch("app.services.chat_service.is_cancelled", new=AsyncMock(side_effect=fake_is_cancelled)), \
              patch("app.services.chat_service.clear_cancel", new=AsyncMock()), \
              patch("app.rag.context_manager.context_manager.build_messages", return_value=fake_messages), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
+             patch("app.core.model_router.ModelRouter.select", new=AsyncMock(return_value=fake_llm)), \
              patch("app.rag.reference_parser.parse_references", return_value=[]), \
              patch("app.utils.token_counter.count_tokens", return_value=5):
             response = await chat.send_message(
@@ -339,11 +344,12 @@ class TestSendMessage:
             async for chunk in response.body_iterator:
                 body_bytes += chunk if isinstance(chunk, bytes) else chunk.encode()
         body = body_bytes.decode()
-        # 应有 tok1, tok2 但无 tok3, tok4
+        # tok1-tok16 应在 body 中（取消检查在 tok16 后触发）
         assert "tok1" in body
-        assert "tok2" in body
-        assert "tok3" not in body
-        assert "tok4" not in body
+        assert "tok16" in body
+        # tok17, tok18 不应在 body 中（已取消）
+        assert "tok17" not in body
+        assert "tok18" not in body
         assert "cancelled" in body
         assert "[DONE]" in body
 
@@ -377,11 +383,19 @@ class TestSendMessage:
         req = MagicMock()
         req.content = "this is my question"
 
-        # 模拟 db.execute 返回 session 对象（用于 title 自动更新）
+        # 模拟 async_session() 返回的独立 db 会话（用于标题自动更新）
         sess_mock = MagicMock()
         sess_mock.title = "新对话"
-        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: sess_mock))
-        db.commit = AsyncMock()
+        stream_db_mock = AsyncMock()
+        stream_db_mock.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: sess_mock)
+        )
+        stream_db_mock.commit = AsyncMock()
+
+        # async_session() 返回 async context manager，__aenter__ 返回 stream_db_mock
+        mock_async_session = MagicMock()
+        mock_async_session.return_value.__aenter__ = AsyncMock(return_value=stream_db_mock)
+        mock_async_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         fake_messages = [{"role": "user", "content": "hi"}]
 
@@ -389,6 +403,8 @@ class TestSendMessage:
             yield "answer"
 
         fake_llm = MagicMock()
+        fake_llm.provider_name = "test-provider"
+        fake_llm.model_name = "test-model"
         fake_llm.chat_stream = fake_chat_stream
 
         with patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)), \
@@ -398,9 +414,10 @@ class TestSendMessage:
              patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)), \
              patch("app.services.chat_service.clear_cancel", new=AsyncMock()), \
              patch("app.rag.context_manager.context_manager.build_messages", return_value=fake_messages), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
+             patch("app.core.model_router.ModelRouter.select", new=AsyncMock(return_value=fake_llm)), \
              patch("app.rag.reference_parser.parse_references", return_value=[]), \
-             patch("app.utils.token_counter.count_tokens", return_value=5):
+             patch("app.utils.token_counter.count_tokens", return_value=5), \
+             patch("app.api.v1.chat.async_session", new=mock_async_session):
             response = await chat.send_message(
                 request=request_mock, session_id=1, req=req, user=user, db=db
             )

@@ -11,9 +11,31 @@ class BaseLLMProvider(ABC):
         ...
 
     @abstractmethod
-    async def chat(self, messages: list[dict], temperature: float = 0.7) -> str:
-        '''非流式返回完整文本'''
+    async def chat(self, messages: list[dict], temperature: float = 0.7, stream: bool = False, **kwargs) -> str | AsyncIterator[str]:
+        '''非流式返回完整文本；stream=True 时返回 AsyncIterator[str]'''
         ...
+
+    @abstractmethod
+    async def health_check(self) -> bool:
+        '''健康检查：验证 API 是否可用'''
+        ...
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        '''提供方名称标识'''
+        ...
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        '''当前使用的模型名称'''
+        ...
+
+    @property
+    def is_healthy(self) -> bool:
+        '''是否健康（默认 True）'''
+        return True
 
 
 class BaseEmbeddingProvider(ABC):

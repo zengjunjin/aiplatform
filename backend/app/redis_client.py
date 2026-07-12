@@ -1,4 +1,4 @@
-﻿import redis.asyncio as redis
+import redis.asyncio as redis
 from app.config import settings
 
 redis_client: redis.Redis | None = None
@@ -16,3 +16,29 @@ def init_redis():
 
 def get_redis() -> redis.Redis:
     return redis_client
+
+
+# ---------- 摘要缓存 ----------
+
+SUMMARY_KEY_PREFIX = "chat:session"
+SUMMARY_TTL = 3600  # 1 小时
+
+
+def _summary_key(session_id: int) -> str:
+    return f"{SUMMARY_KEY_PREFIX}:{session_id}:summary"
+
+
+async def get_summary_cache(session_id: int) -> str | None:
+    """获取缓存的对话摘要"""
+    redis = get_redis()
+    if not redis:
+        return None
+    return await redis.get(_summary_key(session_id))
+
+
+async def set_summary_cache(session_id: int, summary: str, ttl: int = SUMMARY_TTL) -> None:
+    """缓存对话摘要"""
+    redis = get_redis()
+    if not redis:
+        return
+    await redis.set(_summary_key(session_id), summary, ex=ttl)

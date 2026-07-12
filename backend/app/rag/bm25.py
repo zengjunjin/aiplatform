@@ -13,9 +13,11 @@ so they work inside Celery's sync worker without an event loop.
 注意：rank-bm25 的 BM25Okapi 不支持原地增量更新，必须重建索引，
 但通过 Redis 缓存 chunks 元数据，调用方只需传入"新增/删除"的 chunks，
 无需自行加载整个 kb 的 chunks 列表。
+
+安全：使用 JSON 序列化 tokenized 语料替代 pickle，避免反序列化 RCE 风险。
 """
 import json
-import pickle
+import threading
 from typing import Optional
 from rank_bm25 import BM25Okapi
 import redis as redis_sync_lib
@@ -30,9 +32,11 @@ class BM25Store:
         self._cache = {}  # in-memory cache
         self._sync_redis: Optional[redis_sync_lib.Redis] = None
         self._async_redis: Optional[redis_async_lib.Redis] = None
+        self._sync_lock = threading.Lock()
+        self._async_lock = threading.Lock()
 
     def _key(self, kb_id: int) -> str:
-        """BM25 索引（pickle 后 hex）的 Redis key。"""
+        """BM25 索引（JSON 序列化的 tokenized 语料）的 Redis key。"""
         return f"bm25:kb:{kb_id}"
 
     def _chunks_key(self, kb_id: int) -> str:
@@ -41,7 +45,12 @@ class BM25Store:
 
     # ---------- sync Redis accessor ----------
     def _get_sync_redis(self) -> Optional[redis_sync_lib.Redis]:
-        if self._sync_redis is None:
+        if self._sync_redis is not None:
+            return self._sync_redis
+        with self._sync_lock:
+            # 双重检查: 锁内再次确认未初始化
+            if self._sync_redis is not None:
+                return self._sync_redis
             try:
                 self._sync_redis = redis_sync_lib.from_url(
                     settings.redis_url,
@@ -73,16 +82,30 @@ class BM25Store:
         return BM25Okapi(tokenized)
 
     def _tokenize(self, text: str) -> list[str]:
-        """Simple tokenizer: split by whitespace + per-char for CJK."""
-        tokens = list(text.split())
-        for ch in text:
-            if "\u4e00" <= ch <= "\u9fff":
-                tokens.append(ch)
+        import jieba
+        tokens = list(jieba.cut(text))
         return tokens
+
+    def _serialize_index(self, chunks: list[dict]) -> str:
+        """将 tokenized 语料序列化为 JSON（替代 pickle, 避免 RCE 风险）。"""
+        tokenized = [self._tokenize(c["content"]) for c in chunks]
+        return json.dumps(tokenized, ensure_ascii=False)
+
+    def _deserialize_index(self, raw: str | None) -> Optional[BM25Okapi]:
+        """从 JSON 反序列化并重建 BM25Okapi 索引。"""
+        if not raw:
+            return None
+        try:
+            tokenized = json.loads(raw)
+            if not isinstance(tokenized, list):
+                return None
+            return BM25Okapi(tokenized)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
 
     def _serialize_chunks(self, chunks: list[dict]) -> str:
         """chunks list -> JSON string（用于 Redis 持久化）。
-        仅保留必要字段，避免 pickle 跨版本问题。"""
+        仅保留必要字段，避免跨版本问题。"""
         slim = []
         for c in chunks:
             slim.append({
@@ -112,15 +135,16 @@ class BM25Store:
         if redis:
             raw = await redis.get(self._key(kb_id))
             if raw:
-                bm25 = pickle.loads(bytes.fromhex(raw))
-                self._cache[kb_id] = bm25
-                return bm25
+                bm25 = self._deserialize_index(raw)
+                if bm25:
+                    self._cache[kb_id] = bm25
+                    return bm25
 
         if chunks:
             bm25 = self._build(chunks)
             self._cache[kb_id] = bm25
             if redis:
-                await redis.set(self._key(kb_id), pickle.dumps(bm25).hex(), ex=86400)
+                await redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
             return bm25
         return None
 
@@ -178,7 +202,7 @@ class BM25Store:
         self._cache[kb_id] = bm25
         redis = await self._get_async_redis()
         if redis:
-            await redis.set(self._key(kb_id), pickle.dumps(bm25).hex(), ex=86400)
+            await redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
             await redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=86400)
 
     async def add_documents(self, kb_id: int, new_chunks: list[dict]):
@@ -219,7 +243,7 @@ class BM25Store:
         self._cache[kb_id] = bm25
         redis = self._get_sync_redis()
         if redis:
-            redis.set(self._key(kb_id), pickle.dumps(bm25).hex(), ex=86400)
+            redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
             redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=86400)
 
     def add_documents_sync(self, kb_id: int, new_chunks: list[dict]):
@@ -268,13 +292,14 @@ class BM25Store:
             if redis:
                 raw = redis.get(self._key(kb_id))
                 if raw:
-                    bm25 = pickle.loads(bytes.fromhex(raw))
-                    self._cache[kb_id] = bm25
+                    bm25 = self._deserialize_index(raw)
+                    if bm25:
+                        self._cache[kb_id] = bm25
             if bm25 is None and chunks:
                 bm25 = self._build(chunks)
                 self._cache[kb_id] = bm25
                 if redis:
-                    redis.set(self._key(kb_id), pickle.dumps(bm25).hex(), ex=86400)
+                    redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
         if not bm25:
             return []
         tokens = self._tokenize(query)

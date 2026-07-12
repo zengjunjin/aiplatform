@@ -1,5 +1,6 @@
 import json
 from typing import Any
+from loguru import logger
 from app.redis_client import get_redis
 
 
@@ -12,7 +13,8 @@ async def cache_get(key: str) -> Any | None:
         if data:
             return json.loads(data)
         return None
-    except Exception:
+    except Exception as e:
+        logger.warning(f"cache_get failed for key '{key}': {e}")
         return None
 
 
@@ -23,7 +25,8 @@ async def cache_set(key: str, value: Any, ttl: int = 300) -> bool:
             return False
         await redis.setex(key, ttl, json.dumps(value, ensure_ascii=False, default=str))
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"cache_set failed for key '{key}': {e}")
         return False
 
 
@@ -34,7 +37,8 @@ async def cache_delete(key: str) -> bool:
             return False
         await redis.delete(key)
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"cache_delete failed for key '{key}': {e}")
         return False
 
 
@@ -49,5 +53,6 @@ async def cache_delete_pattern(pattern: str) -> int:
         if keys:
             await redis.delete(*keys)
         return len(keys)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"cache_delete_pattern failed for pattern '{pattern}': {e}")
         return 0

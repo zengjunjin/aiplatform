@@ -15,13 +15,15 @@ import {
 } from 'antd';
 import { Plus, Trash2, FileText, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useKBStore } from '../store/kb';
-import dayjs from 'dayjs';
+import { formatRelativeTime } from '../utils/format';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 export default function KnowledgeBasesPage() {
+  const { t } = useTranslation();
   // 精细化订阅
   const knowledgeBases = useKBStore((s) => s.knowledgeBases);
   const loading = useKBStore((s) => s.loading);
@@ -41,20 +43,20 @@ export default function KnowledgeBasesPage() {
     try {
       const values = await form.validateFields();
       await createKB(values.name, values.description || '');
-      message.success('知识库创建成功');
+      message.success(t('kb.createSuccess'));
       setModalOpen(false);
       form.resetFields();
     } catch (e: any) {
-      message.error(e.message || '创建失败');
+      message.error(e.message || t('kb.createFailed'));
     }
   };
 
   const handleDelete = async (id: number, name: string) => {
     try {
       await deleteKB(id);
-      message.success('删除成功');
+      message.success(t('kb.deleteSuccess'));
     } catch (e: any) {
-      message.error(e.message || '删除失败');
+      message.error(e.message || t('kb.deleteFailed'));
     }
   };
 
@@ -62,18 +64,18 @@ export default function KnowledgeBasesPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>
-          我的知识库
+          {t('kb.myKnowledgeBases')}
         </Title>
         <Button type="primary" icon={<Plus size={16} />} onClick={() => setModalOpen(true)}>
-          新建知识库
+          {t('kb.newKnowledgeBase')}
         </Button>
       </div>
 
       <Spin spinning={loading}>
         {knowledgeBases.length === 0 ? (
-          <Empty description="暂无知识库，点击上方按钮创建">
+          <Empty description={t('kb.noKBs')}>
             <Button type="primary" onClick={() => setModalOpen(true)}>
-              创建第一个知识库
+              {t('kb.createFirstKB')}
             </Button>
           </Empty>
         ) : (
@@ -84,82 +86,125 @@ export default function KnowledgeBasesPage() {
               gap: 16,
             }}
           >
-            {knowledgeBases.map((kb) => (
-              <Card
-                key={kb.id}
-                hoverable
-                onClick={() => navigate(`/knowledge-bases/${kb.id}`)}
-                style={{ cursor: 'pointer' }}
-              >
-                <Card.Meta
-                  title={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text strong style={{ fontSize: 16 }}>{kb.name}</Text>
-                      <Popconfirm
-                        title="确定删除该知识库?"
-                        description="删除后所有文档和数据将永久丢失，无法恢复"
-                        onConfirm={(e) => {
-                          e?.stopPropagation();
-                          handleDelete(kb.id, kb.name);
-                        }}
-                        okText="删除"
-                        cancelText="取消"
-                      >
-                        <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<Trash2 size={14} />}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </Popconfirm>
+            {knowledgeBases.map((kb) => {
+              const gradients = [
+                'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+              ];
+              const gradientIndex = kb.name.length % gradients.length;
+              return (
+                <Card
+                  key={kb.id}
+                  hoverable
+                  onClick={() => navigate(`/knowledge-bases/${kb.id}`)}
+                  style={{
+                    cursor: 'pointer',
+                    overflow: 'hidden',
+                    padding: 0,
+                    transition: 'all var(--transition-base)',
+                  }}
+                  bodyStyle={{ padding: 0 }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '';
+                  }}
+                >
+                  {/* Gradient Header Bar */}
+                  <div
+                    style={{
+                      height: 80,
+                      background: gradients[gradientIndex],
+                      display: 'flex',
+                      alignItems: 'flex-end',
+                      padding: '16px 20px',
+                    }}
+                  >
+                    <Text strong style={{ fontSize: 18, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}>
+                      {kb.name}
+                    </Text>
+                  </div>
+                  {/* Card Body */}
+                  <div style={{ padding: '16px 20px' }}>
+                    <div style={{ marginBottom: 12, minHeight: 36 }}>
+                      {kb.description ? (
+                        <Text style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                          {kb.description}
+                        </Text>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 13 }}>{t('kb.noDescription')}</Text>
+                      )}
                     </div>
-                  }
-                  description={
-                    <div>
-                      <div style={{ marginBottom: 12, minHeight: 40 }}>
-                        {kb.description || <Text type="secondary">无描述</Text>}
-                      </div>
-                      <Space size={12}>
-                        <Tag color="blue">
-                          <FileText size={12} style={{ marginRight: 4 }} />
-                          {kb.doc_count || 0} 文档
-                        </Tag>
-                        <Tag color="green">
-                          {kb.chunk_count || 0} 分块
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 12, marginBottom: 8 }}>
+                      <Space size={16}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <FileText size={16} style={{ color: 'var(--accent-primary)' }} />
+                          <Text strong style={{ fontSize: 14, color: 'var(--text-primary)' }}>{kb.doc_count || 0}</Text>
+                          <Text style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('kb.documents', { count: kb.doc_count || 0 })}</Text>
+                        </div>
+                        <Tag color="green" style={{ borderRadius: 'var(--radius-sm)' }}>
+                          {t('kb.chunks', { count: kb.chunk_count || 0 })}
                         </Tag>
                       </Space>
-                      <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                        <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                        更新于 {dayjs(kb.updated_at).format('YYYY-MM-DD HH:mm')}
-                      </div>
                     </div>
-                  }
-                />
-              </Card>
-            ))}
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={12} />
+                      {formatRelativeTime(kb.updated_at)}
+                    </div>
+                  </div>
+                  {/* Delete Button */}
+                  <div style={{ position: 'absolute', top: 12, right: 12 }}>
+                    <Popconfirm
+                      title={t('kb.deleteConfirmTitle')}
+                      description={t('kb.deleteConfirmDesc')}
+                      onConfirm={(e) => {
+                        e?.stopPropagation();
+                        handleDelete(kb.id, kb.name);
+                      }}
+                      okText={t('kb.delete')}
+                      cancelText={t('kb.cancel')}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<Trash2 size={14} color="#fff" />}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ opacity: 0.8 }}
+                      />
+                    </Popconfirm>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </Spin>
 
       <Modal
-        title="新建知识库"
+        title={t('kb.newKnowledgeBase')}
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => setModalOpen(false)}
-        okText="创建"
-        cancelText="取消"
+        okText={t('kb.create')}
+        cancelText={t('kb.cancel')}
       >
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
-            label="知识库名称"
-            rules={[{ required: true, message: '请输入知识库名称' }]}
+            label={t('kb.kbName')}
+            rules={[{ required: true, message: t('kb.kbNameRequired') }]}
           >
-            <Input placeholder="例如：产品手册知识库" maxLength={100} />
+            <Input placeholder={t('kb.kbNamePlaceholder')} maxLength={100} />
           </Form.Item>
-          <Form.Item name="description" label="描述">
-            <TextArea rows={3} placeholder="简要描述这个知识库的用途" maxLength={500} />
+          <Form.Item name="description" label={t('kb.description')}>
+            <TextArea rows={3} placeholder={t('kb.descriptionPlaceholder')} maxLength={500} />
           </Form.Item>
         </Form>
       </Modal>

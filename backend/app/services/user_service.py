@@ -43,6 +43,17 @@ async def update_status(user_id: int, is_active: bool, db: AsyncSession, admin_i
     return user
 
 
+async def search_users(db: AsyncSession, query: str, limit: int = 10):
+    """搜索用户（按用户名），用于协作者添加等场景"""
+    result = await db.execute(
+        select(User.id, User.username)
+        .where(User.username.ilike(f"%{query}%"))
+        .limit(limit)
+    )
+    rows = result.all()
+    return [{"id": row[0], "username": row[1]} for row in rows]
+
+
 async def change_password(user_id: int, old_pwd: str, new_pwd: str, db: AsyncSession):
     from app.services.auth_service import validate_password_strength
     result = await db.execute(select(User).where(User.id == user_id))

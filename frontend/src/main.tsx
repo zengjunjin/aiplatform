@@ -5,6 +5,7 @@ import { ConfigProvider, App as AntdApp, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 import { isTauri } from './utils/tauri';
+import './i18n';
 import './styles/index.css';
 
 const customTheme = {

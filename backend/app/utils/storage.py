@@ -78,27 +78,50 @@ def safe_filename(original_name: str, doc_id: int) -> str:
 
 
 def save_upload_file(upload_file, kb_id: int, doc_id: int) -> tuple:
+    """流式保存上传文件，避免整块读入内存。
+
+    分块读写 (1MB)，增量计算 SHA-256，首块做魔数校验，增量检查文件大小。
+    """
     kb_dir = get_kb_dir(kb_id)
-
-    content = upload_file.file.read()
-    file_size = len(content)
-
     max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
-    if file_size > max_size:
-        raise ValueError(f"File too large (max {settings.MAX_FILE_SIZE_MB}MB)")
-
-    file_type = validate_file_type(upload_file.filename, content)
-    file_hash = hashlib.sha256(content).hexdigest()
-
     saved_name = safe_filename(upload_file.filename, doc_id)
     file_path = kb_dir / saved_name
 
-    with file_path.open("wb") as f:
-        f.write(content)
+    h = hashlib.sha256()
+    file_size = 0
+    file_type = None
+
+    try:
+        with file_path.open("wb") as out:
+            first_chunk = True
+            while True:
+                buf = upload_file.file.read(1024 * 1024)  # 1MB chunks
+                if not buf:
+                    break
+                file_size += len(buf)
+                if file_size > max_size:
+                    raise ValueError(f"File too large (max {settings.MAX_FILE_SIZE_MB}MB)")
+                if first_chunk:
+                    # 首块做魔数校验（validate_file_type 只用 content[:8]）
+                    file_type = validate_file_type(upload_file.filename, buf)
+                    first_chunk = False
+                h.update(buf)
+                out.write(buf)
+    except Exception:
+        # 写入失败或超限，清理半成品文件
+        try:
+            file_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+    if file_type is None:
+        # 空文件
+        file_type = os.path.splitext(upload_file.filename)[1].lower().lstrip(".")
 
     logger.info(f"File saved: kb={kb_id} doc={doc_id} size={file_size} type={file_type}")
 
-    return str(file_path), file_type, file_size, file_hash
+    return str(file_path), file_type, file_size, h.hexdigest()
 
 
 def compute_file_hash(file_path) -> str:

@@ -120,6 +120,7 @@ async def save_message(
     token_input: int | None = None,
     token_output: int | None = None,
     latency_ms: int | None = None,
+    summary_snapshot: str | None = None,
 ) -> ChatMessage:
     msg = ChatMessage(
         session_id=session_id,
@@ -129,6 +130,7 @@ async def save_message(
         token_input=token_input,
         token_output=token_output,
         latency_ms=latency_ms,
+        summary_snapshot=summary_snapshot,
     )
     db.add(msg)
     await db.commit()
@@ -141,42 +143,32 @@ async def save_message(
 CANCEL_KEY_PREFIX = "chat:cancel"
 
 
-def _cancel_key(session_id: int, message_id: int | None = None) -> str:
-    """取消标志的 Redis key。
-    优先用 message_id 精确取消；未提供 message_id 时按 session 取消当前进行中的生成。
-    """
-    if message_id is not None:
-        return f"{CANCEL_KEY_PREFIX}:session:{session_id}:msg:{message_id}"
+def _cancel_key(session_id: int) -> str:
+    """取消标志的 Redis key（session 级别）。"""
     return f"{CANCEL_KEY_PREFIX}:session:{session_id}:current"
 
 
-async def request_cancel(session_id: int, message_id: int | None = None, ttl: int = 300) -> None:
+async def request_cancel(session_id: int, ttl: int = 300) -> None:
     """设置取消标志，流式生成循环在下一次检查时会停止。TTL=5min 自动清理。"""
     redis = get_redis()
     if not redis:
         return
-    await redis.set(_cancel_key(session_id, message_id), "1", ex=ttl)
+    await redis.set(_cancel_key(session_id), "1", ex=ttl)
 
 
-async def is_cancelled(session_id: int, message_id: int | None = None) -> bool:
-    """检查是否被请求取消。先查 message 级别，再查 session 级别。"""
+async def is_cancelled(session_id: int) -> bool:
+    """检查是否被请求取消。"""
     redis = get_redis()
     if not redis:
         return False
-    if message_id is not None:
-        if await redis.exists(_cancel_key(session_id, message_id)):
-            return True
-    if await redis.exists(_cancel_key(session_id, None)):
+    if await redis.exists(_cancel_key(session_id)):
         return True
     return False
 
 
-async def clear_cancel(session_id: int, message_id: int | None = None) -> None:
+async def clear_cancel(session_id: int) -> None:
     """生成结束/取消后清理标志。"""
     redis = get_redis()
     if not redis:
         return
-    await redis.delete(
-        _cancel_key(session_id, message_id),
-        _cancel_key(session_id, None),
-    )
+    await redis.delete(_cancel_key(session_id))

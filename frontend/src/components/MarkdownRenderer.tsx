@@ -1,5 +1,5 @@
-import { memo, Fragment, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { memo, Fragment, type ReactNode, type KeyboardEvent } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -14,6 +14,7 @@ interface Props {
 /**
  * 将文本中的 [数字] 引用标记渲染为可点击的 chip (Antd Tag)。
  * 没有匹配到的文本正常渲染。
+ * 可点击时支持键盘访问 (Tab + Enter/Space)。
  */
 function renderTextWithReferences(
   text: string,
@@ -34,12 +35,16 @@ function renderTextWithReferences(
     }
     // 引用 chip
     const refIndex = parseInt(match[1], 10);
+    const clickable = !!onReferenceClick;
     parts.push(
       <Tag
         key={`ref-${key++}`}
         color="blue"
+        role={clickable ? 'button' : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        aria-label={clickable ? `引用 ${refIndex}` : undefined}
         style={{
-          cursor: onReferenceClick ? 'pointer' : 'default',
+          cursor: clickable ? 'pointer' : 'default',
           fontSize: 11,
           borderRadius: 10,
           padding: '0 6px',
@@ -49,7 +54,17 @@ function renderTextWithReferences(
           userSelect: 'none',
           verticalAlign: 'baseline',
         }}
-        onClick={() => onReferenceClick?.(refIndex)}
+        onClick={clickable ? () => onReferenceClick!(refIndex) : undefined}
+        onKeyDown={
+          clickable
+            ? (e: KeyboardEvent<HTMLElement>) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onReferenceClick!(refIndex);
+                }
+              }
+            : undefined
+        }
       >
         {`[${refIndex}]`}
       </Tag>,
@@ -92,42 +107,47 @@ function processChildren(
 }
 
 function MarkdownRendererBase({ content, onReferenceClick }: Props) {
+  const components: Components = {
+    code({ className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const isBlock = !!match;
+      return isBlock ? (
+        <SyntaxHighlighter
+          // react-syntax-highlighter 类型定义不精确，oneDark 实际为 Record<string, CSSProperties>
+          style={oneDark as any}
+          language={match![1]}
+          PreTag="div"
+          aria-label={`代码块 (${match![1]})`}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    // 段落: 处理 [n] 引用
+    p({ children, ...props }) {
+      return <p {...props}>{processChildren(children, onReferenceClick)}</p>;
+    },
+    // 列表项: 处理 [n] 引用
+    li({ children, ...props }) {
+      return <li {...props}>{processChildren(children, onReferenceClick)}</li>;
+    },
+    // 表格单元格: 处理 [n] 引用
+    td({ children, ...props }) {
+      return <td {...props}>{processChildren(children, onReferenceClick)}</td>;
+    },
+    // 图片: 确保有 alt 文本（WCAG 1.1.1）
+    img({ alt, src, ...props }) {
+      return <img alt={alt || '无描述图片'} src={src} {...props} />;
+    },
+  };
+
   return (
     <div className="markdown-content">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code({ node, inline, className, children, ...props }: any) {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={oneDark as any}
-                language={match[1]}
-                PreTag="div"
-                {...props}
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-          // 段落: 处理 [n] 引用
-          p({ children, ...props }: any) {
-            return <p {...props}>{processChildren(children, onReferenceClick)}</p>;
-          },
-          // 列表项: 处理 [n] 引用
-          li({ children, ...props }: any) {
-            return <li {...props}>{processChildren(children, onReferenceClick)}</li>;
-          },
-          // 表格单元格: 处理 [n] 引用
-          td({ children, ...props }: any) {
-            return <td {...props}>{processChildren(children, onReferenceClick)}</td>;
-          },
-        }}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
     </div>

@@ -1,5 +1,5 @@
 import client, { extractData } from './client';
-import type { KnowledgeBase, PaginatedResponse } from '../types';
+import type { KnowledgeBase, PaginatedResponse, CollaboratorInfo } from '../types';
 
 export interface CreateKBParams {
   name: string;
@@ -9,6 +9,11 @@ export interface CreateKBParams {
 export interface UpdateKBParams {
   name?: string;
   description?: string;
+}
+
+export interface AddCollaboratorParams {
+  user_id: number;
+  permission: string;
 }
 
 export const kbApi = {
@@ -41,6 +46,23 @@ export const kbApi = {
   /** 删除知识库 */
   async delete(id: number): Promise<void> {
     await client.delete(`/knowledge-bases/${id}`);
+  },
+
+  /** 获取协作者列表 */
+  async getCollaborators(kbId: number): Promise<CollaboratorInfo[]> {
+    const res = await client.get(`/knowledge-bases/${kbId}/collaborators`);
+    return extractData(res);
+  },
+
+  /** 添加协作者 */
+  async addCollaborator(kbId: number, params: AddCollaboratorParams): Promise<CollaboratorInfo> {
+    const res = await client.post(`/knowledge-bases/${kbId}/collaborators`, params);
+    return extractData(res);
+  },
+
+  /** 移除协作者 */
+  async removeCollaborator(kbId: number, userId: number): Promise<void> {
+    await client.delete(`/knowledge-bases/${kbId}/collaborators/${userId}`);
   },
 };
 

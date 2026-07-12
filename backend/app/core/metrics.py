@@ -54,6 +54,36 @@ DB_POOL_IDLE = Gauge(
     "Number of idle database connections in the pool",
 )
 
+RAG_RETRIEVAL_LATENCY = Histogram(
+    "rag_retrieval_latency_seconds",
+    "RAG retrieval latency in seconds",
+    ["stage"],  # vector, bm25, rrf, rerank, total
+)
+
+RAG_LLM_TTFT = Histogram(
+    "rag_llm_ttft_seconds",
+    "Time to first token in seconds",
+    ["model"],
+)
+
+RAG_LLM_TOKENS_PER_SECOND = Gauge(
+    "rag_llm_tokens_per_second",
+    "Token generation rate",
+    ["model"],
+)
+
+RAG_E2E_LATENCY = Histogram(
+    "rag_e2e_latency_seconds",
+    "End-to-end latency in seconds",
+    ["kb_id"],
+)
+
+RAG_DOCUMENT_COUNT = Gauge(
+    "rag_document_count",
+    "Number of documents in knowledge base",
+    ["kb_id"],
+)
+
 
 def get_metrics_content():
     return generate_latest()

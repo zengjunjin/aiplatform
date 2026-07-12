@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -26,6 +26,13 @@ class RefreshRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str = Field(..., min_length=6, max_length=100)
+    confirm_password: str
+
+    @model_validator(mode="after")
+    def check_passwords_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("两次输入的新密码不一致")
+        return self
 
 
 class UserResponse(BaseModel):

@@ -6,8 +6,10 @@ import type { User } from '../types';
 interface AuthState {
   token: string | null;
   user: User | null;
+  themeMode: 'light' | 'dark';
   setAuth: (token: string, user: User | null) => void;
   logout: () => void;
+  toggleTheme: () => void;
   fetchMe: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
@@ -18,13 +20,23 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       user: null,
+      themeMode: 'light' as 'light' | 'dark',
 
       setAuth: (token, user) => set({ token, user }),
 
-      logout: () => {
+      toggleTheme: () =>
+        set((state) => ({
+          themeMode: state.themeMode === 'light' ? 'dark' : 'light',
+        })),
+
+      logout: async () => {
         const token = useAuthStore.getState().token;
         if (token) {
-          authApi.logout().catch(() => {});
+          try {
+            await authApi.logout();
+          } catch {
+            // 即使 blacklist 失败也继续清理本地状态
+          }
         }
         set({ token: null, user: null });
       },
@@ -53,6 +65,14 @@ export const useAuthStore = create<AuthState>()(
         }
       },
     }),
-    { name: 'rag-auth' }
+    {
+      name: 'rag-auth',
+      // 仅持久化数据字段，不持久化方法
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        themeMode: state.themeMode,
+      }),
+    }
   )
 );

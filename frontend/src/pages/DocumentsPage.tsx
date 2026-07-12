@@ -19,21 +19,26 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
+  Eye,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { documentApi } from '../api';
 import { useKBStore } from '../store/kb';
 import { formatFileSize, formatDateTime, getStatusColor, getStatusText } from '../utils/format';
 import type { Document } from '../types';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 const { Title, Text } = Typography;
 
 export default function DocumentsPage() {
+  const { t } = useTranslation();
   // 精细化订阅
   const knowledgeBases = useKBStore((s) => s.knowledgeBases);
   const fetchKBs = useKBStore((s) => s.fetchKBs);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [kbFilter, setKbFilter] = useState<number | undefined>(undefined);
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const { message } = AntdApp.useApp();
   // 用于取消过期的并发请求 (切换筛选时旧请求结果应被丢弃)
   const fetchVersionRef = useRef(0);
@@ -78,13 +83,13 @@ export default function DocumentsPage() {
       setDocuments(merged);
     } catch (e: any) {
       if (version !== fetchVersionRef.current) return;
-      message.error(e.message || '加载失败');
+      message.error(e.message || t('document.loadFailed'));
     } finally {
       if (version === fetchVersionRef.current) {
         setLoading(false);
       }
     }
-  }, [knowledgeBases, kbFilter, message]);
+  }, [knowledgeBases, kbFilter, message, t]);
 
   useEffect(() => {
     fetchKBs();
@@ -100,31 +105,31 @@ export default function DocumentsPage() {
   const handleDelete = async (docId: number) => {
     try {
       await documentApi.delete(docId);
-      message.success('删除成功');
+      message.success(t('document.deleteSuccess'));
       fetchAllDocuments();
     } catch (e: any) {
-      message.error(e.message || '删除失败');
+      message.error(e.message || t('document.deleteFailed'));
     }
   };
 
   const handleReparse = async (docId: number) => {
     try {
       await documentApi.reparse(docId);
-      message.success('已重新解析');
+      message.success(t('document.reparsed'));
       fetchAllDocuments();
     } catch (e: any) {
-      message.error(e.message || '操作失败');
+      message.error(e.message || t('document.operationFailed'));
     }
   };
 
   const getKBName = (kbId: number) => {
     const kb = knowledgeBases.find((k) => k.id === kbId);
-    return kb?.name || `知识库 #${kbId}`;
+    return kb?.name || t('document.kbLabel', { kbId });
   };
 
   const columns = [
     {
-      title: '文件名',
+      title: t('document.filename'),
       dataIndex: 'filename',
       key: 'filename',
       render: (text: string) => (
@@ -135,28 +140,28 @@ export default function DocumentsPage() {
       ),
     },
     {
-      title: '类型',
+      title: t('document.type'),
       dataIndex: 'file_type',
       key: 'file_type',
       width: 80,
       render: (type: string) => <Tag>{(type || 'file').toUpperCase()}</Tag>,
     },
     {
-      title: '大小',
+      title: t('document.size'),
       dataIndex: 'file_size',
       key: 'file_size',
       width: 100,
       render: (size: number) => formatFileSize(size),
     },
     {
-      title: '所属知识库',
+      title: t('document.belongsToKB'),
       dataIndex: 'kb_id',
       key: 'kb_id',
       width: 180,
       render: (kbId: number) => <Tag color="geekblue">{getKBName(kbId)}</Tag>,
     },
     {
-      title: '状态',
+      title: t('document.status'),
       key: 'status',
       width: 140,
       render: (_: any, record: Document) => {
@@ -174,18 +179,25 @@ export default function DocumentsPage() {
       },
     },
     {
-      title: '创建时间',
+      title: t('document.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
       render: (t: string) => formatDateTime(t),
     },
     {
-      title: '操作',
+      title: t('document.actions'),
       key: 'actions',
-      width: 180,
+      width: 230,
       render: (_: any, record: Document) => (
         <Space>
+          <Button
+            size="small"
+            icon={<Eye size={14} />}
+            onClick={() => setPreviewDoc(record)}
+          >
+            {t('document.preview')}
+          </Button>
           <Button
             size="small"
             icon={<RefreshCw size={14} />}
@@ -196,14 +208,14 @@ export default function DocumentsPage() {
               record.status === 'chunking'
             }
           >
-            重新解析
+            {t('document.reparse')}
           </Button>
           <Popconfirm
-            title="确定删除该文档？"
-            description="删除后文档及其分块数据将永久丢失"
+            title={t('document.deleteConfirmTitle')}
+            description={t('document.deleteConfirmDesc')}
             onConfirm={() => handleDelete(record.id)}
-            okText="删除"
-            cancelText="取消"
+            okText={t('document.delete')}
+            cancelText={t('document.cancel')}
           >
             <Button size="small" danger icon={<Trash2 size={14} />} />
           </Popconfirm>
@@ -216,22 +228,22 @@ export default function DocumentsPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>
-          文档管理
+          {t('document.management')}
         </Title>
         <Space>
           <Select
-            placeholder="按知识库筛选"
+            placeholder={t('document.filterByKB')}
             allowClear
             style={{ width: 240 }}
             value={kbFilter}
             onChange={(val) => setKbFilter(val)}
             options={knowledgeBases.map((kb) => ({
-              label: `${kb.name} (${kb.doc_count || 0} 文档)`,
+              label: `${kb.name} (${kb.doc_count || 0} ${t('kb.documents', { count: kb.doc_count || 0 })})`,
               value: kb.id,
             }))}
           />
           <Button icon={<RefreshCw size={16} />} onClick={fetchAllDocuments} loading={loading}>
-            刷新
+            {t('document.refresh')}
           </Button>
         </Space>
       </div>
@@ -243,10 +255,10 @@ export default function DocumentsPage() {
           <Empty
             description={
               <span>
-                暂无文档
+                {t('document.noDocuments')}
                 <br />
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  请到知识库页面上传文档
+                  {t('document.noDocumentsHint')}
                 </Text>
               </span>
             }
@@ -260,6 +272,14 @@ export default function DocumentsPage() {
           />
         )}
       </Card>
+
+      <DocumentPreviewModal
+        open={!!previewDoc}
+        docId={previewDoc?.id || 0}
+        filename={previewDoc?.filename || ''}
+        fileType={previewDoc?.file_type || ''}
+        onClose={() => setPreviewDoc(null)}
+      />
     </div>
   );
 }

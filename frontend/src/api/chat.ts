@@ -63,6 +63,7 @@ export async function* streamChat(
   content: string,
   signal?: AbortSignal,
   timeoutMs = 60000,
+  model?: string,
 ): AsyncGenerator<SSEEvent> {
   const token = useAuthStore.getState().token;
 
@@ -70,11 +71,17 @@ export async function* streamChat(
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort('timeout'), timeoutMs);
 
+    // 转发外部 signal 的 abort 事件，使用 once 避免监听器堆积
+    const onExternalAbort = () => {
+      clearTimeout(timeoutId);
+      abortController.abort(signal?.reason);
+    };
     if (signal) {
-      signal.addEventListener('abort', () => {
-        clearTimeout(timeoutId);
+      if (signal.aborted) {
         abortController.abort(signal.reason);
-      });
+      } else {
+        signal.addEventListener('abort', onExternalAbort, { once: true });
+      }
     }
 
     try {
@@ -84,7 +91,7 @@ export async function* streamChat(
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, ...(model ? { model } : {}) }),
         signal: abortController.signal,
       });
 
@@ -109,19 +116,29 @@ export async function* streamChat(
       try {
         while (!ended) {
           const readPromise = reader.read();
+          // 每次迭代的 per-read timer，读取成功后必须清除，避免 timer 泄漏
+          let perReadTimer: ReturnType<typeof setTimeout> | undefined;
           const timeoutPromise = new Promise<never>((_, reject) => {
-            const id = setTimeout(() => {
-              clearTimeout(id);
+            perReadTimer = setTimeout(() => {
               const err = new Error('连接超时, 请检查网络或重试');
               err.name = 'TimeoutError';
               reject(err);
             }, timeoutMs);
           });
 
-          const { done, value } = await Promise.race([readPromise, timeoutPromise]).catch((e) => {
+          let done: boolean;
+          let value: Uint8Array | undefined;
+          try {
+            const result = await Promise.race([readPromise, timeoutPromise]);
+            done = result.done;
+            value = result.value;
+          } catch (e) {
             reader.cancel().catch(() => {});
             throw e;
-          });
+          } finally {
+            // 无论成功还是失败，都清除本次迭代的 timer
+            if (perReadTimer) clearTimeout(perReadTimer);
+          }
 
           if (done) break;
           lastEventTime = Date.now();
@@ -166,6 +183,10 @@ export async function* streamChat(
       throw e;
     } finally {
       clearTimeout(timeoutId);
+      // 清理外部 signal 监听器，防止内存泄漏
+      if (signal) {
+        signal.removeEventListener('abort', onExternalAbort);
+      }
     }
   };
 
@@ -173,3 +194,88 @@ export async function* streamChat(
 }
 
 export default chatApi;
+
+// ---------- 反馈 API ----------
+
+export interface FeedbackCreate {
+  rating: number; // 1 点赞, -1 点踩
+  comment?: string;
+  feedback_type?: string;
+}
+
+export interface FeedbackOut {
+  id: number;
+  message_id: number;
+  user_id: number;
+  rating: number;
+  comment: string | null;
+  feedback_type: string | null;
+  created_at: string;
+}
+
+export interface FeedbackStats {
+  total_feedback: number;
+  positive_rate: number;
+  negative_rate: number;
+  by_type: Record<string, number>;
+}
+
+export interface FeedbackDetail {
+  id: number;
+  message_id: number;
+  rating: number;
+  comment: string | null;
+  feedback_type: string | null;
+  created_at: string;
+  question: string;
+  answer: string;
+  session_id: number;
+  kb_id: number | null;
+}
+
+export const feedbackApi = {
+  /** 提交反馈 */
+  async submitFeedback(messageId: number, data: FeedbackCreate): Promise<FeedbackOut> {
+    const res = await client.post(`/chat/messages/${messageId}/feedback`, data);
+    return extractData(res);
+  },
+
+  /** 获取某条消息的反馈 */
+  async getFeedback(messageId: number): Promise<FeedbackOut | null> {
+    const res = await client.get(`/chat/messages/${messageId}/feedback`);
+    return extractData(res);
+  },
+
+  /** 获取反馈统计（admin） */
+  async getStats(kbId?: number): Promise<FeedbackStats> {
+    const res = await client.get('/chat/feedback/stats', {
+      params: kbId !== undefined ? { kb_id: kbId } : {},
+    });
+    return extractData(res);
+  },
+
+  /** 获取反馈分析（admin） */
+  async getAnalysis(kbId?: number, startDate?: string, endDate?: string): Promise<any> {
+    const res = await client.get('/chat/feedback/analysis', {
+      params: {
+        ...(kbId !== undefined ? { kb_id: kbId } : {}),
+        ...(startDate ? { start_date: startDate } : {}),
+        ...(endDate ? { end_date: endDate } : {}),
+      },
+    });
+    return extractData(res);
+  },
+
+  /** 获取低分反馈列表（admin） */
+  async getLowRated(params: {
+    kb_id?: number;
+    start_date?: string;
+    end_date?: string;
+    feedback_type?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<FeedbackDetail>> {
+    const res = await client.get('/chat/feedback/low-rated', { params });
+    return extractData(res) as PaginatedResponse<FeedbackDetail>;
+  },
+};

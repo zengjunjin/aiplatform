@@ -51,6 +51,12 @@ export const authApi = {
   async changePassword(params: ChangePasswordParams): Promise<void> {
     await client.put('/auth/password', params);
   },
+
+  /** 搜索用户（按用户名） */
+  async searchUsers(query: string): Promise<{ id: number; username: string }[]> {
+    const res = await client.get('/users/search', { params: { q: query } });
+    return extractData(res);
+  },
 };
 
 export default authApi;

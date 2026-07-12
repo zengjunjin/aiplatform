@@ -1,4 +1,4 @@
-﻿"""认证 API 集成测试 - 真实 PostgreSQL + Redis"""
+"""认证 API 集成测试 - 真实 PostgreSQL + Redis"""
 import pytest
 
 
@@ -111,7 +111,7 @@ class TestChangePassword:
         r = await client.put(
             "/api/v1/auth/password",
             headers={"Authorization": f"Bearer {access_token}"},
-            json={"old_password": user_creds["password"], "new_password": new_pwd},
+            json={"old_password": user_creds["password"], "new_password": new_pwd, "confirm_password": new_pwd},
         )
         assert r.status_code == 200
 

@@ -10,15 +10,17 @@ from app.schemas.auth import RegisterRequest, LoginRequest
 
 
 def validate_password_strength(password: str) -> None:
-    if len(password) < 8:
-        raise ValidationError("密码至少 8 个字符")
-    if not re.search(r'[A-Z]', password):
+    from app.config import settings
+
+    if len(password) < settings.PASSWORD_MIN_LENGTH:
+        raise ValidationError(f"密码至少 {settings.PASSWORD_MIN_LENGTH} 个字符")
+    if settings.PASSWORD_REQUIRE_UPPER and not re.search(r'[A-Z]', password):
         raise ValidationError("密码需包含至少一个大写字母")
-    if not re.search(r'[a-z]', password):
+    if settings.PASSWORD_REQUIRE_LOWER and not re.search(r'[a-z]', password):
         raise ValidationError("密码需包含至少一个小写字母")
-    if not re.search(r'[0-9]', password):
+    if settings.PASSWORD_REQUIRE_DIGIT and not re.search(r'[0-9]', password):
         raise ValidationError("密码需包含至少一个数字")
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]', password):
+    if settings.PASSWORD_REQUIRE_SPECIAL and not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]', password):
         raise ValidationError("密码需包含至少一个特殊字符")
 
 
@@ -98,6 +100,8 @@ async def add_to_blacklist(token: str, token_type: str = "access"):
     """Add token to Redis blacklist with TTL = remaining time"""
     from app.redis_client import get_redis
     redis = get_redis()
+    if not redis:
+        return
     payload = decode_token(token)
     if not payload:
         return
@@ -116,5 +120,7 @@ async def add_to_blacklist(token: str, token_type: str = "access"):
 async def is_blacklisted(token: str, token_type: str = "access") -> bool:
     from app.redis_client import get_redis
     redis = get_redis()
+    if not redis:
+        return False
     key = f"auth:blacklist:{token_type}:{token}"
     return await redis.exists(key) > 0

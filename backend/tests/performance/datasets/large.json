@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "name": "large",
+    "description": "10 个问题，模拟 10000 文档规模",
+    "doc_count": 10000,
+    "question_count": 10
+  },
+  "questions": [
+    {
+      "question": "操作系统中的虚拟内存管理机制是如何工作的？",
+      "expected_answer_keywords": ["虚拟内存", "页表", "MMU", "缺页", "TLB"],
+      "difficulty": "simple",
+      "question_type": "factual"
+    },
+    {
+      "question": "同步阻塞 IO 与异步非阻塞 IO 的模型差异和应用场景是什么？",
+      "expected_answer_keywords": ["BIO", "NIO", "AIO", "epoll", "事件循环"],
+      "difficulty": "simple",
+      "question_type": "comparative"
+    },
+    {
+      "question": "在深度学习中，Batch Normalization 和 Layer Normalization 的实现原理和适用场景有何不同？",
+      "expected_answer_keywords": ["BatchNorm", "LayerNorm", "标准化", "Transformer", "CNN"],
+      "difficulty": "medium",
+      "question_type": "comparative"
+    },
+    {
+      "question": "什么是服务网格（Service Mesh）？它解决了微服务架构中的哪些问题？",
+      "expected_answer_keywords": ["Service Mesh", "Sidecar", "Istio", "流量管理", "可观测性"],
+      "difficulty": "medium",
+      "question_type": "conceptual"
+    },
+    {
+      "question": "在大型语言模型的训练中，LoRA 和 QLoRA 等参数高效微调方法的原理是什么？",
+      "expected_answer_keywords": ["LoRA", "QLoRA", "低秩", "微调", "量化"],
+      "difficulty": "medium",
+      "question_type": "conceptual"
+    },
+    {
+      "question": "如何设计一个能够处理每秒百万级查询的全文搜索引擎？需要考虑哪些架构层面的权衡？",
+      "expected_answer_keywords": ["倒排索引", "分片", "副本", "缓存", "最终一致性"],
+      "difficulty": "complex",
+      "question_type": "reasoning"
+    },
+    {
+      "question": "在 RAG 知识库中，动态文档更新（增量索引）与静态全量重建各有什么技术挑战和适用场景？",
+      "expected_answer_keywords": ["增量索引", "全量重建", "向量数据库", "一致性", "性能"],
+      "difficulty": "complex",
+      "question_type": "reasoning"
+    },
+    {
+      "question": "什么是 TCP 三次握手和四次挥手？",
+      "expected_answer_keywords": ["SYN", "ACK", "FIN", "三次握手", "四次挥手"],
+      "difficulty": "simple",
+      "question_type": "factual"
+    },
+    {
+      "question": "Git 中 merge 和 rebase 的区别及各自的使用场景是什么？",
+      "expected_answer_keywords": ["merge", "rebase", "合并", "变基", "提交历史"],
+      "difficulty": "medium",
+      "question_type": "comparative"
+    },
+    {
+      "question": "在构建大规模 RAG 系统时，如何平衡检索延迟、召回率和准确率三者之间的关系？",
+      "expected_answer_keywords": ["延迟", "召回率", "准确率", "权衡", "混合检索"],
+      "difficulty": "complex",
+      "question_type": "reasoning"
+    }
+  ]
+}

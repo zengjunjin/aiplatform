@@ -6,8 +6,6 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 import time
 import uuid
-import base64
-import json
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.metrics import REQUEST_TOTAL, REQUEST_LATENCY, REQUEST_IN_PROGRESS
 
@@ -16,23 +14,20 @@ def _rate_limit_key(request: Request) -> str:
     """限流 key: 优先使用 JWT 中的 user_id, fallback 到 IP。
 
     对于登录用户使用 user_id 可避免共享 IP (如公司/校园网络) 的用户互相影响。
-    JWT 解析不验证签名 (限流是辅助措施, 认证由 get_current_user 负责)。
+    验证 JWT 签名防止伪造 sub 字段绕过限流。
     """
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):
         token = auth[7:].strip()
         try:
-            # JWT 格式: header.payload.signature, 只读 payload
-            parts = token.split(".")
-            if len(parts) >= 2:
-                # base64url decode (补齐 padding)
-                payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
-                payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
+            from app.core.security import decode_token
+            payload = decode_token(token)
+            if payload:
                 sub = payload.get("sub") or payload.get("user_id")
                 if sub:
                     return f"user:{sub}"
         except Exception:
-            pass  # 解析失败 fallback 到 IP
+            pass  # 验证失败 fallback 到 IP
     return get_remote_address(request)
 
 
@@ -76,21 +71,37 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 class PrometheusMiddleware(BaseHTTPMiddleware):
     EXCLUDE_PATHS = {"/metrics", "/health"}
 
+    @staticmethod
+    def _get_path_template(request: Request) -> str:
+        """获取路由模板路径, 避免 /api/v1/users/123 等路径参数导致指标基数爆炸。
+
+        优先使用 FastAPI 路由的 path 模板; 取不到时回退到原始路径。
+        """
+        route = request.scope.get("route")
+        if route is not None:
+            path = getattr(route, "path", None)
+            if isinstance(path, str):
+                return path
+        return request.url.path
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        method = request.method
 
         if path in self.EXCLUDE_PATHS:
             return await call_next(request)
+
+        method = request.method
+        # 使用路由模板路径, 避免路径参数导致 Prometheus 指标基数爆炸
+        metric_path = self._get_path_template(request)
 
         REQUEST_IN_PROGRESS.inc()
         start_time = time.time()
         try:
             response = await call_next(request)
             status_code = str(response.status_code)
-            REQUEST_TOTAL.labels(method=method, path=path, status_code=status_code).inc()
+            REQUEST_TOTAL.labels(method=method, path=metric_path, status_code=status_code).inc()
             latency = time.time() - start_time
-            REQUEST_LATENCY.labels(method=method, path=path).observe(latency)
+            REQUEST_LATENCY.labels(method=method, path=metric_path).observe(latency)
             return response
         finally:
             REQUEST_IN_PROGRESS.dec()

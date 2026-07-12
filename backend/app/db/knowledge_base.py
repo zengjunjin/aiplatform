@@ -1,5 +1,6 @@
-﻿from datetime import datetime
+from datetime import datetime
 from sqlalchemy import Column, BigInteger, String, Text, Integer, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -13,6 +14,7 @@ class KnowledgeBase(Base):
     owner_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     doc_count = Column(Integer, nullable=False, default=0)
     chunk_count = Column(Integer, nullable=False, default=0)
+    collaborators = Column(JSONB, default=list, nullable=False, server_default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

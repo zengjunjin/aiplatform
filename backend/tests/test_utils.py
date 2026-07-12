@@ -169,10 +169,10 @@ class TestDeleteKbDir:
 class TestSaveUploadFile:
     def test_save_upload_file_success(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        # 构造 UploadFile-like 对象
+        # 构造 UploadFile-like 对象（模拟流式分块读取：首次返回内容，之后返回空）
         upload = MagicMock()
         upload.filename = "test.md"
-        upload.file.read.return_value = b"# hello"
+        upload.file.read.side_effect = [b"# hello", b""]
 
         path, file_type, size, hash_ = save_upload_file(upload, kb_id=1, doc_id=10)
         assert os.path.exists(path)
@@ -187,7 +187,8 @@ class TestSaveUploadFile:
             mock_settings.MAX_FILE_SIZE_MB = 1
             upload = MagicMock()
             upload.filename = "big.md"
-            upload.file.read.return_value = b"x" * (2 * 1024 * 1024)  # 2MB
+            # 模拟 2MB 内容一次性返回（超过 1MB 限制）
+            upload.file.read.side_effect = [b"x" * (2 * 1024 * 1024), b""]
 
             with pytest.raises(ValueError, match="File too large"):
                 save_upload_file(upload, kb_id=1, doc_id=10)
@@ -196,7 +197,7 @@ class TestSaveUploadFile:
         monkeypatch.chdir(tmp_path)
         upload = MagicMock()
         upload.filename = "bad.exe"
-        upload.file.read.return_value = b"binary"
+        upload.file.read.side_effect = [b"binary", b""]
 
         with pytest.raises(ValueError, match="Unsupported file type"):
             save_upload_file(upload, kb_id=1, doc_id=10)

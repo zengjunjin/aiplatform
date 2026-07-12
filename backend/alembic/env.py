@@ -14,6 +14,8 @@ from app.db.document import Document
 from app.db.document_chunk import DocumentChunk
 from app.db.chat_session import ChatSession
 from app.db.chat_message import ChatMessage
+from app.db.evaluation import EvaluationRun, EvaluationResult
+from app.db.feedback import MessageFeedback
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)

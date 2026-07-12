@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from sqlalchemy import Column, BigInteger, String, Text, Integer, DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -18,11 +18,12 @@ class Document(Base):
     status = Column(String(20), nullable=False, default="pending")
     chunk_count = Column(Integer, nullable=False, default=0)
     error_message = Column(Text, nullable=True)
+    deleted_at = Column(DateTime, nullable=True, default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("kb_id", "file_hash", name="uq_kb_file_hash"),
+        UniqueConstraint("kb_id", "file_hash", name="uq_doc_kb_hash"),
     )
 
     kb = relationship("KnowledgeBase", backref="documents")

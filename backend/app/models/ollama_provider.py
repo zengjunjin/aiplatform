@@ -26,6 +26,19 @@ class OllamaLLMProvider(BaseLLMProvider):
     def __init__(self, model: str | None = None, host: str | None = None):
         self.model = model or settings.LLM_MODEL
         self.host = host or settings.OLLAMA_HOST
+        self._healthy = True
+
+    @property
+    def provider_name(self) -> str:
+        return "ollama"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
+
+    @property
+    def is_healthy(self) -> bool:
+        return self._healthy
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -62,7 +75,9 @@ class OllamaLLMProvider(BaseLLMProvider):
             f"Ollama LLM chat retry attempt {retry_state.attempt_number} after error: {retry_state.outcome.exception()}"
         ),
     )
-    async def chat(self, messages: list[dict], temperature: float = 0.7) -> str:
+    async def chat(self, messages: list[dict], temperature: float = 0.7, stream: bool = False, **kwargs) -> str | AsyncIterator[str]:
+        if stream:
+            return self.chat_stream(messages, temperature=temperature)
         async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{self.host}/api/chat",
@@ -76,6 +91,21 @@ class OllamaLLMProvider(BaseLLMProvider):
             resp.raise_for_status()
             data = resp.json()
             return data.get("message", {}).get("content", "")
+
+    async def health_check(self) -> bool:
+        '''通过 Ollama 的 /api/tags 端点进行健康检查'''
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{self.host}/api/tags")
+                if resp.status_code == 200:
+                    self._healthy = True
+                    return True
+                self._healthy = False
+                return False
+        except Exception as e:
+            logger.warning(f"Ollama health check failed: {e}")
+            self._healthy = False
+            return False
 
 
 class OllamaEmbeddingProvider(BaseEmbeddingProvider):

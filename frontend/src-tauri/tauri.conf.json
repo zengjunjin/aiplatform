@@ -15,14 +15,15 @@
         "title": "RAG 知识库平台",
         "width": 1200,
         "height": 800,
+        "resizable": true,
+        "decorations": true,
         "minWidth": 800,
         "minHeight": 600,
-        "resizable": true,
-        "decorations": true
+        "additionalBrowserArgs": "--remote-debugging-port=9222"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8000"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8002 http://localhost:8000"
     },
     "withGlobalTauri": true
   },

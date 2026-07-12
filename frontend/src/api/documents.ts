@@ -2,6 +2,16 @@ import client, { extractData, API_BASE } from './client';
 import { useAuthStore } from '../store/auth';
 import type { Document, DocumentProgress } from '../types';
 
+export interface DocumentPreviewData {
+  filename: string;
+  file_type: string;
+  content: string;
+  page: number;
+  page_size: number;
+  total_lines: number;
+  total_pages: number;
+}
+
 export const documentApi = {
   /** 获取文档列表 */
   async list(kbId: number, page = 1, pageSize = 20): Promise<{ items: Document[]; total: number; page: number; page_size: number; total_pages: number }> {
@@ -30,6 +40,7 @@ export const documentApi = {
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/documents/upload`);
+    xhr.timeout = 120000; // 上传超时 2 分钟
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     if (onProgress) {
@@ -75,6 +86,14 @@ export const documentApi = {
   /** 获取文档处理进度 */
   async getProgress(docId: number): Promise<DocumentProgress> {
     const res = await client.get(`/documents/${docId}/progress`);
+    return extractData(res);
+  },
+
+  /** 预览文档内容 */
+  async preview(docId: number, page = 1, pageSize = 50): Promise<DocumentPreviewData> {
+    const res = await client.get(`/documents/${docId}/preview`, {
+      params: { page, page_size: pageSize },
+    });
     return extractData(res);
   },
 };

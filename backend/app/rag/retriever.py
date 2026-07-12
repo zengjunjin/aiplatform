@@ -1,6 +1,7 @@
 """Hybrid retrieval: BM25 + vector + RRF fusion."""
-import logging
+import asyncio
 from typing import Optional
+from loguru import logger
 from app.models.factory import ModelFactory
 from app.rag.bm25 import bm25_store
 from app.config import settings
@@ -8,15 +9,14 @@ from app.core.metrics import RAG_RETRIEVAL_TOTAL
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
-logger = logging.getLogger(__name__)
-
-
 class HybridRetriever:
     """BM25 + vector retrieval + RRF fusion."""
 
     def __init__(self):
         self._qdrant_client: Optional[QdrantClient] = None
         self._embedding = None
+        # chunks 元数据缓存: kb_id -> list[dict], 避免每次检索都全量加载
+        self._chunks_cache: dict[int, list[dict]] = {}
 
     @property
     def qdrant(self):
@@ -36,13 +36,14 @@ class HybridRetriever:
     def _collection_name(self, kb_id: int) -> str:
         return f"chunks_kb_{kb_id}"
 
-    def _ensure_collection(self, kb_id: int):
-        """Ensure collection exists, create if not."""
+    async def _ensure_collection(self, kb_id: int):
+        """Ensure collection exists, create if not (async, 不阻塞事件循环)."""
         name = self._collection_name(kb_id)
         try:
-            self.qdrant.get_collection(name)
+            await asyncio.to_thread(self.qdrant.get_collection, name)
         except Exception:
-            self.qdrant.create_collection(
+            await asyncio.to_thread(
+                self.qdrant.create_collection,
                 collection_name=name,
                 vectors_config=VectorParams(
                     size=settings.EMBEDDING_DIM,
@@ -55,22 +56,32 @@ class HybridRetriever:
         """Run hybrid retrieval and return fused top-k chunks."""
         RAG_RETRIEVAL_TOTAL.labels(kb_id=str(kb_id)).inc()
         vec_results = await self._vector_search(query, kb_id, top_k * 2)
-        # Bug 4: Load chunks from DB for BM25 context enrichment,
-        # otherwise bm25_store.search returns empty content.
-        chunks_for_bm25 = await self._load_chunks_for_bm25(kb_id)
+        # 使用缓存的 chunks 元数据，避免每次检索都全量加载
+        chunks_for_bm25 = await self._get_chunks_for_bm25(kb_id)
         bm25_results = await bm25_store.search(
             kb_id, query, top_k * 2, chunks=chunks_for_bm25
         )
         merged = self._rrf_fuse(vec_results, bm25_results)
         return merged[:top_k]
 
-    async def _load_chunks_for_bm25(self, kb_id: int) -> list[dict]:
-        """Load all chunks of a KB from DB for BM25 search.
+    async def _get_chunks_for_bm25(self, kb_id: int) -> list[dict]:
+        """获取 KB 的所有 chunks 元数据（带缓存）。
 
-        Bug 4: bm25_store.search needs the original chunks list to map
-        ranked indices back to chunk_id / content. Without this, the
-        BM25 path returns chunks with empty content.
+        首次调用从 DB 加载并缓存，后续直接返回缓存。
+        通过 invalidate_chunks_cache 在文档增删时主动失效。
         """
+        if kb_id in self._chunks_cache:
+            return self._chunks_cache[kb_id]
+        chunks = await self._load_chunks_for_bm25(kb_id)
+        self._chunks_cache[kb_id] = chunks
+        return chunks
+
+    def invalidate_chunks_cache(self, kb_id: int):
+        """文档增删后失效该 KB 的 chunks 缓存。"""
+        self._chunks_cache.pop(kb_id, None)
+
+    async def _load_chunks_for_bm25(self, kb_id: int) -> list[dict]:
+        """Load all chunks of a KB from DB for BM25 search."""
         try:
             from app.database import async_session
             from sqlalchemy import text
@@ -95,16 +106,17 @@ class HybridRetriever:
                     for r in rows
                 ]
         except Exception as e:
-            logger.warning("_load_chunks_for_bm25 failed: %s", e)
+            logger.warning("_load_chunks_for_bm25 failed: {}", e)
             return []
 
     async def _vector_search(self, query: str, kb_id: int,
                              top_k: int) -> list[dict]:
         try:
             query_vec = await self.embedding.embed([query])
-            self._ensure_collection(kb_id)
+            await self._ensure_collection(kb_id)
             # Bug 2: qdrant-client >= 1.10 removed .search(); use .query_points().
-            response = self.qdrant.query_points(
+            response = await asyncio.to_thread(
+                self.qdrant.query_points,
                 collection_name=self._collection_name(kb_id),
                 query=query_vec[0],
                 limit=top_k,
@@ -125,12 +137,12 @@ class HybridRetriever:
                 })
             return chunks
         except Exception as e:
-            logger.warning("vector search failed: %s", e)
+            logger.warning("vector search failed: {}", e)
             return []
 
     async def add_chunks(self, kb_id: int, chunks: list[dict], vectors: list[list[float]]):
         """Add chunks to Qdrant collection."""
-        self._ensure_collection(kb_id)
+        await self._ensure_collection(kb_id)
         points = []
         for i, (chunk, vec) in enumerate(zip(chunks, vectors)):
             point_id = chunk.get("chunk_id") or chunk.get("id") or i + 1
@@ -148,10 +160,13 @@ class HybridRetriever:
                     "page": chunk.get("page"),
                 },
             ))
-        self.qdrant.upsert(
+        await asyncio.to_thread(
+            self.qdrant.upsert,
             collection_name=self._collection_name(kb_id),
             points=points,
         )
+        # 失效 chunks 缓存，下次检索会重新加载
+        self.invalidate_chunks_cache(kb_id)
 
     def delete_by_doc_id(self, kb_id: int, doc_id: int):
         """Delete all chunks for a document."""
@@ -168,14 +183,18 @@ class HybridRetriever:
                 ),
             )
         except Exception as e:
-            logger.warning("delete_by_doc_id failed: %s", e)
+            logger.warning("delete_by_doc_id failed: {}", e)
+        # 失效 chunks 缓存
+        self.invalidate_chunks_cache(kb_id)
 
     def delete_collection(self, kb_id: int):
         """Delete entire collection for a knowledge base."""
         try:
             self.qdrant.delete_collection(self._collection_name(kb_id))
         except Exception as e:
-            print(f"[WARN] delete_collection failed: {e}")
+            logger.warning("delete_collection failed: {}", e)
+        # 失效 chunks 缓存
+        self.invalidate_chunks_cache(kb_id)
 
     def _rrf_fuse(self, vec_results: list[dict],
                   bm25_results: list[dict], k: int = 60) -> list[dict]:

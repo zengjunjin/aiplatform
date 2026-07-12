@@ -6,6 +6,8 @@ from app.db.document_chunk import DocumentChunk
 from app.db.chat_session import ChatSession
 from app.db.chat_message import ChatMessage
 from app.db.audit_log import AuditLog
+from app.db.evaluation import EvaluationRun, EvaluationResult
+from app.db.feedback import MessageFeedback
 
 __all__ = [
     "Base",
@@ -16,4 +18,7 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "AuditLog",
+    "EvaluationRun",
+    "EvaluationResult",
+    "MessageFeedback",
 ]

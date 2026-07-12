@@ -113,6 +113,7 @@ async def upload_document(
         logger.info(f"Document uploaded: id={doc.id} kb={kb_id} user={user.id} name={safe_filename} size={file_size}")
 
     except ValueError as e:
+        await db.rollback()
         await db.delete(doc)
         await db.commit()
         msg = str(e)
@@ -132,6 +133,7 @@ async def upload_document(
     except AppException:
         raise
     except Exception as e:
+        await db.rollback()
         await db.delete(doc)
         await db.commit()
         logger.error(f"Upload failed: {e}")
@@ -240,3 +242,57 @@ async def reparse_document(
     task = parse_document_task.delay(doc.id)
     logger.info(f"Document reparse: id={doc_id} user={user.id}")
     return ok(data={"document_id": doc.id, "task_id": task.id})
+
+
+@router.get("/{doc_id}/preview")
+async def preview_document(
+    doc_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview document content with pagination (lines)."""
+    doc = await document_service.get_document(doc_id, user.id, db)
+
+    # Parse the file to get raw text
+    from app.parsers import get_parser
+    parser = get_parser(doc.file_path)
+    if not parser:
+        raise AppException(
+            code=ErrorCode.UNSUPPORTED_FILE_TYPE,
+            message=f"不支持预览的文件格式: {doc.file_type}",
+            status_code=400,
+        )
+    try:
+        raw_text = parser.parse(doc.file_path)
+    except Exception as e:
+        logger.error(f"Preview parse failed: doc={doc_id} {e}")
+        raise AppException(
+            code=ErrorCode.DOC_PARSE_FAILED,
+            message="文档解析失败，无法预览",
+            status_code=500,
+        )
+
+    lines = raw_text.split("\n")
+    total_lines = len(lines)
+    total_pages = (total_lines + page_size - 1) // page_size if page_size > 0 else 1
+
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_lines = lines[start:end]
+
+    return ok(data={
+        "filename": doc.filename,
+        "file_type": doc.file_type,
+        "content": "\n".join(page_lines),
+        "page": page,
+        "page_size": page_size,
+        "total_lines": total_lines,
+        "total_pages": total_pages,
+    })

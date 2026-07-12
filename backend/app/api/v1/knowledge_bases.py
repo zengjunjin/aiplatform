@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, check_kb_permission
 from app.services import kb_service
-from app.schemas.kb import KBCreate, KBUpdate, KBOut
+from app.schemas.kb import KBCreate, KBUpdate, KBOut, CollaboratorAdd, CollaboratorOut
 from app.schemas.common import ok, paginated_ok
 from app.db.user import User
 
@@ -61,3 +61,37 @@ async def delete_kb(
 ):
     await kb_service.delete_kb(kb_id, user.id, db)
     return ok(message="Deleted")
+
+
+# --- Collaboration endpoints ---
+
+@router.post("/{kb_id}/collaborators")
+async def add_collaborator(
+    kb_id: int,
+    req: CollaboratorAdd,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await kb_service.add_collaborator(kb_id, user.id, req.user_id, req.permission, db)
+    return ok(data=data)
+
+
+@router.delete("/{kb_id}/collaborators/{user_id}")
+async def remove_collaborator(
+    kb_id: int,
+    user_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await kb_service.remove_collaborator(kb_id, user.id, user_id, db)
+    return ok(message="Removed")
+
+
+@router.get("/{kb_id}/collaborators")
+async def get_collaborators(
+    kb_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await kb_service.get_collaborators(kb_id, user.id, db)
+    return ok(data=data)

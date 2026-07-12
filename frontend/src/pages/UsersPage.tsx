@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Table,
   Tag,
@@ -12,27 +12,34 @@ import {
   Empty,
 } from 'antd';
 import { Users, Shield, UserX } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { usersApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import type { User } from '../types';
+import type { TablePaginationConfig } from 'antd/es/table';
 
 export default function UsersPage() {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const currentUser = useAuthStore((s) => s.user);
   const { message } = AntdApp.useApp();
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async (p = page, ps = pageSize) => {
     setLoading(true);
     try {
-      const data = await usersApi.list({ page: 1, page_size: 50 });
-      setUsers(data.items || (data as any) || []);
+      const data = await usersApi.list({ page: p, page_size: ps });
+      setUsers(data.items || []);
+      setTotal(data.total || 0);
     } catch (e: any) {
-      message.error(e.message || '获取用户列表失败');
+      message.error(e.message || t('user.loadFailed'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, message, t]);
 
   useEffect(() => {
     fetchUsers();
@@ -41,90 +48,90 @@ export default function UsersPage() {
   const handleRoleChange = async (userId: number, role: 'user' | 'admin') => {
     try {
       await usersApi.updateRole(userId, role);
-      message.success('角色已更新');
-      fetchUsers();
+      message.success(t('user.roleUpdated'));
+      fetchUsers(page, pageSize);
     } catch (e: any) {
-      message.error(e.message || '操作失败');
+      message.error(e.message || t('user.operationFailed'));
     }
   };
 
   const handleStatusChange = async (userId: number, active: boolean) => {
     try {
       await usersApi.updateStatus(userId, active);
-      message.success(active ? '用户已启用' : '用户已禁用');
-      fetchUsers();
+      message.success(active ? t('user.userEnabled') : t('user.userDisabled'));
+      fetchUsers(page, pageSize);
     } catch (e: any) {
-      message.error(e.message || '操作失败');
+      message.error(e.message || t('user.operationFailed'));
     }
   };
 
   const columns = [
     {
-      title: 'ID',
+      title: t('user.id'),
       dataIndex: 'id',
       key: 'id',
       width: 80,
     },
     {
-      title: '用户名',
+      title: t('user.username'),
       dataIndex: 'username',
       key: 'username',
     },
     {
-      title: '邮箱',
+      title: t('user.email'),
       dataIndex: 'email',
       key: 'email',
     },
     {
-      title: '角色',
+      title: t('user.role'),
       dataIndex: 'role',
       key: 'role',
       render: (role: string) => (
         <Tag color={role === 'admin' ? 'red' : 'blue'}>
-          {role === 'admin' ? '管理员' : '普通用户'}
+          {role === 'admin' ? t('user.admin') : t('user.normalUser')}
         </Tag>
       ),
     },
     {
-      title: '状态',
+      title: t('user.status'),
       dataIndex: 'is_active',
       key: 'is_active',
       render: (active: boolean) => (
         <Tag color={active ? 'green' : 'default'}>
-          {active ? '正常' : '禁用'}
+          {active ? t('user.active') : t('user.disabled')}
         </Tag>
       ),
     },
     {
-      title: '操作',
+      title: t('user.actions'),
       key: 'actions',
       width: 280,
       render: (_: any, record: User) => (
         <Space>
           {record.id === currentUser?.id ? (
-            <Tag color="default">当前用户</Tag>
+            <Tag color="default">{t('user.currentUser')}</Tag>
           ) : (
             <>
               <Popconfirm
-                title={`确定将用户设为${record.role === 'admin' ? '普通用户' : '管理员'}？`}
+                title={record.role === 'admin' ? t('user.setUserConfirm') : t('user.setAdminConfirm')}
                 onConfirm={() => handleRoleChange(record.id, record.role === 'admin' ? 'user' : 'admin')}
-                okText="确定"
-                cancelText="取消"
+                okText={t('user.confirm')}
+                cancelText={t('user.cancel')}
               >
                 <Button
                   type="link"
                   size="small"
                   icon={<Shield size={14} />}
                 >
-                  {record.role === 'admin' ? '取消管理员' : '设为管理员'}
+                  {record.role === 'admin' ? t('user.removeAdmin') : t('user.setAdmin')}
                 </Button>
               </Popconfirm>
               <Popconfirm
-                title={record.is_active ? '确定禁用该用户？' : '确定启用该用户？'}
-                description={record.is_active ? '禁用后用户将无法登录' : ''}
+                title={record.is_active ? t('user.disableConfirm') : t('user.enableConfirm')}
+                description={record.is_active ? t('user.disableHint') : ''}
                 onConfirm={() => handleStatusChange(record.id, !record.is_active)}
-                okText="确定"
-                cancelText="取消"
+                okText={t('user.confirm')}
+                cancelText={t('user.cancel')}
               >
                 <Button
                   type="link"
@@ -132,7 +139,7 @@ export default function UsersPage() {
                   danger={record.is_active}
                   icon={<UserX size={14} />}
                 >
-                  {record.is_active ? '禁用' : '启用'}
+                  {record.is_active ? t('user.disable') : t('user.enable')}
                 </Button>
               </Popconfirm>
             </>
@@ -148,21 +155,31 @@ export default function UsersPage() {
         title={
           <Space>
             <Users size={20} />
-            <span>用户管理</span>
-            <Tag color="blue">{users.length} 个用户</Tag>
+            <span>{t('user.management')}</span>
+            <Tag color="blue">{t('user.userCount', { count: total })}</Tag>
           </Space>
         }
       >
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} />
         ) : users.length === 0 ? (
-          <Empty description="暂无用户" />
+          <Empty description={t('user.noUsers')} />
         ) : (
           <Table
             dataSource={users}
             columns={columns}
             rowKey="id"
-            pagination={{ pageSize: 20 }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              onChange: (p, ps) => {
+                setPage(p);
+                setPageSize(ps);
+                fetchUsers(p, ps);
+              },
+            }}
           />
         )}
       </Card>

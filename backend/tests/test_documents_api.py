@@ -126,7 +126,9 @@ class TestGetProgress:
 class TestDeleteDocument:
     @pytest.mark.asyncio
     async def test_delete_document_calls_service(self, user, db):
-        with patch("app.services.document_service.delete_document", new=AsyncMock()) as mock_del:
+        doc = _make_doc(doc_id=10, status="done")
+        with patch("app.services.document_service.get_document", new=AsyncMock(return_value=doc)), \
+             patch("app.services.document_service.delete_document", new=AsyncMock()) as mock_del:
             result = await documents.delete_document(doc_id=10, user=user, db=db)
         mock_del.assert_awaited_once_with(10, 1, db)
         assert "message" in result

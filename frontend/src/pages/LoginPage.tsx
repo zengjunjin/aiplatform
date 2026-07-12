@@ -2,11 +2,13 @@ import { Form, Input, Button, Typography, App as AntdApp } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Sparkles } from 'lucide-react';
 
 const { Title, Text } = Typography;
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
@@ -16,10 +18,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(values.username, values.password);
-      msg.success('登录成功');
+      msg.success(t('auth.loginSuccess'));
       navigate('/');
     } catch (e: any) {
-      msg.error(e.message || '登录失败');
+      msg.error(e.message || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -84,10 +86,10 @@ export default function LoginPage() {
             <Sparkles size={28} color="#ffffff" strokeWidth={1.8} />
           </div>
           <Title level={3} style={{ marginBottom: 8, fontWeight: 700, color: '#111827' }}>
-            欢迎回来
+            {t('auth.welcomeBack')}
           </Title>
           <Text style={{ color: '#6b7280', fontSize: 14 }}>
-            登录您的 RAG 平台账户
+            {t('auth.loginSubtitle')}
           </Text>
         </div>
 
@@ -108,17 +110,17 @@ export default function LoginPage() {
           >
             <Form.Item
               name="username"
-              label="用户名"
-              rules={[{ required: true, message: '请输入用户名' }]}
+              label={t('auth.username')}
+              rules={[{ required: true, message: t('auth.usernameRequired') }]}
             >
-              <Input placeholder="请输入用户名" size="large" />
+              <Input placeholder={t('auth.usernamePlaceholder')} size="large" />
             </Form.Item>
             <Form.Item
               name="password"
-              label="密码"
-              rules={[{ required: true, message: '请输入密码' }]}
+              label={t('auth.password')}
+              rules={[{ required: true, message: t('auth.passwordRequired') }]}
             >
-              <Input.Password placeholder="请输入密码" size="large" />
+              <Input.Password placeholder={t('auth.passwordPlaceholder')} size="large" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 20, marginTop: 8 }}>
               <Button
@@ -132,12 +134,12 @@ export default function LoginPage() {
                   fontWeight: 500,
                 }}
               >
-                登录
+                {t('auth.login')}
               </Button>
             </Form.Item>
             <div style={{ textAlign: 'center' }}>
                 <span style={{ color: '#6b7280', fontSize: 13 }}>
-                  还没有账户？{' '}
+                  {t('auth.noAccount')}{' '}
                   <Button
                     type="text"
                     onClick={() => navigate('/register')}
@@ -150,7 +152,7 @@ export default function LoginPage() {
                       borderRadius: 0,
                     }}
                   >
-                    立即注册
+                    {t('auth.registerNow')}
                   </Button>
                 </span>
               </div>
@@ -159,7 +161,7 @@ export default function LoginPage() {
 
         <div style={{ textAlign: 'center', marginTop: 32 }}>
           <Text style={{ color: '#9ca3af', fontSize: 12 }}>
-            © 2026 RAG Platform · 智能知识库系统
+            {t('auth.copyright')}
           </Text>
         </div>
       </div>

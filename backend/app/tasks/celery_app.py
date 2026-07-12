@@ -1,4 +1,5 @@
-﻿from celery import Celery
+from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 celery_app = Celery(
@@ -18,5 +19,16 @@ celery_app.conf.update(
     task_soft_time_limit=240,
     worker_prefetch_multiplier=1,
 )
+
+# 定时任务调度
+celery_app.conf.beat_schedule = {
+    "feedback-analysis-weekly": {
+        "task": "app.tasks.feedback_analysis_task.run_feedback_analysis",
+        "schedule": crontab(hour=3, minute=0, day_of_week=0),  # 每周日凌晨 3:00
+        "options": {
+            "expires": 3600,  # 任务过期时间 1 小时
+        },
+    },
+}
 
 celery_app.autodiscover_tasks(["app.tasks"])

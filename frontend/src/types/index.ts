@@ -15,8 +15,20 @@ export interface KnowledgeBase {
   owner_id: number;
   doc_count: number;
   chunk_count: number;
+  collaborators: CollaboratorEntry[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CollaboratorEntry {
+  user_id: number;
+  permission: string;
+}
+
+export interface CollaboratorInfo {
+  user_id: number;
+  username: string;
+  permission: string;
 }
 
 export interface Document {
@@ -73,12 +85,15 @@ export interface Reference {
 }
 
 export interface SSEEvent {
-  event: 'searching' | 'delta' | 'done' | 'error';
+  event: 'searching' | 'delta' | 'done' | 'error' | 'model' | 'cancelled' | 'warn';
   chunks_found?: number;
   content?: string;
   message_id?: number;
   references?: Reference[];
   message?: string;
+  model_name?: string;
+  display_name?: string;
+  fallback?: boolean;
 }
 
 export interface ApiResponse<T = any> {
@@ -121,4 +136,38 @@ export interface LoginResponse {
   token_type: string;
   expires_in: number;
   user?: User;
+}
+
+export interface EvaluationRun {
+  id: number;
+  knowledge_base_id: number;
+  status: string;
+  metrics: EvaluationMetrics | null;
+  total_questions: number;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface EvaluationMetrics {
+  faithfulness: number;
+  answer_relevancy: number;
+  context_precision: number;
+  context_recall: number;
+}
+
+export interface MessageFeedback {
+  id: number;
+  message_id: number;
+  rating: number;
+  comment: string | null;
+  feedback_type: FeedbackType;
+  created_at: string;
+}
+
+export type FeedbackType = 'not_accurate' | 'incomplete' | 'hallucination' | 'irrelevant' | 'too_verbose' | 'too_brief' | 'other';
+
+export interface ModelInfo {
+  name: string;
+  display_name: string;
+  status: string;
 }

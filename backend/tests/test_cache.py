@@ -18,28 +18,28 @@ def redis_mock():
 class TestCacheGet:
     @pytest.mark.asyncio
     async def test_cache_get_returns_none_when_redis_unavailable(self):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=None)):
+        with patch("app.core.cache.get_redis", return_value=None):
             result = await cache.cache_get("foo")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_cache_get_returns_none_when_key_missing(self, redis_mock):
         redis_mock.get = AsyncMock(return_value=None)
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_get("foo")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_cache_get_returns_deserialized_value(self, redis_mock):
         redis_mock.get = AsyncMock(return_value=json.dumps({"a": 1}))
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_get("foo")
         assert result == {"a": 1}
 
     @pytest.mark.asyncio
     async def test_cache_get_handles_exception_returns_none(self, redis_mock):
         redis_mock.get = AsyncMock(side_effect=Exception("redis down"))
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             # 不抛异常，返回 None
             result = await cache.cache_get("foo")
         assert result is None
@@ -48,7 +48,7 @@ class TestCacheGet:
     async def test_cache_get_handles_invalid_json(self, redis_mock):
         """Redis 中存了非法 JSON → 返回 None"""
         redis_mock.get = AsyncMock(return_value="not a json")
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_get("foo")
         assert result is None
 
@@ -56,13 +56,13 @@ class TestCacheGet:
 class TestCacheSet:
     @pytest.mark.asyncio
     async def test_cache_set_returns_false_when_redis_unavailable(self):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=None)):
+        with patch("app.core.cache.get_redis", return_value=None):
             result = await cache.cache_set("k", "v")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_cache_set_calls_setex_with_ttl(self, redis_mock):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_set("k", {"a": 1}, ttl=600)
         assert result is True
         redis_mock.setex.assert_awaited_once()
@@ -74,7 +74,7 @@ class TestCacheSet:
 
     @pytest.mark.asyncio
     async def test_cache_set_default_ttl_is_300(self, redis_mock):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             await cache.cache_set("k", "v")
         args = redis_mock.setex.await_args
         assert args[0][1] == 300
@@ -82,7 +82,7 @@ class TestCacheSet:
     @pytest.mark.asyncio
     async def test_cache_set_handles_exception_returns_false(self, redis_mock):
         redis_mock.setex = AsyncMock(side_effect=Exception("redis down"))
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_set("k", "v")
         assert result is False
 
@@ -94,7 +94,7 @@ class TestCacheSet:
             def __str__(self):
                 return "obj_str"
 
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             await cache.cache_set("k", Obj())
         args = redis_mock.setex.await_args
         # 不抛异常即说明 default=str 生效
@@ -104,13 +104,13 @@ class TestCacheSet:
 class TestCacheDelete:
     @pytest.mark.asyncio
     async def test_cache_delete_returns_false_when_redis_unavailable(self):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=None)):
+        with patch("app.core.cache.get_redis", return_value=None):
             result = await cache.cache_delete("k")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_cache_delete_calls_redis_delete(self, redis_mock):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_delete("k")
         assert result is True
         redis_mock.delete.assert_awaited_once_with("k")
@@ -118,7 +118,7 @@ class TestCacheDelete:
     @pytest.mark.asyncio
     async def test_cache_delete_handles_exception(self, redis_mock):
         redis_mock.delete = AsyncMock(side_effect=Exception("redis down"))
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_delete("k")
         assert result is False
 
@@ -126,7 +126,7 @@ class TestCacheDelete:
 class TestCacheDeletePattern:
     @pytest.mark.asyncio
     async def test_cache_delete_pattern_returns_zero_when_no_redis(self):
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=None)):
+        with patch("app.core.cache.get_redis", return_value=None):
             result = await cache.cache_delete_pattern("foo:*")
         assert result == 0
 
@@ -140,7 +140,7 @@ class TestCacheDeletePattern:
                 yield k
 
         redis_mock.scan_iter = fake_scan_iter
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_delete_pattern("foo:*")
         assert result == 3
         # delete 用 *keys 解包
@@ -153,7 +153,7 @@ class TestCacheDeletePattern:
             yield  # make it an async generator
 
         redis_mock.scan_iter = fake_scan_iter
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_delete_pattern("foo:*")
         assert result == 0
         redis_mock.delete.assert_not_awaited()
@@ -166,6 +166,6 @@ class TestCacheDeletePattern:
             yield  # unreachable, makes it an async generator
 
         redis_mock.scan_iter = fake_scan_iter
-        with patch("app.core.cache.get_redis", new=AsyncMock(return_value=redis_mock)):
+        with patch("app.core.cache.get_redis", return_value=redis_mock):
             result = await cache.cache_delete_pattern("foo:*")
         assert result == 0

@@ -48,7 +48,7 @@ async def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-async def logout(user: User = Depends(get_current_user), request: Request = None, db: AsyncSession = Depends(get_db)):
+async def logout(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from app.services.auth_service import add_to_blacklist
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -68,9 +68,9 @@ async def logout(user: User = Depends(get_current_user), request: Request = None
 @router.put("/password")
 async def change_password(
     req: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
 ):
     from app.services import user_service
     await user_service.change_password(user.id, req.old_password, req.new_password, db)

@@ -4,7 +4,7 @@ import type { ApiResponse } from '../types';
 import { isTauri } from '../utils/tauri';
 
 /** API 基础路径：Tauri 环境下使用完整 URL，浏览器环境使用相对路径 */
-export const API_BASE = isTauri() ? 'http://localhost:8000/api/v1' : '/api/v1';
+export const API_BASE = isTauri() ? 'http://localhost:8002/api/v1' : '/api/v1';
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -62,15 +62,17 @@ client.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const config = error.config as RetryConfig;
-    
+
     if (!config) {
       return Promise.reject(error);
     }
-    
+
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-      // Tauri 环境下不能用 window.location.href 做页面跳转
-      // 使用 React Router 的 navigate 由各页面自行处理
+      // 标记 logout 请求自身，避免 logout API 返回 401 时重复触发 logout
+      const isLogoutRequest = config.url?.includes('/auth/logout');
+      if (!isLogoutRequest) {
+        useAuthStore.getState().logout();
+      }
       const msg = getErrorMessage(error);
       return Promise.reject(new Error(msg));
     }

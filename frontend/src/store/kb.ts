@@ -5,6 +5,7 @@ import type { KnowledgeBase, Document, DocumentProgress } from '../types';
 interface KBState {
   knowledgeBases: KnowledgeBase[];
   documents: Record<number, Document[]>;
+  docTotal: Record<number, number>;
   loading: boolean;
   loadingDocs: Record<number, boolean>;
   error: string | null;
@@ -12,7 +13,7 @@ interface KBState {
   createKB: (name: string, description: string) => Promise<KnowledgeBase>;
   updateKB: (id: number, name: string, description: string) => Promise<KnowledgeBase>;
   deleteKB: (id: number) => Promise<void>;
-  fetchDocuments: (kbId: number) => Promise<void>;
+  fetchDocuments: (kbId: number, page?: number, pageSize?: number) => void;
   uploadDocument: (kbId: number, file: File, onProgress?: (progress: number) => void) => Promise<void>;
   deleteDocument: (kbId: number, docId: number) => Promise<void>;
   reparseDocument: (kbId: number, docId: number) => Promise<void>;
@@ -23,6 +24,7 @@ interface KBState {
 export const useKBStore = create<KBState>((set, get) => ({
   knowledgeBases: [],
   documents: {},
+  docTotal: {},
   loading: false,
   loadingDocs: {},
   error: null,
@@ -61,12 +63,13 @@ export const useKBStore = create<KBState>((set, get) => ({
     }));
   },
 
-  fetchDocuments: async (kbId) => {
+  fetchDocuments: async (kbId, page = 1, pageSize = 20) => {
     set((state) => ({ loadingDocs: { ...state.loadingDocs, [kbId]: true } }));
     try {
-      const data = await documentApi.list(kbId, 1, 200);
+      const data = await documentApi.list(kbId, page, pageSize);
       set((state) => ({
         documents: { ...state.documents, [kbId]: data.items || [] },
+        docTotal: { ...state.docTotal, [kbId]: data.total || 0 },
       }));
     } finally {
       set((state) => ({ loadingDocs: { ...state.loadingDocs, [kbId]: false } }));
@@ -104,19 +107,30 @@ export const useKBStore = create<KBState>((set, get) => ({
   pollProgress: (docId, onUpdate) => {
     let stopped = false;
     let timer: number;
+    let errorCount = 0;
+    const MAX_ERRORS = 5;
 
     const poll = async () => {
       if (stopped) return;
       try {
         const progress = await get().getProgress(docId);
+        errorCount = 0;
         onUpdate(progress);
         if (progress.status === 'done' || progress.status === 'failed') {
           return;
         }
+        // 根据状态调整轮询间隔
+        const interval = progress.status === 'embedding' ? 1000 : 2000;
+        timer = window.setTimeout(poll, interval);
       } catch (e) {
+        errorCount++;
         console.error('poll progress error:', e);
+        if (errorCount >= MAX_ERRORS) {
+          console.error('poll progress: max errors reached, stopping');
+          return;
+        }
+        timer = window.setTimeout(poll, 2000);
       }
-      timer = window.setTimeout(poll, 2000);
     };
 
     poll();

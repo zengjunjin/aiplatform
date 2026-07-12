@@ -29,15 +29,14 @@ class TestBM25Store:
     def test_tokenize_cjk(self):
         store = BM25Store()
         tokens = store._tokenize("你好世界")
-        assert "你" in tokens
-        assert "好" in tokens
+        assert "你好" in tokens
+        assert "世界" in tokens
 
     def test_tokenize_mixed(self):
         store = BM25Store()
         tokens = store._tokenize("hello 世界")
         assert "hello" in tokens
-        assert "世" in tokens
-        assert "界" in tokens
+        assert "世界" in tokens
 
     def test_tokenize_empty(self):
         store = BM25Store()

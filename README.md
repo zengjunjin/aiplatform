@@ -289,6 +289,20 @@ poetry run pytest tests/ -v --cov=app
 - JWT Token 支持黑名单机制
 - API 限流防止暴力攻击
 
+## 架构决策记录 (ADR)
+
+本项目的重要架构决策以 ADR（Architecture Decision Record）形式记录在 `docs/adr/` 目录中：
+
+| ADR | 标题 | 决策 |
+|-----|------|------|
+| [ADR-001](docs/adr/ADR-001-fastapi-over-django-flask.md) | 为何选择 FastAPI 而非 Django/Flask | FastAPI：异步支持、高性能、自动文档生成 |
+| [ADR-002](docs/adr/ADR-002-qdrant-over-milvus-weaviate-pinecone.md) | 为何选择 Qdrant 而非 Milvus/Weaviate/Pinecone | Qdrant：轻量、Rust 实现、本地部署友好 |
+| [ADR-003](docs/adr/ADR-003-diy-rag-over-langchain-llamaindex.md) | 为何自建 RAG 管线而非使用 LangChain/LlamaIndex | 自建：避免框架锁定、深入理解原理 |
+| [ADR-004](docs/adr/ADR-004-sse-over-websocket-for-streaming.md) | 为何选择 SSE 而非 WebSocket 做流式生成 | SSE：单向数据流、HTTP 兼容、实现简单 |
+| [ADR-005](docs/adr/ADR-005-hybrid-retrieval-over-pure-vector.md) | 为何选择混合检索而非纯向量检索 | BM25 + 向量 + RRF：关键词与语义互补 |
+
+新增 ADR 请使用 [TEMPLATE.md](docs/adr/TEMPLATE.md) 模板。
+
 ## License
 
 MIT

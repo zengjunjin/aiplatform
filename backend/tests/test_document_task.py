@@ -10,6 +10,10 @@ from app.tasks import document_task
 
 
 class TestGetRedisSync:
+    def setup_method(self):
+        """每个测试前重置模块级 Redis 单例"""
+        document_task._redis_sync_client = None
+
     def test_get_redis_sync_returns_client(self):
         with patch("app.tasks.document_task.redis_sync.from_url") as mock_from_url:
             mock_client = MagicMock()
@@ -112,48 +116,11 @@ class TestCleanupOldChunks:
         session.commit.assert_called_once()  # PG 仍提交
 
 
-class TestEmbedSingleText:
-    def test_embed_single_text_success(self):
-        """正常调用 Ollama embeddings API"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"embedding": [0.1, 0.2, 0.3]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("app.tasks.document_task.requests.post", return_value=mock_resp):
-            result = document_task._embed_single_text("hello")
-        assert result == [0.1, 0.2, 0.3]
-
-    def test_embed_single_text_calls_correct_url(self):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"embedding": []}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("app.tasks.document_task.requests.post", return_value=mock_resp) as mock_post:
-            with patch("app.tasks.document_task.settings") as mock_settings:
-                mock_settings.OLLAMA_HOST = "http://ollama:11434"
-                mock_settings.EMBEDDING_MODEL = "nomic-embed-text"
-                document_task._embed_single_text("hi")
-                args = mock_post.call_args
-                assert args[0][0] == "http://ollama:11434/api/embeddings"
-                assert args[1]["json"]["model"] == "nomic-embed-text"
-                assert args[1]["json"]["prompt"] == "hi"
-
-
 class TestEmbedTextsSync:
     def test_embed_texts_sync_empty_list(self):
         """空文本列表 → 空向量列表"""
         result = document_task._embed_texts_sync([])
         assert result == []
-
-    def test_embed_texts_sync_multiple_texts(self):
-        """多个文本 → 逐个调用 _embed_single_text"""
-        with patch.object(document_task, "_embed_single_text") as mock_embed:
-            mock_embed.side_effect = [[0.1], [0.2], [0.3]]
-            result = document_task._embed_texts_sync(["a", "b", "c"])
-        assert result == [[0.1], [0.2], [0.3]]
-        assert mock_embed.call_count == 3
 
 
 class TestEmbedAndStore:

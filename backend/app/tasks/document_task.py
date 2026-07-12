@@ -1,19 +1,13 @@
 """Celery task: parse -> chunk -> embed -> store.
 
 Uses synchronous SQLAlchemy session (psycopg2) for Celery worker.
-Embeddings fetched via sync HTTP requests.
+Embeddings fetched via concurrent async HTTP requests (aiohttp).
 Progress tracked via Redis (doc:progress:{doc_id}).
 """
 import json
 import logging
-import requests
+import asyncio
 import redis as redis_sync
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
 
 from app.tasks.celery_app import celery_app
 from app.config import settings
@@ -26,13 +20,21 @@ from app.parsers.chunker import chunker
 
 logger = logging.getLogger(__name__)
 
+# 模块级 Redis 连接单例（Celery worker 线程安全, 复用连接池避免泄漏）
+_redis_sync_client: redis_sync.Redis | None = None
+
 
 def _get_redis_sync():
-    """Get sync Redis client for progress tracking."""
-    try:
-        return redis_sync.from_url(settings.redis_url, decode_responses=True)
-    except Exception:
-        return None
+    """Get sync Redis client for progress tracking (module-level singleton)."""
+    global _redis_sync_client
+    if _redis_sync_client is None:
+        try:
+            client = redis_sync.from_url(settings.redis_url, decode_responses=True)
+            client.ping()
+            _redis_sync_client = client
+        except Exception:
+            return None
+    return _redis_sync_client
 
 
 def _update_progress(doc_id: int, status: str, progress: int,
@@ -48,7 +50,11 @@ def _update_progress(doc_id: int, status: str, progress: int,
             doc.chunk_count = chunk_count
         if error:
             doc.error_message = error
-        session.commit()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
     finally:
         session.close()
 
@@ -72,6 +78,9 @@ def _cleanup_old_chunks(doc_id: int, kb_id: int):
             delete(DocumentChunk).where(DocumentChunk.doc_id == doc_id)
         )
         session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -126,37 +135,41 @@ def _parse_and_chunk(doc_id: int) -> list[dict]:
             chunk_records[i]["file_type"] = doc.file_type
 
         return chunk_records
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, requests.HTTPError)),
-    reraise=True,
-)
-def _embed_single_text(text: str) -> list[float]:
-    """Call Ollama embeddings API synchronously with retry."""
-    url = f"{settings.OLLAMA_HOST}/api/embeddings"
-    resp = requests.post(
-        url,
-        json={"model": settings.EMBEDDING_MODEL, "prompt": text},
-        timeout=120,
-    )
-    if resp.status_code >= 500 or resp.status_code == 429:
-        resp.raise_for_status()
-    resp.raise_for_status()
-    return resp.json()["embedding"]
+async def _embed_texts_async(texts: list[str]) -> list[list[float]]:
+    """Embed multiple texts concurrently via aiohttp with semaphore."""
+    import aiohttp
+    sem = asyncio.Semaphore(settings.EMBEDDING_CONCURRENCY)
+
+    async def _embed_one(session, text):
+        async with sem:
+            async with session.post(
+                f"{settings.OLLAMA_HOST}/api/embeddings",
+                json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data["embedding"]
+
+    async with aiohttp.ClientSession() as session:
+        tasks = [_embed_one(session, t) for t in texts]
+        return await asyncio.gather(*tasks)
 
 
 def _embed_texts_sync(texts: list[str]) -> list[list[float]]:
-    """Call Ollama embeddings API synchronously with per-text retry."""
-    results = []
-    for text in texts:
-        embedding = _embed_single_text(text)
-        results.append(embedding)
-    return results
+    """Run concurrent embedding in a dedicated event loop (Celery worker context)."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_embed_texts_async(texts))
+    finally:
+        loop.close()
 
 
 def _embed_and_store(doc_id: int, chunks: list[dict]):
@@ -174,9 +187,12 @@ def _embed_and_store(doc_id: int, chunks: list[dict]):
 
     kb_id = chunks[0]["kb_id"]
 
-    import asyncio
     # 问题: Celery worker 线程可能已有事件循环, asyncio.run() 会创建新循环导致冲突
-    # 解决方案: 创建独立的新事件循环, 确保不受影响
+    # 解决方案: 创建独立的新事件循环, 确保不受影响, 完成后恢复旧循环
+    try:
+        old_loop = asyncio.get_event_loop()
+    except RuntimeError:
+        old_loop = None
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -185,6 +201,8 @@ def _embed_and_store(doc_id: int, chunks: list[dict]):
         loop.run_until_complete(_add())
     finally:
         loop.close()
+        if old_loop is not None:
+            asyncio.set_event_loop(old_loop)
 
     session = get_sync_session()
     try:
@@ -237,8 +255,47 @@ def parse_document_task(self, doc_id: int):
         _embed_and_store(doc_id, chunks)
 
         _update_progress(doc_id, "done", 100, chunk_count=len(chunks))
+
+        # 发布 DOCUMENT_PARSED 事件
+        try:
+            try:
+                old_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                old_loop = None
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                async def _publish():
+                    from app.core.events import EventBus
+                    await EventBus.init()
+                    session = get_sync_session()
+                    try:
+                        doc = session.get(Document, doc_id)
+                        uploader_id = doc.uploader_id if doc else None
+                    finally:
+                        session.close()
+                    await EventBus.publish(EventBus.DOCUMENT_PARSED, {
+                        "doc_id": doc_id,
+                        "filename": doc.filename if doc else "",
+                        "kb_id": doc.kb_id if doc else None,
+                        "uploader_id": uploader_id,
+                        "chunk_count": len(chunks),
+                    })
+                    await EventBus.close()
+                loop.run_until_complete(_publish())
+            finally:
+                loop.close()
+                if old_loop is not None:
+                    asyncio.set_event_loop(old_loop)
+        except Exception as e:
+            logger.warning("Failed to publish DOCUMENT_PARSED event: %s", e)
+
         return {"doc_id": doc_id, "chunk_count": len(chunks), "status": "done"}
     except Exception as e:
-        if self.request.retries >= self.max_retries:
+        retry_count = self.request.retries
+        if retry_count >= self.max_retries:
             _update_progress(doc_id, "failed", 100, error=str(e))
-        raise self.retry(exc=e, countdown=2 ** self.request.retries)
+        else:
+            # 更新进度为 retrying, 让前端知道正在重试
+            _update_progress(doc_id, "retrying", 50, error=f"重试 {retry_count + 1}/{self.max_retries}: {str(e)[:200]}")
+        raise self.retry(exc=e, countdown=2 ** retry_count)

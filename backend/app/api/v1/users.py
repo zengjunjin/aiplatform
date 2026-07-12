@@ -1,13 +1,25 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.api.deps import get_admin_user
+from app.api.deps import get_admin_user, get_current_user
 from app.services import user_service
 from app.schemas.user import UserListResponse, UpdateRoleRequest, UpdateStatusRequest
 from app.schemas.common import ok, paginated_ok
 from app.db.user import User
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/search")
+async def search_users(
+    q: str = Query(..., min_length=1, description="用户名搜索关键词"),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """搜索用户（按用户名），用于协作者添加等场景"""
+    users = await user_service.search_users(db, q, limit)
+    return ok(data=users)
 
 
 @router.get("")

@@ -28,6 +28,7 @@ qdrant
 # IDE
 .vscode/
 .idea/
+.trae/
 
 # OS
 .DS_Store

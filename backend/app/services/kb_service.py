@@ -1,14 +1,25 @@
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 from app.db.knowledge_base import KnowledgeBase
 from app.db.document import Document
 from app.db.document_chunk import DocumentChunk
 from app.db.chat_session import ChatSession
-from app.core.exceptions import NotFoundError, ForbiddenError
+from app.db.user import User
+from app.core.exceptions import NotFoundError, ForbiddenError, ConflictError
 from app.schemas.kb import KBCreate, KBUpdate
 
 
 async def create_kb(req: KBCreate, user_id: int, db: AsyncSession) -> KnowledgeBase:
+    existing = await db.execute(
+        select(KnowledgeBase).where(
+            KnowledgeBase.owner_id == user_id,
+            KnowledgeBase.name == req.name
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise ConflictError("同名知识库已存在")
+
     kb = KnowledgeBase(name=req.name, description=req.description, owner_id=user_id)
     db.add(kb)
     await db.commit()
@@ -17,20 +28,23 @@ async def create_kb(req: KBCreate, user_id: int, db: AsyncSession) -> KnowledgeB
 
 
 async def list_kbs(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20):
-    count_result = await db.execute(
-        select(func.count()).select_from(KnowledgeBase).where(KnowledgeBase.owner_id == user_id)
-    )
-    total = count_result.scalar_one()
+    from sqlalchemy import or_, cast
+    from sqlalchemy.dialects.postgresql import JSONB
 
-    result = await db.execute(
-        select(KnowledgeBase)
-        .where(KnowledgeBase.owner_id == user_id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .order_by(KnowledgeBase.updated_at.desc())
+    filter_value = json.dumps([{"user_id": user_id}])
+    collab_filter = cast(KnowledgeBase.collaborators, JSONB).op('@>')(cast(filter_value, JSONB))
+
+    count_query = select(func.count()).select_from(KnowledgeBase).where(
+        or_(KnowledgeBase.owner_id == user_id, collab_filter)
     )
-    items = result.scalars().all()
-    return items, total
+    total = await db.scalar(count_query)
+
+    data_query = select(KnowledgeBase).where(
+        or_(KnowledgeBase.owner_id == user_id, collab_filter)
+    ).order_by(KnowledgeBase.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(data_query)
+    kbs = result.scalars().all()
+    return kbs, total or 0
 
 
 async def get_kb(kb_id: int, user_id: int, db: AsyncSession) -> KnowledgeBase:
@@ -39,7 +53,11 @@ async def get_kb(kb_id: int, user_id: int, db: AsyncSession) -> KnowledgeBase:
     if not kb:
         raise NotFoundError("Knowledge base not found")
     if kb.owner_id != user_id:
-        raise ForbiddenError("Access denied")
+        # Check collaborators
+        collaborators = kb.collaborators or []
+        found = any(c.get("user_id") == user_id for c in collaborators)
+        if not found:
+            raise ForbiddenError("Access denied")
     return kb
 
 
@@ -58,70 +76,51 @@ async def delete_kb(kb_id: int, user_id: int, db: AsyncSession):
     """Delete knowledge base with full cascade cleanup.
 
     Order of operations:
-    1. Delete Qdrant collection (vectors)
-    2. Delete BM25 index from Redis
-    3. Delete file storage directory
-    4. Delete chat sessions linked to this KB
-    5. Delete document chunks
-    6. Delete documents
-    7. Delete knowledge base
+    1-4. DB operations first (within a single transaction):
+        Delete chat sessions, document chunks, documents, knowledge base
+    5-7. External resources cleanup (best-effort, after DB is safe):
+        Delete Qdrant collection, BM25 index, file storage directory
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     kb = await get_kb(kb_id, user_id, db)
 
-    # 1. Delete Qdrant collection (delete_collection is sync, do NOT await)
-    try:
-        from app.rag.retriever import retriever
-        retriever.delete_collection(kb_id)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Qdrant collection delete failed: %s", e)
+    # 1-4. DB operations first — 先保证数据一致性
+    await db.execute(
+        delete(ChatSession).where(ChatSession.kb_id == kb_id)
+    )
+    await db.execute(
+        delete(DocumentChunk).where(DocumentChunk.kb_id == kb_id)
+    )
+    await db.execute(
+        delete(Document).where(Document.kb_id == kb_id)
+    )
+    await db.delete(kb)
+    await db.commit()
 
-    # 2. Delete BM25 index from Redis
+    # 5-7. External resources cleanup — best-effort (DB 已提交, 失败不影响一致性)
+    # 5. Delete Qdrant collection (sync 方法, 用 to_thread 避免阻塞事件循环)
+    try:
+        import asyncio
+        from app.rag.retriever import retriever
+        await asyncio.to_thread(retriever.delete_collection, kb_id)
+    except Exception as e:
+        logger.warning("Qdrant collection delete failed: %s", e)
+
+    # 6. Delete BM25 index from Redis
     try:
         from app.rag.bm25 import bm25_store
         await bm25_store.delete(kb_id)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("BM25 index delete failed: %s", e)
+        logger.warning("BM25 index delete failed: %s", e)
 
-    # 3. Delete file storage directory
+    # 7. Delete file storage directory
     try:
         from app.utils.storage import delete_kb_dir
         delete_kb_dir(kb_id)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Storage dir delete failed: %s", e)
-
-    # 4. Delete chat sessions linked to this KB
-    try:
-        await db.execute(
-            delete(ChatSession).where(ChatSession.kb_id == kb_id)
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Chat sessions delete failed: %s", e)
-
-    # 5. Delete document chunks
-    try:
-        await db.execute(
-            delete(DocumentChunk).where(DocumentChunk.kb_id == kb_id)
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Chunks delete failed: %s", e)
-
-    # 6. Delete documents
-    try:
-        await db.execute(
-            delete(Document).where(Document.kb_id == kb_id)
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Documents delete failed: %s", e)
-
-    # 7. Delete knowledge base
-    await db.delete(kb)
-    await db.commit()
+        logger.warning("Storage dir delete failed: %s", e)
 
 
 async def get_kb_stats(kb_id: int, user_id: int, db: AsyncSession) -> dict:
@@ -151,3 +150,62 @@ async def get_kb_stats(kb_id: int, user_id: int, db: AsyncSession) -> dict:
         "created_at": kb.created_at.isoformat() if kb.created_at else None,
         "updated_at": kb.updated_at.isoformat() if kb.updated_at else None,
     }
+
+
+async def add_collaborator(kb_id: int, user_id: int, target_user_id: int, permission: str, db: AsyncSession) -> dict:
+    """Add a collaborator to a knowledge base. Only owner can add collaborators."""
+    kb = await get_kb(kb_id, user_id, db)
+    if kb.owner_id != user_id:
+        raise ForbiddenError("Only the owner can manage collaborators")
+
+    # Verify target user exists
+    result = await db.execute(select(User).where(User.id == target_user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise NotFoundError("User not found")
+    if target_user_id == user_id:
+        raise ForbiddenError("Cannot add yourself as collaborator")
+
+    collaborators = list(kb.collaborators or [])
+    # Remove existing entry for this user if any
+    collaborators = [c for c in collaborators if c.get("user_id") != target_user_id]
+    collaborators.append({"user_id": target_user_id, "permission": permission})
+    kb.collaborators = collaborators
+    await db.commit()
+    await db.refresh(kb)
+    return {"user_id": target_user_id, "username": target_user.username, "permission": permission}
+
+
+async def remove_collaborator(kb_id: int, user_id: int, target_user_id: int, db: AsyncSession):
+    """Remove a collaborator from a knowledge base."""
+    kb = await get_kb(kb_id, user_id, db)
+    if kb.owner_id != user_id:
+        raise ForbiddenError("Only the owner can manage collaborators")
+
+    collaborators = list(kb.collaborators or [])
+    collaborators = [c for c in collaborators if c.get("user_id") != target_user_id]
+    kb.collaborators = collaborators
+    await db.commit()
+
+
+async def get_collaborators(kb_id: int, user_id: int, db: AsyncSession) -> list[dict]:
+    """Get list of collaborators for a knowledge base."""
+    kb = await get_kb(kb_id, user_id, db)
+    collaborators = list(kb.collaborators or [])
+    # 批量查询所有协作者用户名（避免 N+1）
+    uids = [c.get("user_id") for c in collaborators if c.get("user_id")]
+    users_map: dict[int, User] = {}
+    if uids:
+        result = await db.execute(select(User).where(User.id.in_(uids)))
+        users_map = {u.id: u for u in result.scalars().all()}
+    enriched = []
+    for c in collaborators:
+        uid = c.get("user_id")
+        if uid:
+            u = users_map.get(uid)
+            enriched.append({
+                "user_id": uid,
+                "username": u.username if u else f"User#{uid}",
+                "permission": c.get("permission", "read"),
+            })
+    return enriched

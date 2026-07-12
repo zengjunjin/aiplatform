@@ -1,0 +1,8 @@
+- repo: local
+    hooks:
+      - id: no-print
+        name: No print statements
+        entry: 'print\('
+        language: pygrep
+        types: [python]
+        exclude: 'tests/'

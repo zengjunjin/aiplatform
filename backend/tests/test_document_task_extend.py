@@ -186,18 +186,4 @@ class TestEmbedAndStore:
         session.execute.assert_not_called()
 
 
-class TestEmbedSingleTextRetry:
-    """_embed_single_text 装饰器 retry 行为"""
 
-    def test_embed_single_text_raises_on_4xx_after_retry(self):
-        """非 retryable 错误（4xx，非 429）→ raise_for_status 立即抛出"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 404
-        mock_resp.raise_for_status = MagicMock(side_effect=Exception("404 not found"))
-
-        with patch("app.tasks.document_task.requests.post", return_value=mock_resp):
-            with patch("app.tasks.document_task.settings") as mock_settings:
-                mock_settings.OLLAMA_HOST = "http://test"
-                mock_settings.EMBEDDING_MODEL = "emb"
-                with pytest.raises(Exception):
-                    document_task._embed_single_text("hello")

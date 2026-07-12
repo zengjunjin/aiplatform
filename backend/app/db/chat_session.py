@@ -10,7 +10,7 @@ class ChatSession(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     kb_id = Column(BigInteger, ForeignKey("knowledge_bases.id", ondelete="SET NULL"), nullable=True)
-    title = Column(String(200), nullable=False, default="新建会话")
+    title = Column(String(200), nullable=False, default="新对话")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

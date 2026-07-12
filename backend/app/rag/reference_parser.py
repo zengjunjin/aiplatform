@@ -21,7 +21,7 @@ def parse_references(answer: str, cited_chunks: list[dict]) -> list[dict]:
                 "filename": chunk.get("filename", ""),
                 "page": chunk.get("page"),
                 "snippet": chunk.get("content", "")[:200],
-                "score": chunk.get("rerank_score", chunk.get("score", 0)),
+                "score": chunk.get("rerank_score", chunk.get("rrf_score", chunk.get("score", 0))),
             })
     return references
 

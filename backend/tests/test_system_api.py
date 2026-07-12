@@ -43,8 +43,8 @@ class TestSystemStatus:
 
         # PostgreSQL: down
         assert result["data"]["postgresql"] == "down"
-        # Redis: down
-        assert result["data"]["redis"] == "down"
+        # Redis: down (not initialized when get_redis returns None)
+        assert result["data"]["redis"] == "down (not initialized)"
         # Ollama: down
         assert result["data"]["ollama"] == "down"
         # Qdrant: down

@@ -21,14 +21,9 @@ def redis_mock():
 
 class TestCancelKeyFormat:
     def test_cancel_key_session_level(self):
-        """未提供 message_id → session 级别 key"""
+        """session 级别 key"""
         key = chat_service._cancel_key(session_id=42)
         assert key == "chat:cancel:session:42:current"
-
-    def test_cancel_key_message_level(self):
-        """提供 message_id → message 级别 key"""
-        key = chat_service._cancel_key(session_id=42, message_id=99)
-        assert key == "chat:cancel:session:42:msg:99"
 
 
 class TestRequestCancel:
@@ -44,16 +39,6 @@ class TestRequestCancel:
         assert value == "1"
         # kwargs 应包含 ex=300
         assert args[1].get("ex") == 300
-
-    @pytest.mark.asyncio
-    async def test_request_cancel_with_message_id(self, redis_mock):
-        """带 message_id 的取消"""
-        with patch("app.services.chat_service.get_redis", return_value=redis_mock):
-            await chat_service.request_cancel(session_id=42, message_id=99, ttl=60)
-        args = redis_mock.set.await_args
-        key, _ = args[0]
-        assert key == "chat:cancel:session:42:msg:99"
-        assert args[1].get("ex") == 60
 
     @pytest.mark.asyncio
     async def test_request_cancel_noop_when_redis_unavailable(self):
@@ -80,15 +65,6 @@ class TestIsCancelled:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_is_cancelled_true_when_message_flag_exists(self, redis_mock):
-        """message 级别 cancel 标志存在 → True"""
-        # 第一次 exists（message 级）返回 1
-        redis_mock.exists = AsyncMock(return_value=1)
-        with patch("app.services.chat_service.get_redis", return_value=redis_mock):
-            result = await chat_service.is_cancelled(session_id=42, message_id=99)
-        assert result is True
-
-    @pytest.mark.asyncio
     async def test_is_cancelled_no_redis_returns_false(self):
         """Redis 不可用 → False（不阻断生成）"""
         with patch("app.services.chat_service.get_redis", return_value=None):
@@ -98,14 +74,13 @@ class TestIsCancelled:
 
 class TestClearCancel:
     @pytest.mark.asyncio
-    async def test_clear_cancel_deletes_both_keys(self, redis_mock):
-        """clear_cancel 同时删除 message 级和 session 级 key"""
+    async def test_clear_cancel_deletes_key(self, redis_mock):
+        """clear_cancel 删除 session 级 key"""
         with patch("app.services.chat_service.get_redis", return_value=redis_mock):
-            await chat_service.clear_cancel(session_id=42, message_id=99)
+            await chat_service.clear_cancel(session_id=42)
         redis_mock.delete.assert_awaited_once()
         args = redis_mock.delete.await_args
         keys = args[0]
-        assert "chat:cancel:session:42:msg:99" in keys
         assert "chat:cancel:session:42:current" in keys
 
     @pytest.mark.asyncio

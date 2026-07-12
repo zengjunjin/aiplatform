@@ -283,30 +283,34 @@ class TestLocalBgeRerankerProvider:
         p = LocalBgeRerankerProvider(model_name="custom-reranker")
         assert p._model_name == "custom-reranker"
 
-    def test_ensure_model_loads_cross_encoder(self):
+    @pytest.mark.asyncio
+    async def test_ensure_model_loads_cross_encoder(self):
         """_ensure_model 第一次调用 → 加载 CrossEncoder"""
         fake_cross_encoder = MagicMock()
         mock_ce_class = MagicMock(return_value=fake_cross_encoder)
         fake_module = MagicMock()
         fake_module.CrossEncoder = mock_ce_class
-        with patch.dict(sys.modules, {"sentence_transformers": fake_module}):
+        with patch.dict(sys.modules, {"sentence_transformers": fake_module}), \
+             patch("app.models.reranker_provider.asyncio.to_thread", side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)):
             from app.models.reranker_provider import LocalBgeRerankerProvider
             p = LocalBgeRerankerProvider(model_name="bge-reranker")
-            model = p._ensure_model()
+            model = await p._ensure_model()
         assert model is fake_cross_encoder
         mock_ce_class.assert_called_once_with("bge-reranker")
 
-    def test_ensure_model_caches_loaded_model(self):
+    @pytest.mark.asyncio
+    async def test_ensure_model_caches_loaded_model(self):
         """第二次 _ensure_model 不重新加载"""
         fake_cross_encoder = MagicMock()
         mock_ce_class = MagicMock(return_value=fake_cross_encoder)
         fake_module = MagicMock()
         fake_module.CrossEncoder = mock_ce_class
-        with patch.dict(sys.modules, {"sentence_transformers": fake_module}):
+        with patch.dict(sys.modules, {"sentence_transformers": fake_module}), \
+             patch("app.models.reranker_provider.asyncio.to_thread", side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)):
             from app.models.reranker_provider import LocalBgeRerankerProvider
             p = LocalBgeRerankerProvider(model_name="bge")
-            m1 = p._ensure_model()
-            m2 = p._ensure_model()
+            m1 = await p._ensure_model()
+            m2 = await p._ensure_model()
         assert m1 is m2
         mock_ce_class.assert_called_once()
 

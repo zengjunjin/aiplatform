@@ -2,28 +2,31 @@ import { Form, Input, Button, Typography, App as AntdApp } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Sparkles } from 'lucide-react';
 
 const { Title, Text } = Typography;
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [form] = Form.useForm();
   const register = useAuthStore((s) => s.register);
   const navigate = useNavigate();
   const { message: msg } = AntdApp.useApp();
 
   const onFinish = async (values: { username: string; email: string; password: string; confirm: string }) => {
     if (values.password !== values.confirm) {
-      msg.error('两次输入的密码不一致');
+      msg.error(t('auth.passwordMismatch'));
       return;
     }
     setLoading(true);
     try {
       await register(values.username, values.email, values.password);
-      msg.success('注册成功');
+      msg.success(t('auth.registerSuccess'));
       navigate('/');
     } catch (e: any) {
-      msg.error(e.message || '注册失败');
+      msg.error(e.message || t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
@@ -88,10 +91,10 @@ export default function RegisterPage() {
             <Sparkles size={28} color="#ffffff" strokeWidth={1.8} />
           </div>
           <Title level={3} style={{ marginBottom: 8, fontWeight: 700, color: '#111827' }}>
-            创建账户
+            {t('auth.createAccount')}
           </Title>
           <Text style={{ color: '#6b7280', fontSize: 14 }}>
-            开始使用 RAG 智能知识库
+            {t('auth.registerSubtitle')}
           </Text>
         </div>
 
@@ -106,50 +109,51 @@ export default function RegisterPage() {
         >
           <Form
             name="register"
+            form={form}
             onFinish={onFinish}
             autoComplete="off"
             layout="vertical"
           >
             <Form.Item
               name="username"
-              label="用户名"
+              label={t('auth.username')}
               rules={[
-                { required: true, message: '请输入用户名' },
-                { min: 3, message: '用户名至少 3 个字符' },
+                { required: true, message: t('auth.usernameRequired') },
+                { min: 3, message: t('auth.usernameMinLength') },
               ]}
             >
-              <Input placeholder="请输入用户名" size="large" />
+              <Input placeholder={t('auth.usernamePlaceholder')} size="large" />
             </Form.Item>
             <Form.Item
               name="email"
-              label="邮箱"
+              label={t('auth.email')}
               rules={[
-                { required: true, message: '请输入邮箱' },
-                { type: 'email', message: '请输入有效的邮箱地址' },
+                { required: true, message: t('auth.emailRequired') },
+                { type: 'email', message: t('auth.emailInvalid') },
               ]}
             >
-              <Input placeholder="请输入邮箱" size="large" />
+              <Input placeholder={t('auth.emailPlaceholder')} size="large" />
             </Form.Item>
             <Form.Item
               name="password"
-              label="密码"
+              label={t('auth.password')}
               rules={[
-                { required: true, message: '请输入密码' },
-                { min: 8, message: '密码至少 8 个字符' },
+                { required: true, message: t('auth.passwordRequired') },
+                { min: 8, message: t('auth.passwordMinLength') },
                 {
                   pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]).+$/,
-                  message: '密码需包含大写字母、小写字母、数字和特殊字符',
+                  message: t('auth.passwordComplexity'),
                 },
               ]}
             >
-              <Input.Password placeholder="请输入密码" size="large" />
+              <Input.Password placeholder={t('auth.passwordPlaceholder')} size="large" />
             </Form.Item>
             <Form.Item
               name="confirm"
-              label="确认密码"
-              rules={[{ required: true, message: '请确认密码' }]}
+              label={t('auth.confirmPassword')}
+              rules={[{ required: true, message: t('auth.confirmPasswordRequired') }]}
             >
-              <Input.Password placeholder="请再次输入密码" size="large" />
+              <Input.Password placeholder={t('auth.confirmPasswordPlaceholder')} size="large" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 20, marginTop: 8 }}>
               <Button
@@ -163,12 +167,12 @@ export default function RegisterPage() {
                   fontWeight: 500,
                 }}
               >
-                注册
+                {t('auth.register')}
               </Button>
             </Form.Item>
             <div style={{ textAlign: 'center' }}>
               <Text style={{ color: '#6b7280', fontSize: 13 }}>
-                已有账户？{' '}
+                {t('auth.hasAccount')}{' '}
                 <Button
                   type="link"
                   onClick={() => navigate('/login')}
@@ -181,7 +185,7 @@ export default function RegisterPage() {
                     borderRadius: 0,
                   }}
                 >
-                  立即登录
+                  {t('auth.loginNow')}
                 </Button>
               </Text>
             </div>
@@ -190,7 +194,7 @@ export default function RegisterPage() {
 
         <div style={{ textAlign: 'center', marginTop: 32 }}>
           <Text style={{ color: '#9ca3af', fontSize: 12 }}>
-            © 2026 RAG Platform · 智能知识库系统
+            {t('auth.copyright')}
           </Text>
         </div>
       </div>

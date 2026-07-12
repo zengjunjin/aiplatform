@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "name": "medium",
+    "description": "10 个问题，模拟 1000 文档规模",
+    "doc_count": 1000,
+    "question_count": 10
+  },
+  "questions": [
+    {
+      "question": "Kubernetes 中 Pod 和 Deployment 的关系是什么？",
+      "expected_answer_keywords": ["Pod", "Deployment", "副本", "调度", "声明式"],
+      "difficulty": "simple",
+      "question_type": "factual"
+    },
+    {
+      "question": "RESTful API 和 GraphQL 的主要区别是什么？",
+      "expected_answer_keywords": ["REST", "GraphQL", "端点", "查询", "过度获取"],
+      "difficulty": "simple",
+      "question_type": "comparative"
+    },
+    {
+      "question": "CAP 定理在分布式系统中的应用和权衡是什么？",
+      "expected_answer_keywords": ["一致性", "可用性", "分区容错", "CP", "AP"],
+      "difficulty": "medium",
+      "question_type": "reasoning"
+    },
+    {
+      "question": "什么是 DevSecOps？与传统 DevOps 有何不同？",
+      "expected_answer_keywords": ["安全", "DevOps", "左移", "自动化", "合规"],
+      "difficulty": "medium",
+      "question_type": "conceptual"
+    },
+    {
+      "question": "梯度下降算法的几种变体及其适用场景是什么？",
+      "expected_answer_keywords": ["SGD", "Adam", "RMSprop", "动量", "学习率"],
+      "difficulty": "medium",
+      "question_type": "comparative"
+    },
+    {
+      "question": "事件驱动架构与传统请求-响应架构的适用场景有何不同？",
+      "expected_answer_keywords": ["事件驱动", "异步", "解耦", "消息队列", "事件溯源"],
+      "difficulty": "complex",
+      "question_type": "comparative"
+    },
+    {
+      "question": "在多租户 SaaS 系统中，数据库隔离策略有哪些？各自的优缺点是什么？",
+      "expected_answer_keywords": ["多租户", "SaaS", "数据库隔离", "共享表", "独立数据库"],
+      "difficulty": "complex",
+      "question_type": "reasoning"
+    },
+    {
+      "question": "什么是 JWT 令牌？它是如何工作的？",
+      "expected_answer_keywords": ["JWT", "Header", "Payload", "Signature", "无状态"],
+      "difficulty": "simple",
+      "question_type": "factual"
+    },
+    {
+      "question": "SQL 和 NoSQL 数据库在什么场景下分别更适合使用？",
+      "expected_answer_keywords": ["关系型", "非关系型", "ACID", "扩展性", "Schema"],
+      "difficulty": "medium",
+      "question_type": "comparative"
+    },
+    {
+      "question": "在构建高可用 RAG 系统时，如何实现检索质量的持续监控和优化？",
+      "expected_answer_keywords": ["检索质量", "监控", "评估", "反馈循环", "命中率"],
+      "difficulty": "complex",
+      "question_type": "reasoning"
+    }
+  ]
+}

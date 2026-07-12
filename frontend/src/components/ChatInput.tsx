@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Input, Button, Space, Tag } from 'antd';
 import { Send, StopCircle, BookOpen, Cpu } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const { TextArea } = Input;
 
@@ -19,15 +20,16 @@ interface Props {
 const MAX_LENGTH = 2000;
 const DEFAULT_MODEL = 'Qwen2.5-7B';
 
-export default function ChatInput({
+function ChatInput({
   onSend,
   onStop,
   streaming,
   disabled,
-  placeholder = '输入你的问题，Enter 发送，Shift+Enter 换行',
+  placeholder,
   kbName,
   modelName = DEFAULT_MODEL,
 }: Props) {
+  const { t } = useTranslation();
   const [value, setValue] = useState('');
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,19 +40,22 @@ export default function ChatInput({
     }
   }, [streaming, disabled]);
 
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || streaming || disabled) return;
     onSend(trimmed);
     setValue('');
-  };
+  }, [value, streaming, disabled, onSend]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
 
   return (
     <div style={{ padding: '12px 24px', background: '#fff', borderTop: '1px solid #f0f0f0' }}>
@@ -61,7 +66,7 @@ export default function ChatInput({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={placeholder || t('chat.inputPlaceholder')}
             autoSize={{ minRows: 2, maxRows: 6 }}
             disabled={streaming || disabled}
             maxLength={MAX_LENGTH}
@@ -74,7 +79,7 @@ export default function ChatInput({
               onClick={onStop}
               style={{ height: 'auto', borderRadius: '0 8px 8px 0' }}
             >
-              停止
+              {t('chat.stop')}
             </Button>
           ) : (
             <Button
@@ -84,7 +89,7 @@ export default function ChatInput({
               disabled={!value.trim() || disabled}
               style={{ height: 'auto', borderRadius: '0 8px 8px 0' }}
             >
-              发送
+              {t('chat.send')}
             </Button>
           )}
         </Space.Compact>
@@ -97,7 +102,7 @@ export default function ChatInput({
             color: '#bbb',
           }}
         >
-          <span>Enter 发送 · Shift+Enter 换行</span>
+          <span>{t('chat.enterHint')}</span>
           <span>
             {value.length} / {MAX_LENGTH}
           </span>
@@ -116,7 +121,7 @@ export default function ChatInput({
           <Space size={6}>
             <BookOpen size={12} style={{ color: '#1677ff' }} />
             <Tag color="blue" style={{ margin: 0 }}>
-              {kbName || '通用对话'}
+              {kbName || t('chat.generalChat')}
             </Tag>
           </Space>
           <Space size={6}>
@@ -130,3 +135,5 @@ export default function ChatInput({
     </div>
   );
 }
+
+export default memo(ChatInput);

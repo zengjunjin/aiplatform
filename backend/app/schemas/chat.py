@@ -27,6 +27,7 @@ class SessionOut(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=5000)
+    model: Optional[str] = None  # 用户指定的模型名称（Provider name），不传则自动选择
 
 
 class MessageOut(BaseModel):

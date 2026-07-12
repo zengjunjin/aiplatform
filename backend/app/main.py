@@ -26,6 +26,22 @@ async def lifespan(app: FastAPI):
     init_redis()
     logger.info("Redis initialized")
 
+    # Initialize EventBus
+    from app.core.events import EventBus
+    await EventBus.init()
+    logger.info("EventBus initialized")
+
+    # Initialize model registry from config
+    from app.models import init_model_registry
+    init_model_registry()
+    logger.info("Model registry initialized")
+
+    # Start model health checker
+    from app.core.model_health import get_health_checker
+    health_checker = get_health_checker()
+    await health_checker.start()
+    logger.info("Model health checker started")
+
     metrics_task = asyncio.create_task(metrics_collector_loop(60))
     logger.info("Metrics collector started")
 
@@ -37,6 +53,10 @@ async def lifespan(app: FastAPI):
             await metrics_task
         except asyncio.CancelledError:
             pass
+        # Stop health checker
+        await health_checker.stop()
+        # Close EventBus
+        await EventBus.close()
         # Close Redis connection gracefully
         redis = get_redis()
         if redis:
@@ -48,8 +68,8 @@ app = FastAPI(
     title=settings.APP_NAME,
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs" if settings.ENABLE_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_DOCS else None,
 )
 
 app.state.limiter = limiter
