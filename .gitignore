@@ -11,6 +11,7 @@ backend/venv/
 
 # Build outputs
 frontend/dist/
+frontend/src-tauri/dist/
 frontend/src-tauri/target/
 release/
 
@@ -54,5 +55,14 @@ htmlcov/
 *.temp
 screenshot-*.png
 task*.png
+chat-verify-*.png
+dark-*.png
+dark-final-*.png
+debug-*.png
+tauri-test-*.png
+verify-*.png
+final-*.png
+cdp_helper.ps1
+verify_step*.ps1
 query
 test.txt

@@ -16,7 +16,7 @@ interface KBState {
   fetchDocuments: (kbId: number, page?: number, pageSize?: number) => void;
   uploadDocument: (kbId: number, file: File, onProgress?: (progress: number) => void) => Promise<void>;
   deleteDocument: (kbId: number, docId: number) => Promise<void>;
-  reparseDocument: (kbId: number, docId: number) => Promise<void>;
+  reparseDocument: (kbId: number, docId: number, force?: boolean) => Promise<void>;
   getProgress: (docId: number) => Promise<DocumentProgress>;
   pollProgress: (docId: number, onUpdate: (p: DocumentProgress) => void) => () => void;
 }
@@ -95,8 +95,8 @@ export const useKBStore = create<KBState>((set, get) => ({
     }));
   },
 
-  reparseDocument: async (kbId, docId) => {
-    await documentApi.reparse(docId);
+  reparseDocument: async (kbId, docId, force) => {
+    await documentApi.reparse(docId, force);
     await get().fetchDocuments(kbId);
   },
 

@@ -229,18 +229,19 @@ async def delete_document(
 @router.post("/{doc_id}/reparse")
 async def reparse_document(
     doc_id: int,
+    force: bool = False,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     doc = await document_service.get_document(doc_id, user.id, db)
-    if doc.status in ("parsing", "chunking", "embedding"):
+    if doc.status in ("parsing", "chunking", "embedding") and not force:
         raise ConflictError(message="文档正在处理中，请稍候")
-    doc.status = "parsing"
+    doc.status = "pending"
     doc.error_message = None
     await db.commit()
     from app.tasks.document_task import parse_document_task
     task = parse_document_task.delay(doc.id)
-    logger.info(f"Document reparse: id={doc_id} user={user.id}")
+    logger.info(f"Document reparse: id={doc_id} user={user.id} force={force}")
     return ok(data={"document_id": doc.id, "task_id": task.id})
 
 

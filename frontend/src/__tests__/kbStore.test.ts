@@ -131,7 +131,7 @@ describe('kbStore', () => {
 
       await useKBStore.getState().reparseDocument(1, 1);
 
-      expect(documentApi.reparse).toHaveBeenCalledWith(1);
+      expect(documentApi.reparse).toHaveBeenCalledWith(1, undefined);
     });
   });
 });

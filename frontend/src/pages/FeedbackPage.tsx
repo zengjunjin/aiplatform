@@ -308,7 +308,7 @@ export default function FeedbackPage() {
                   <Card
                     title="User Feedback"
                     size="small"
-                    style={{ background: '#fff1f0' }}
+                    style={{ background: 'var(--bg-tertiary)' }}
                   >
                     <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
                       {record.comment}

@@ -19,6 +19,7 @@
         "decorations": true,
         "minWidth": 800,
         "minHeight": 600,
+        "dragDropEnabled": false,
         "additionalBrowserArgs": "--remote-debugging-port=9222 --allow-running-insecure-content"
       }
     ],

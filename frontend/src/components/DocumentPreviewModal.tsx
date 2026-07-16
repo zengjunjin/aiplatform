@@ -71,7 +71,7 @@ export default function DocumentPreviewModal({
     <Modal
       title={
         <Space>
-          <FileText size={18} style={{ color: '#1677ff' }} />
+          <FileText size={18} style={{ color: 'var(--accent-primary)' }} />
           <span>{filename}</span>
           <Tag>{fileType.toUpperCase()}</Tag>
         </Space>
@@ -106,7 +106,7 @@ export default function DocumentPreviewModal({
                   lineHeight: 1.7,
                   padding: '8px 12px',
                   margin: 0,
-                  background: '#fafafa',
+                  background: 'var(--bg-tertiary)',
                   borderRadius: 4,
                 }}
               >
@@ -128,7 +128,7 @@ export default function DocumentPreviewModal({
             gap: 12,
             marginTop: 16,
             paddingTop: 12,
-            borderTop: '1px solid #f0f0f0',
+            borderTop: '1px solid var(--border-color)',
           }}
         >
           <Button

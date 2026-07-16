@@ -58,7 +58,7 @@ function ChatInput({
   );
 
   return (
-    <div style={{ padding: '12px 24px', background: '#fff', borderTop: '1px solid #f0f0f0' }}>
+    <div style={{ padding: '12px 24px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)' }}>
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <Space.Compact style={{ width: '100%' }}>
           <TextArea
@@ -99,7 +99,7 @@ function ChatInput({
             justifyContent: 'space-between',
             marginTop: 4,
             fontSize: 11,
-            color: '#bbb',
+            color: 'var(--text-tertiary)',
           }}
         >
           <span>{t('chat.enterHint')}</span>
@@ -119,13 +119,13 @@ function ChatInput({
           }}
         >
           <Space size={6}>
-            <BookOpen size={12} style={{ color: '#1677ff' }} />
+            <BookOpen size={12} style={{ color: 'var(--accent-primary)' }} />
             <Tag color="blue" style={{ margin: 0 }}>
               {kbName || t('chat.generalChat')}
             </Tag>
           </Space>
           <Space size={6}>
-            <Cpu size={12} style={{ color: '#52c41a' }} />
+            <Cpu size={12} style={{ color: 'var(--accent-success)' }} />
             <Tag color="green" style={{ margin: 0 }}>
               {modelName}
             </Tag>

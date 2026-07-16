@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Layout, Button, Tag, Drawer, Empty, Breadcrumb, Card, Modal, Form, Select, Input, App as AntdApp } from 'antd';
 import { Send, BookOpen, Plus, Trash2, Menu, FileText, Sparkles } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -57,11 +57,16 @@ export default function ChatPage() {
 
   const pendingSessionId = useRef<number | null>(null);
 
-  const currentSession = sessions.find((s) => s.id === sessionIdNum);
+  const currentSession = useMemo(
+    () => sessions.find((s) => s.id === sessionIdNum),
+    [sessions, sessionIdNum]
+  );
 
   // 判断当前会话是否正在 streaming (streaming 是全局状态, 切换会话时不应影响其他会话的 UI)
-  const isCurrentSessionStreaming =
-    sessionMsgs.length > 0 && sessionMsgs[sessionMsgs.length - 1].isStreaming === true;
+  const isCurrentSessionStreaming = useMemo(
+    () => sessionMsgs.length > 0 && sessionMsgs[sessionMsgs.length - 1].isStreaming === true,
+    [sessionMsgs]
+  );
 
   // 加载数据
   useEffect(() => {
@@ -126,16 +131,16 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [isCurrentSessionStreaming, scrollToBottom]);
 
-  const handleSend = async (content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     if (streaming) return; // 全局保护: 同时只允许一个 streaming
     try {
       await sendMessage(sessionIdNum, content, selectedModel || undefined);
     } catch (e: any) {
       message.error(e.message || t('chat.sendFailed'));
     }
-  };
+  }, [streaming, sendMessage, sessionIdNum, selectedModel, message, t]);
 
-  const handleNewSession = async () => {
+  const handleNewSession = useCallback(async () => {
     try {
       const values = await form.validateFields();
       const session = await createSession(values.kb_id, values.title);
@@ -148,9 +153,9 @@ export default function ChatPage() {
       message.error(e.message || t('chat.createFailed'));
       setNewSessionModal(false); // 创建失败时关闭弹窗
     }
-  };
+  }, [form, createSession, message, t]);
 
-  const handleDeleteSession = async (id: number) => {
+  const handleDeleteSession = useCallback(async (id: number) => {
     try {
       await deleteSession(id);
       if (id === sessionIdNum) {
@@ -160,9 +165,9 @@ export default function ChatPage() {
     } catch (e: any) {
       message.error(e.message || t('chat.deleteFailed'));
     }
-  };
+  }, [deleteSession, sessionIdNum, navigate, message, t]);
 
-  const handleRegenerate = () => {
+  const handleRegenerate = useCallback(() => {
     if (streaming) return; // 正在流式输出时禁止重新生成
     // 找到最后一条 user 消息
     for (let i = sessionMsgs.length - 1; i >= 0; i--) {
@@ -171,25 +176,35 @@ export default function ChatPage() {
         return;
       }
     }
-  };
+  }, [streaming, sessionMsgs, sendMessage, sessionIdNum, selectedModel]);
 
-  const getKBName = (kbId: number | null) => {
+  const getKBName = useCallback((kbId: number | null) => {
     if (!kbId) return t('chat.generalChat');
     const kb = knowledgeBases.find((k) => k.id === kbId);
     return kb?.name || t('chat.knowledgeBaseLabel', { kbId });
-  };
+  }, [t, knowledgeBases]);
 
-  const showReferences = (refs: Reference[]) => {
+  const showReferences = useCallback((refs: Reference[]) => {
     setCurrentRefs(refs);
     setReferencesVisible(true);
-  };
+  }, []);
+
+  // 模型选择器 options 派生数据, 仅在 models 变化时重新计算
+  const modelOptions = useMemo(
+    () => models.map((m) => ({
+      label: `${m.display_name} ${m.status === 'unhealthy' ? '(离线)' : ''}`,
+      value: m.name,
+      disabled: m.status === 'unhealthy',
+    })),
+    [models]
+  );
 
   return (
     <Layout style={{ height: 'calc(100vh - 112px)' }}>
       {/* 左侧会话列表 */}
       <Sider
         width={280}
-        style={{ background: '#fafafa', borderRight: '1px solid #f0f0f0' }}
+        style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-color)' }}
         trigger={null}
         collapsible
         collapsed={!siderVisible}
@@ -296,7 +311,7 @@ export default function ChatPage() {
           style={{
             padding: '16px 24px',
             overflow: 'auto',
-            background: '#f5f5f5',
+            background: 'var(--bg-tertiary)',
           }}
         >
           {sessionMsgs.length === 0 ? (
@@ -383,9 +398,9 @@ export default function ChatPage() {
 
         {/* 输入框 */}
         {/* 模型选择器 */}
-        <div style={{ padding: '8px 24px 0', background: '#fff', borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ padding: '8px 24px 0', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)' }}>
           <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>模型:</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>模型:</span>
             <Select
               value={selectedModel || undefined}
               onChange={(val) => {
@@ -396,11 +411,7 @@ export default function ChatPage() {
               style={{ minWidth: 200 }}
               size="small"
               allowClear
-              options={models.map((m) => ({
-                label: `${m.display_name} ${m.status === 'unhealthy' ? '(离线)' : ''}`,
-                value: m.name,
-                disabled: m.status === 'unhealthy',
-              }))}
+              options={modelOptions}
             />
           </div>
         </div>
@@ -431,15 +442,15 @@ export default function ChatPage() {
           <Card key={i} size="small" style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Tag color="blue">[{i + 1}]</Tag>
-              <FileText size={14} style={{ color: '#1677ff' }} />
+              <FileText size={14} style={{ color: 'var(--accent-primary)' }} />
               <span style={{ fontWeight: 600 }}>{ref.filename}</span>
               {ref.page && <Tag color="orange">{t('chat.page', { num: ref.page })}</Tag>}
             </div>
             <div
               style={{
                 fontSize: 13,
-                color: '#666',
-                background: '#fafafa',
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-tertiary)',
                 padding: 10,
                 borderRadius: 6,
                 lineHeight: 1.7,
@@ -448,7 +459,7 @@ export default function ChatPage() {
             >
               {ref.snippet}
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>
               {t('chat.relevance')}: {(ref.score * 100).toFixed(1)}%
             </div>
           </Card>

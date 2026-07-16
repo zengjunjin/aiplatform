@@ -39,7 +39,7 @@ export default function RegisterPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#f7f7f8',
+        background: 'var(--bg-primary)',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -52,7 +52,8 @@ export default function RegisterPage() {
           width: 600,
           height: 600,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(17,24,39,0.04) 0%, rgba(17,24,39,0) 70%)',
+          background: 'radial-gradient(circle, var(--accent-primary) 0%, transparent 70%)',
+          opacity: 0.04,
         }}
       />
       <div
@@ -63,7 +64,8 @@ export default function RegisterPage() {
           width: 500,
           height: 500,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(17,24,39,0.03) 0%, rgba(17,24,39,0) 70%)',
+          background: 'radial-gradient(circle, var(--accent-secondary) 0%, transparent 70%)',
+          opacity: 0.03,
         }}
       />
 
@@ -80,31 +82,31 @@ export default function RegisterPage() {
               width: 56,
               height: 56,
               borderRadius: 14,
-              background: 'linear-gradient(135deg, #111827 0%, #374151 100%)',
+              background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 20px',
-              boxShadow: '0 8px 24px rgba(17,24,39,0.15)',
+              boxShadow: '0 8px 24px rgba(59,130,246,0.25)',
             }}
           >
             <Sparkles size={28} color="#ffffff" strokeWidth={1.8} />
           </div>
-          <Title level={3} style={{ marginBottom: 8, fontWeight: 700, color: '#111827' }}>
+          <Title level={3} style={{ marginBottom: 8, fontWeight: 700, color: 'var(--text-primary)' }}>
             {t('auth.createAccount')}
           </Title>
-          <Text style={{ color: '#6b7280', fontSize: 14 }}>
+          <Text style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
             {t('auth.registerSubtitle')}
           </Text>
         </div>
 
         <div
           style={{
-            background: '#ffffff',
+            background: 'var(--bg-secondary)',
             borderRadius: 12,
             padding: 32,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)',
-            border: '1px solid #f0f0f0',
+            boxShadow: 'var(--shadow-md)',
+            border: '1px solid var(--border-color)',
           }}
         >
           <Form
@@ -171,17 +173,17 @@ export default function RegisterPage() {
               </Button>
             </Form.Item>
             <div style={{ textAlign: 'center' }}>
-              <Text style={{ color: '#6b7280', fontSize: 13 }}>
+              <Text style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
                 {t('auth.hasAccount')}{' '}
                 <Button
                   type="link"
                   onClick={() => navigate('/login')}
                   style={{
-                    color: '#111827',
+                    color: 'var(--text-primary)',
                     fontWeight: 500,
                     padding: 0,
                     height: 'auto',
-                    borderBottom: '1px solid #d1d5db',
+                    borderBottom: '1px solid var(--border-color)',
                     borderRadius: 0,
                   }}
                 >
@@ -193,7 +195,7 @@ export default function RegisterPage() {
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 32 }}>
-          <Text style={{ color: '#9ca3af', fontSize: 12 }}>
+          <Text style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
             {t('auth.copyright')}
           </Text>
         </div>

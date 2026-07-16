@@ -77,8 +77,21 @@ describe('documentApi', () => {
 
       const result = await documentApi.reparse(1);
 
-      expect(mockPost).toHaveBeenCalledWith('/documents/1/reparse');
+      expect(mockPost).toHaveBeenCalledWith('/documents/1/reparse', null, {
+        params: { force: false },
+      });
       expect(result.document_id).toBe(1);
+    });
+
+    it('should pass force=true when force option is set', async () => {
+      const mockResponse = { data: { data: { document_id: 1, task_id: 'task-1' } } };
+      mockPost.mockResolvedValue(mockResponse);
+
+      await documentApi.reparse(1, true);
+
+      expect(mockPost).toHaveBeenCalledWith('/documents/1/reparse', null, {
+        params: { force: true },
+      });
     });
   });
 

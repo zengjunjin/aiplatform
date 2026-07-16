@@ -61,11 +61,97 @@ function ThemeSync() {
 
 export default function App() {
   const themeMode = useAuthStore((s) => s.themeMode);
+  const isDark = themeMode === 'dark';
 
   return (
     <ConfigProvider
       theme={{
-        algorithm: themeMode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: {
+          colorPrimary: isDark ? '#3b82f6' : '#111827',
+          colorInfo: isDark ? '#3b82f6' : '#111827',
+          colorSuccess: '#10b981',
+          colorWarning: '#f59e0b',
+          colorError: '#ef4444',
+          borderRadius: 6,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif',
+          fontSize: 14,
+          lineHeight: 1.5,
+          ...(isDark ? {
+            colorBgBase: '#0f172a',
+            colorBgContainer: '#1e293b',
+            colorBgElevated: '#1e293b',
+            colorBgLayout: '#0f172a',
+            colorBgSpotlight: '#334155',
+            colorBorder: '#334155',
+            colorBorderSecondary: '#334155',
+            colorText: '#f1f5f9',
+            colorTextSecondary: '#94a3b8',
+            colorTextTertiary: '#64748b',
+            colorTextQuaternary: '#475569',
+          } : {}),
+        },
+        components: isDark ? {
+          Layout: {
+            headerBg: '#1e293b',
+            siderBg: '#1e293b',
+            bodyBg: '#0f172a',
+          },
+          Menu: {
+            itemBg: 'transparent',
+            itemSelectedBg: '#334155',
+            itemSelectedColor: '#f1f5f9',
+            itemHoverBg: '#334155',
+            itemHoverColor: '#f1f5f9',
+            itemColor: '#94a3b8',
+            itemBorderRadius: 6,
+          },
+          Button: {
+            colorPrimary: '#3b82f6',
+            colorPrimaryHover: '#2563eb',
+            colorPrimaryActive: '#1d4ed8',
+            algorithm: true,
+          },
+          Input: {
+            hoverBorderColor: '#475569',
+            activeBorderColor: '#3b82f6',
+            borderRadius: 6,
+          },
+          Card: {
+            borderRadiusLG: 8,
+            colorBorderSecondary: '#334155',
+          },
+        } : {
+          Layout: {
+            headerBg: '#ffffff',
+            siderBg: '#fafafa',
+            bodyBg: '#f7f7f8',
+          },
+          Menu: {
+            itemBg: 'transparent',
+            itemSelectedBg: '#ffffff',
+            itemSelectedColor: '#111827',
+            itemHoverBg: '#f0f0f0',
+            itemHoverColor: '#111827',
+            itemColor: '#6b7280',
+            itemBorderRadius: 6,
+          },
+          Button: {
+            colorPrimary: '#111827',
+            colorPrimaryHover: '#1f2937',
+            colorPrimaryActive: '#000000',
+            algorithm: true,
+          },
+          Input: {
+            hoverBorderColor: '#d1d5db',
+            activeBorderColor: '#111827',
+            borderRadius: 6,
+          },
+          Card: {
+            borderRadiusLG: 8,
+            colorBorderSecondary: '#f0f0f0',
+          },
+        },
       }}
     >
       <ErrorBoundary>

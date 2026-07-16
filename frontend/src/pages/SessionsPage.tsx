@@ -132,7 +132,7 @@ export default function SessionsPage() {
                 ]}
               >
                 <List.Item.Meta
-                  avatar={<MessageSquare size={24} style={{ color: '#1677ff' }} />}
+                  avatar={<MessageSquare size={24} style={{ color: 'var(--accent-primary)' }} />}
                   title={
                     <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-primary)' }}>
                       {session.title || t('session.newSessionTitle')}

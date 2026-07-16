@@ -59,6 +59,71 @@
   --text-tertiary: #64748b;
 }
 
+/* ===== 暗色模式：覆盖 Ant Design 默认色，统一为 slate 色系 ===== */
+[data-theme='dark'] .ant-table,
+[data-theme='dark'] .ant-table-container,
+[data-theme='dark'] .ant-card,
+[data-theme='dark'] .ant-modal-content,
+[data-theme='dark'] .ant-modal-header,
+[data-theme='dark'] .ant-popover-inner,
+[data-theme='dark'] .ant-select-dropdown,
+[data-theme='dark'] .ant-picker-dropdown,
+[data-theme='dark'] .ant-dropdown-menu,
+[data-theme='dark'] .ant-input,
+[data-theme='dark'] .ant-input-affix-wrapper,
+[data-theme='dark'] .ant-select-selector,
+[data-theme='dark'] .ant-btn-default,
+[data-theme='dark'] .ant-empty,
+[data-theme='dark'] .ant-skeleton,
+[data-theme='dark'] .ant-tabs-tab,
+[data-theme='dark'] .ant-list-item,
+[data-theme='dark'] .ant-statistic-content,
+[data-theme='dark'] .ant-card-body,
+[data-theme='dark'] .ant-table-tbody > tr > td,
+[data-theme='dark'] .ant-table-thead > tr > th {
+  background-color: var(--bg-secondary) !important;
+}
+
+[data-theme='dark'] .ant-table-thead > tr > th {
+  background-color: var(--bg-tertiary) !important;
+}
+
+[data-theme='dark'] .ant-table-tbody > tr:hover > td {
+  background-color: var(--bg-hover) !important;
+}
+
+[data-theme='dark'] .ant-modal-title,
+[data-theme='dark'] .ant-table-cell,
+[data-theme='dark'] .ant-card-head-title,
+[data-theme='dark'] .ant-list-item-meta-title,
+[data-theme='dark'] .ant-statistic-title,
+[data-theme='dark'] .ant-tabs-tab-btn,
+[data-theme='dark'] .ant-typography,
+[data-theme='dark'] .ant-form-item-label > label {
+  color: var(--text-primary) !important;
+}
+
+[data-theme='dark'] .ant-table-tbody > tr > td,
+[data-theme='dark'] .ant-list-item-meta-description,
+[data-theme='dark'] .ant-form-item-explain,
+[data-theme='dark'] .ant-statistic-content,
+[data-theme='dark'] .ant-empty-description {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme='dark'] .ant-table,
+[data-theme='dark'] .ant-card,
+[data-theme='dark'] .ant-modal-content,
+[data-theme='dark'] .ant-input,
+[data-theme='dark'] .ant-input-affix-wrapper,
+[data-theme='dark'] .ant-select-selector {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .ant-layout-content {
+  background: var(--bg-primary) !important;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -163,7 +228,7 @@ body {
   margin: 12px 0 !important;
   border-radius: 8px;
   overflow-x: auto;
-  background: #111827 !important;
+  background: var(--bg-tertiary) !important;
 }
 
 .markdown-content pre code {
@@ -338,24 +403,6 @@ body {
 
 .ant-card-bordered {
   border: 1px solid var(--border-color);
-}
-
-.ant-btn-primary {
-  background: #111827;
-  border-color: #111827;
-}
-
-.ant-btn-primary:hover {
-  background: #1f2937 !important;
-  border-color: #1f2937 !important;
-}
-
-.ant-input:focus,
-.ant-input-focused,
-.ant-input-affix-wrapper:focus,
-.ant-input-affix-wrapper-focused {
-  border-color: #111827 !important;
-  box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.1) !important;
 }
 
 .ant-menu-item {

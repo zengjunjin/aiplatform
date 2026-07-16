@@ -162,7 +162,7 @@ function MessageBubbleBase({
                   <span></span>
                   <span></span>
                 </span>
-                <span style={{ color: '#999', fontSize: 13, marginLeft: 4 }}>
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 13, marginLeft: 4 }}>
                   {t('chat.thinking')}
                 </span>
               </div>
@@ -178,7 +178,7 @@ function MessageBubbleBase({
                 display: 'flex',
                 gap: 8,
                 fontSize: 12,
-                color: '#999',
+                color: 'var(--text-tertiary)',
                 alignItems: 'center',
               }}
             >
@@ -238,7 +238,7 @@ function MessageBubbleBase({
         <div
           style={{
             fontSize: 11,
-            color: '#bbb',
+            color: 'var(--text-tertiary)',
             marginTop: 4,
             textAlign: role === 'user' ? 'right' : 'left',
           }}

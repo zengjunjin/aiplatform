@@ -134,7 +134,7 @@ export default function DocumentsPage() {
       key: 'filename',
       render: (text: string) => (
         <Space>
-          <FileText size={16} style={{ color: '#1677ff' }} />
+          <FileText size={16} style={{ color: 'var(--accent-primary)' }} />
           <span>{text}</span>
         </Space>
       ),

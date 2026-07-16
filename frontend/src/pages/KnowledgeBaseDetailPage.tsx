@@ -154,9 +154,9 @@ export default function KnowledgeBaseDetailPage() {
     }
   };
 
-  const handleReparse = async (docId: number) => {
+  const handleReparse = async (docId: number, force: boolean = false) => {
     try {
-      await reparseDocument(kbIdNum, docId);
+      await reparseDocument(kbIdNum, docId, force);
       message.success(t('kb.reparsed'));
     } catch (e: any) {
       message.error(e.message || t('kb.operationFailed'));
@@ -240,7 +240,7 @@ export default function KnowledgeBaseDetailPage() {
       key: 'filename',
       render: (text: string) => (
         <Space>
-          <FileText size={16} style={{ color: '#1677ff' }} />
+          <FileText size={16} style={{ color: 'var(--accent-primary)' }} />
           <span>{text}</span>
         </Space>
       ),
@@ -322,8 +322,7 @@ export default function KnowledgeBaseDetailPage() {
           <Button
             size="small"
             icon={<RefreshCw size={14} />}
-            onClick={() => handleReparse(record.id)}
-            disabled={record.status === 'parsing' || record.status === 'embedding' || record.status === 'chunking'}
+            onClick={() => handleReparse(record.id, record.status === 'parsing' || record.status === 'embedding' || record.status === 'chunking')}
           >
             {t('kb.reparse')}
           </Button>
@@ -430,7 +429,7 @@ export default function KnowledgeBaseDetailPage() {
           disabled={uploading}
         >
           <p className="ant-upload-drag-icon">
-            <UploadIcon size={48} style={{ color: '#1677ff' }} />
+            <UploadIcon size={48} style={{ color: 'var(--accent-primary)' }} />
           </p>
           <p className="ant-upload-text">
             {uploading ? t('kb.uploading') : t('kb.uploadDragText')}

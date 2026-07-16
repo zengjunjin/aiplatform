@@ -72,13 +72,13 @@ export default class ErrorBoundary extends Component<Props, State> {
                 </Paragraph>
                 <pre
                   style={{
-                    background: '#f5f5f5',
+                    background: 'var(--bg-tertiary)',
                     padding: 16,
                     borderRadius: 8,
                     overflow: 'auto',
                     maxHeight: 200,
                     fontSize: 12,
-                    color: '#666',
+                    color: 'var(--text-secondary)',
                   }}
                 >
                   {this.state.error.toString()}

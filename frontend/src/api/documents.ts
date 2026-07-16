@@ -78,8 +78,10 @@ export const documentApi = {
   },
 
   /** 重新解析文档 */
-  async reparse(docId: number): Promise<{ document_id: number; task_id: string }> {
-    const res = await client.post(`/documents/${docId}/reparse`);
+  async reparse(docId: number, force: boolean = false): Promise<{ document_id: number; task_id: string }> {
+    const res = await client.post(`/documents/${docId}/reparse`, null, {
+      params: { force },
+    });
     return extractData(res);
   },
 
