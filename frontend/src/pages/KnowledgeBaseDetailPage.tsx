@@ -133,18 +133,21 @@ export default function KnowledgeBaseDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingDocIds, kbIdNum]);
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (file: File, onSuccess?: (body: any) => void, onError?: (err: Error) => void) => {
     setUploading(true);
     setUploadProgress(0);
     try {
-      await documentApi.upload(kbIdNum, file, (loaded, total) => {
+      const result = await documentApi.upload(kbIdNum, file, (loaded, total) => {
         setUploadProgress(Math.round((loaded / total) * 100));
       });
       message.success(t('kb.uploadSuccess'));
+      onSuccess?.(result);
       setUploadModal(false);
       fetchDocuments(kbIdNum, docPage, docPageSize);
     } catch (e: any) {
       message.error(e.message || t('kb.uploadFailed'));
+      onError?.(e);
+      setUploadModal(false);
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -186,6 +189,7 @@ export default function KnowledgeBaseDetailPage() {
     } catch (e: any) {
       if (e.errorFields) return;
       message.error(e.message || t('kb.updateFailed'));
+      setEditModal(false);
     }
   };
 
@@ -413,11 +417,13 @@ export default function KnowledgeBaseDetailPage() {
         title={t('kb.uploadModalTitle')}
         open={uploadModal}
         onCancel={() => setUploadModal(false)}
+        transitionName=""
+        maskTransitionName=""
         footer={null}
       >
         <Upload.Dragger
           name="file"
-          customRequest={({ file }) => handleUpload(file as File)}
+          customRequest={({ file, onSuccess, onError }) => handleUpload(file as File, onSuccess, onError)}
           showUploadList={false}
           accept=".pdf,.docx,.md,.markdown,.txt"
           multiple={false}
@@ -443,6 +449,8 @@ export default function KnowledgeBaseDetailPage() {
         open={editModal}
         onOk={handleEditSubmit}
         onCancel={() => setEditModal(false)}
+        transitionName=""
+        maskTransitionName=""
         okText={t('kb.save')}
         cancelText={t('kb.cancel')}
       >
@@ -464,6 +472,8 @@ export default function KnowledgeBaseDetailPage() {
         title={t('kb.collaborators')}
         open={collabModal}
         onCancel={() => { setCollabModal(false); addCollabForm.resetFields(); }}
+        transitionName=""
+        maskTransitionName=""
         footer={null}
         width={500}
       >

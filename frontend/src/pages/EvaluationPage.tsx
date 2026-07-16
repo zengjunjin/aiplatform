@@ -397,6 +397,8 @@ export default function EvaluationPage() {
           setTriggerModal(false);
           form.resetFields();
         }}
+        transitionName=""
+        maskTransitionName=""
         okText="开始评估"
         cancelText="取消"
         centered
@@ -434,6 +436,8 @@ export default function EvaluationPage() {
           setSelectedRun(null);
           setResults([]);
         }}
+        transitionName=""
+        maskTransitionName=""
         footer={null}
         width={900}
         centered

@@ -76,6 +76,8 @@ export default function DocumentPreviewModal({
           <Tag>{fileType.toUpperCase()}</Tag>
         </Space>
       }
+      transitionName=""
+      maskTransitionName=""
       open={open}
       onCancel={onClose}
       footer={null}

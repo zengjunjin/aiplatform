@@ -10,8 +10,8 @@
     "settings": "设置",
     "logout": "退出登录",
     "changePassword": "修改密码",
-    "platformName": "RAG Platform",
-    "platformSubtitle": "Knowledge Base"
+    "platformName": "RAG 知识库平台",
+    "platformSubtitle": "智能知识库系统"
   },
   "chat": {
     "newChat": "新建对话",
@@ -202,7 +202,7 @@
     "loginNow": "立即登录",
     "registerSuccess": "注册成功",
     "registerFailed": "注册失败",
-    "copyright": "© 2026 RAG Platform · 智能知识库系统",
+    "copyright": "© 2026 RAG 知识库平台 · 智能知识库系统",
     "currentPassword": "当前密码",
     "currentPasswordPlaceholder": "请输入当前密码",
     "currentPasswordRequired": "请输入当前密码",

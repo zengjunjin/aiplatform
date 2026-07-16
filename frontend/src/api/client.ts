@@ -3,11 +3,13 @@ import { useAuthStore } from '../store/auth';
 import type { ApiResponse } from '../types';
 import { isTauri } from '../utils/tauri';
 
-/** API 基础路径：Tauri 环境下使用完整 URL，浏览器环境使用相对路径 */
-export const API_BASE = isTauri() ? 'http://localhost:8002/api/v1' : '/api/v1';
+/** 获取 API 基础路径：Tauri 环境下使用完整 URL，浏览器环境使用相对路径 */
+export const getApiBase = (): string => {
+  return isTauri() ? 'http://localhost:8000/api/v1' : '/api/v1';
+};
 
 const client = axios.create({
-  baseURL: API_BASE,
+  baseURL: getApiBase(),
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json',

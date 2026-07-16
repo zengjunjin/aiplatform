@@ -1,4 +1,4 @@
-import client, { extractData, API_BASE } from './client';
+import client, { extractData, getApiBase } from './client';
 import { useAuthStore } from '../store/auth';
 import type { Document, DocumentProgress } from '../types';
 
@@ -39,7 +39,7 @@ export const documentApi = {
     formData.append('kb_id', String(kbId));
 
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE}/documents/upload`);
+    xhr.open('POST', `${getApiBase()}/documents/upload`);
     xhr.timeout = 120000; // 上传超时 2 分钟
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 

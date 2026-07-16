@@ -375,6 +375,8 @@ export default function MainLayout() {
           setPwdModal(false);
           pwdForm.resetFields();
         }}
+        transitionName=""
+        maskTransitionName=""
         okText={t('auth.changePasswordConfirm')}
         cancelText={t('common.cancel')}
         centered

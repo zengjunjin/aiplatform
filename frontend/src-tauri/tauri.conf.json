@@ -19,11 +19,12 @@
         "decorations": true,
         "minWidth": 800,
         "minHeight": 600,
-        "additionalBrowserArgs": "--remote-debugging-port=9222"
+        "additionalBrowserArgs": "--remote-debugging-port=9222 --allow-running-insecure-content"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8002 http://localhost:8000"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8000",
+      "dangerousDisableAssetCspModification": false
     },
     "withGlobalTauri": true
   },

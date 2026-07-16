@@ -52,3 +52,7 @@ htmlcov/
 # Temporary files
 *.tmp
 *.temp
+screenshot-*.png
+task*.png
+query
+test.txt

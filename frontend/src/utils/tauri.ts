@@ -1,31 +1,23 @@
 /** Tauri API 封装 */
 
-let _tauriDetected: boolean | null = null;
-
 export const isTauri = (): boolean => {
   if (typeof window === 'undefined') return false;
-  if (_tauriDetected !== null) return _tauriDetected;
 
   // Tauri 2.0 在 window 上挂载 __TAURI_INTERNALS__
-  if (
-    typeof window !== 'undefined' &&
-    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
-  ) {
-    _tauriDetected = true;
+  if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) {
     return true;
   }
 
-  // 兜底：Tauri 默认加载的页面 protocol 为 https://tauri.localhost/
-  if (
-    typeof window !== 'undefined' &&
-    window.location &&
-    window.location.hostname === 'tauri.localhost'
-  ) {
-    _tauriDetected = true;
-    return true;
-  }
+  // 检测 Tauri 自定义协议
+  try {
+    if (window.location?.protocol === 'tauri:') return true;
+  } catch {}
 
-  _tauriDetected = false;
+  // 兜底：Tauri 默认加载的页面 hostname 为 tauri.localhost
+  try {
+    if (window.location?.hostname === 'tauri.localhost') return true;
+  } catch {}
+
   return false;
 };
 

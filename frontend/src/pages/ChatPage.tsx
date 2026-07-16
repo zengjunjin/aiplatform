@@ -55,6 +55,8 @@ export default function ChatPage() {
     return localStorage.getItem('chat-selected-model') || '';
   });
 
+  const pendingSessionId = useRef<number | null>(null);
+
   const currentSession = sessions.find((s) => s.id === sessionIdNum);
 
   // 判断当前会话是否正在 streaming (streaming 是全局状态, 切换会话时不应影响其他会话的 UI)
@@ -80,6 +82,11 @@ export default function ChatPage() {
     });
     return () => { mounted = false; };
   }, [fetchSessions, fetchKBs]);
+
+  // 切换会话时自动中断旧 SSE 流，防止 streaming 状态卡死
+  useEffect(() => {
+    stopStreaming();
+  }, [sessionIdNum, stopStreaming]);
 
   useEffect(() => {
     if (sessionIdNum > 0) {
@@ -132,15 +139,14 @@ export default function ChatPage() {
     try {
       const values = await form.validateFields();
       const session = await createSession(values.kb_id, values.title);
+      pendingSessionId.current = session.id;
+      // 关闭弹窗，不在这里导航，等 afterClose 回调再导航
       setNewSessionModal(false);
       form.resetFields();
-      // 延迟导航，确保 Modal 先关闭，避免组件重渲染导致 Modal 卡住
-      setTimeout(() => {
-        navigate(`/chat/${session.id}`);
-      }, 0);
     } catch (e: any) {
-      if (e.errorFields) return; // 表单验证错误
+      if (e.errorFields) return; // 表单验证错误，不关闭弹窗
       message.error(e.message || t('chat.createFailed'));
+      setNewSessionModal(false); // 创建失败时关闭弹窗
     }
   };
 
@@ -399,6 +405,7 @@ export default function ChatPage() {
           </div>
         </div>
         <ChatInput
+          key={sessionIdNum}
           onSend={handleSend}
           onStop={stopStreaming}
           streaming={isCurrentSessionStreaming}
@@ -454,6 +461,15 @@ export default function ChatPage() {
         open={newSessionModal}
         onOk={handleNewSession}
         onCancel={() => setNewSessionModal(false)}
+        afterClose={() => {
+          if (pendingSessionId.current) {
+            navigate(`/chat/${pendingSessionId.current}`);
+            pendingSessionId.current = null;
+          }
+        }}
+        destroyOnClose
+        transitionName=""
+        maskTransitionName=""
         okText={t('chat.create')}
         cancelText={t('chat.cancel')}
       >

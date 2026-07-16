@@ -47,7 +47,9 @@ export default function KnowledgeBasesPage() {
       setModalOpen(false);
       form.resetFields();
     } catch (e: any) {
+      if (e.errorFields) return; // 表单验证错误
       message.error(e.message || t('kb.createFailed'));
+      setModalOpen(false);
     }
   };
 
@@ -192,6 +194,8 @@ export default function KnowledgeBasesPage() {
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => setModalOpen(false)}
+        transitionName=""
+        maskTransitionName=""
         okText={t('kb.create')}
         cancelText={t('kb.cancel')}
       >

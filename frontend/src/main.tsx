@@ -58,6 +58,13 @@ const customTheme = {
 // Tauri 环境下使用 HashRouter 避免路由刷新 404 问题
 const Router = isTauri() ? HashRouter : BrowserRouter;
 
+// 清理旧版 PWA Service Worker 残留（避免缓存旧版本 JS/CSS）
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((reg) => reg.unregister());
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={customTheme}>

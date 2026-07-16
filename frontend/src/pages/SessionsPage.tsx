@@ -162,6 +162,8 @@ export default function SessionsPage() {
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => setModalOpen(false)}
+        transitionName=""
+        maskTransitionName=""
         okText={t('session.create')}
         cancelText={t('session.cancel')}
       >

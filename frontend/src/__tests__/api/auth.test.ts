@@ -16,7 +16,7 @@ vi.mock('../../api/client', () => ({
     delete: mockDelete,
   },
   extractData: (res: any) => res.data.data,
-  API_BASE: '/api/v1',
+  getApiBase: () => '/api/v1',
 }));
 
 import { authApi } from '../../api/auth';

@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 20
     MAX_DOCUMENTS_PER_KB: int = 100
 
-    CORS_ORIGINS: str = "tauri://localhost,https://tauri.localhost,http://localhost:1420,http://localhost:5173"
+    CORS_ORIGINS: str = "tauri://localhost,https://tauri.localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173"
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"

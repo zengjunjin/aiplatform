@@ -255,6 +255,8 @@ function MessageBubbleBase({
         onCancel={() => setFeedbackModalOpen(false)}
         confirmLoading={submitting}
         okText={t('common.confirm')}
+        transitionName=""
+        maskTransitionName=""
         cancelText={t('common.cancel')}
       >
         <div style={{ marginBottom: 16 }}>

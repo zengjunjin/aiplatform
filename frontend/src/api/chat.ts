@@ -1,4 +1,4 @@
-import client, { extractData, API_BASE } from './client';
+import client, { extractData, getApiBase } from './client';
 import { useAuthStore } from '../store/auth';
 import type { ChatSession, Message, SSEEvent, PaginatedResponse } from '../types';
 
@@ -85,7 +85,7 @@ export async function* streamChat(
     }
 
     try {
-      const resp = await fetch(`${API_BASE}/chat/sessions/${sessionId}/messages`, {
+      const resp = await fetch(`${getApiBase()}/chat/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { API_BASE } from '../api/client';
+import { getApiBase } from '../api/client';
 
 /** WebSocket 通知消息类型 */
 export interface WSNotification {
@@ -12,7 +12,8 @@ export interface WSNotification {
 
 /** WebSocket 服务基础 URL，从 API_BASE 提取 host 和 port */
 function getWsBase(): string {
-  const url = new URL(API_BASE.startsWith('http') ? API_BASE : `http://localhost${API_BASE}`);
+  const apiBase = getApiBase();
+  const url = new URL(apiBase.startsWith('http') ? apiBase : `http://localhost${apiBase}`);
   const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${url.host}/api/v1/ws`;
 }
