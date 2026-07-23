@@ -20,14 +20,14 @@
         "minWidth": 800,
         "minHeight": 600,
         "dragDropEnabled": false,
-        "additionalBrowserArgs": "--remote-debugging-port=9222 --allow-running-insecure-content"
+        "additionalBrowserArgs": "--remote-debugging-port=9223 --allow-running-insecure-content"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8000",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:8000 wss://localhost:8000",
       "dangerousDisableAssetCspModification": false
     },
-    "withGlobalTauri": true
+    "withGlobalTauri": false
   },
   "bundle": {
     "active": true,
@@ -41,6 +41,14 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
-  }
+    ],
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.sectigo.com",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {}
 }
