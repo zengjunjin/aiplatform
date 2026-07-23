@@ -167,5 +167,73 @@ describe('feedbackApi', () => {
       expect(mockGet).toHaveBeenCalledWith('/chat/feedback/stats', { params: {} });
       expect(result.total_feedback).toBe(10);
     });
+
+    it('should pass kb_id when provided', async () => {
+      mockGet.mockResolvedValue({ data: { data: { total_feedback: 0, positive_rate: 0, negative_rate: 0, by_type: {} } } });
+
+      await feedbackApi.getStats(1);
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/stats', { params: { kb_id: 1 } });
+    });
+  });
+
+  describe('getAnalysis', () => {
+    it('should call GET /chat/feedback/analysis without params', async () => {
+      mockGet.mockResolvedValue({ data: { data: { trend: [] } } });
+
+      await feedbackApi.getAnalysis();
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/analysis', { params: {} });
+    });
+
+    it('should call GET /chat/feedback/analysis with all params', async () => {
+      mockGet.mockResolvedValue({ data: { data: {} } });
+
+      await feedbackApi.getAnalysis(1, '2024-01-01', '2024-12-31');
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/analysis', {
+        params: { kb_id: 1, start_date: '2024-01-01', end_date: '2024-12-31' },
+      });
+    });
+
+    it('should call GET /chat/feedback/analysis with partial params', async () => {
+      mockGet.mockResolvedValue({ data: { data: {} } });
+
+      await feedbackApi.getAnalysis(undefined, '2024-01-01');
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/analysis', {
+        params: { start_date: '2024-01-01' },
+      });
+    });
+  });
+
+  describe('getLowRated', () => {
+    it('should call GET /chat/feedback/low-rated with params', async () => {
+      mockGet.mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } });
+
+      await feedbackApi.getLowRated({ kb_id: 1, page: 1, page_size: 20 });
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/low-rated', {
+        params: { kb_id: 1, page: 1, page_size: 20 },
+      });
+    });
+
+    it('should call GET /chat/feedback/low-rated with date range', async () => {
+      mockGet.mockResolvedValue({ data: { data: { items: [], total: 0 } } });
+
+      await feedbackApi.getLowRated({ start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'hallucination' });
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/low-rated', {
+        params: { start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'hallucination' },
+      });
+    });
+
+    it('should call GET /chat/feedback/low-rated with empty params', async () => {
+      mockGet.mockResolvedValue({ data: { data: { items: [], total: 0 } } });
+
+      await feedbackApi.getLowRated({});
+
+      expect(mockGet).toHaveBeenCalledWith('/chat/feedback/low-rated', { params: {} });
+    });
   });
 });

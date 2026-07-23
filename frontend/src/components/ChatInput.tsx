@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import type React from 'react';
 import { Input, Button, Space, Tag } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Send, StopCircle, BookOpen, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -31,7 +33,7 @@ function ChatInput({
 }: Props) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const textAreaRef = useRef<TextAreaRef>(null);
 
   // 自动聚焦
   useEffect(() => {
@@ -62,7 +64,7 @@ function ChatInput({
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <Space.Compact style={{ width: '100%' }}>
           <TextArea
-            ref={textAreaRef as any}
+            ref={textAreaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -115,7 +117,7 @@ function ChatInput({
             alignItems: 'center',
             marginTop: 8,
             paddingTop: 8,
-            borderTop: '1px dashed #f0f0f0',
+            borderTop: '1px dashed var(--border-color-light)',
           }}
         >
           <Space size={6}>

@@ -1,4 +1,4 @@
-import client, { extractData } from './client';
+import { getWithOptionalSignal } from './helpers';
 
 export interface SystemStatus {
   status: string;
@@ -21,17 +21,26 @@ export interface ModelsResponse {
   default_model: string;
 }
 
+/**
+ * 后端 /system/status 端点返回的扩展字段。
+ * 现有 SystemStatus 接口只覆盖核心 5 个组件状态，此处补充附加信息字段。
+ */
+export interface ExtendedSystemStatus extends SystemStatus {
+  postgresql?: string;
+  ollama_models?: string[];
+  qdrant_collections?: number;
+  celery_workers?: string[];
+}
+
 export const systemApi = {
   /** 获取系统状态 */
-  async status(): Promise<SystemStatus> {
-    const res = await client.get('/system/status');
-    return extractData(res);
+  async status(signal?: AbortSignal): Promise<SystemStatus> {
+    return getWithOptionalSignal<SystemStatus>('/system/status', undefined, signal);
   },
 
   /** 获取可用模型列表 */
-  async listModels(): Promise<ModelsResponse> {
-    const res = await client.get('/system/models');
-    return extractData(res);
+  async listModels(signal?: AbortSignal): Promise<ModelsResponse> {
+    return getWithOptionalSignal<ModelsResponse>('/system/models', undefined, signal);
   },
 };
 

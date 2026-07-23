@@ -60,6 +60,53 @@ describe('documentApi', () => {
     });
   });
 
+  describe('upload', () => {
+    it('should call POST /documents/upload with FormData and onUploadProgress', async () => {
+      const mockResponse = {
+        data: { data: { document_id: 1, status: 'pending', task_id: 'task-1' } },
+      };
+      mockPost.mockResolvedValue(mockResponse);
+
+      const file = new File(['test-content'], 'test.pdf', { type: 'application/pdf' });
+      const onProgress = vi.fn();
+      const result = await documentApi.upload(1, file, onProgress);
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/documents/upload',
+        expect.any(FormData),
+        expect.objectContaining({
+          timeout: 120000,
+          onUploadProgress: expect.any(Function),
+        }),
+      );
+      expect(result.document_id).toBe(1);
+      expect(result.status).toBe('pending');
+      expect(result.task_id).toBe('task-1');
+    });
+
+    it('should invoke onProgress callback when onUploadProgress fires', async () => {
+      const mockResponse = {
+        data: { data: { document_id: 2, status: 'pending', task_id: 'task-2' } },
+      };
+      mockPost.mockImplementation(async (_url: string, _data: unknown, config?: { onUploadProgress?: (e: { loaded: number; total?: number }) => void }) => {
+        config?.onUploadProgress?.({ loaded: 50, total: 100 });
+        return mockResponse;
+      });
+
+      const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
+      const onProgress = vi.fn();
+      await documentApi.upload(1, file, onProgress);
+
+      expect(onProgress).toHaveBeenCalledWith(50, 100);
+    });
+
+    it('should propagate error from interceptor', async () => {
+      mockPost.mockRejectedValueOnce(new Error('服务器错误'));
+      const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
+      await expect(documentApi.upload(1, file)).rejects.toThrow('服务器错误');
+    });
+  });
+
   describe('delete', () => {
     it('should call DELETE /documents/:id', async () => {
       mockDelete.mockResolvedValue({ data: {} });

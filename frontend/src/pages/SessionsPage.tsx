@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   List,
   Button,
@@ -26,6 +26,8 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useKBStore } from '../store/kb';
 import { formatRelativeTime } from '../utils/format';
+import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { useApiToast } from '../hooks/useApiToast';
 
 const { Title } = Typography;
 
@@ -44,10 +46,14 @@ export default function SessionsPage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const { message } = AntdApp.useApp();
+  const { runWithToast } = useApiToast();
 
+  // Task 30: mount 时创建 AbortController，卸载时取消 fetchSessions/fetchKBs
   useEffect(() => {
-    fetchSessions();
-    fetchKBs();
+    const controller = new AbortController();
+    fetchSessions(controller.signal);
+    fetchKBs(controller.signal);
+    return () => controller.abort();
   }, [fetchSessions, fetchKBs]);
 
   const handleCreate = async () => {
@@ -60,19 +66,17 @@ export default function SessionsPage() {
       setTimeout(() => {
         navigate(`/chat/${session.id}`);
       }, 0);
-    } catch (e: any) {
-      if (e.errorFields) return;
-      message.error(e.message || t('session.createFailed'));
+    } catch (e: unknown) {
+      if (isFormValidationError(e)) return;
+      message.error(getErrorMessage(e) || t('session.createFailed'));
     }
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      await deleteSession(id);
-      message.success(t('session.deleteSuccess'));
-    } catch (e: any) {
-      message.error(e.message || t('session.deleteFailed'));
-    }
+    await runWithToast(() => deleteSession(id), {
+      successKey: 'session.deleteSuccess',
+      errorKey: 'session.deleteFailed',
+    });
   };
 
   const getKBName = (kbId: number | null) => {
@@ -80,6 +84,11 @@ export default function SessionsPage() {
     const kb = knowledgeBases.find((k) => k.id === kbId);
     return kb?.name || t('session.kbLabel', { kbId });
   };
+
+  const kbOptions = useMemo(() => knowledgeBases.map((kb) => ({
+    label: kb.name,
+    value: kb.id,
+  })), [knowledgeBases]);
 
   return (
     <div>
@@ -110,15 +119,9 @@ export default function SessionsPage() {
                   cursor: 'pointer',
                   padding: '12px 16px',
                   borderRadius: 'var(--radius-md)',
-                  transition: 'all var(--transition-base)',
                   borderBottom: '1px solid var(--border-color)',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-tertiary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
+                className="session-item-hoverable"
                 actions={[
                   <Popconfirm
                     key="delete"
@@ -127,7 +130,7 @@ export default function SessionsPage() {
                     okText={t('session.delete')}
                     cancelText={t('session.cancel')}
                   >
-                    <Button type="text" danger size="small" icon={<Trash2 size={14} />} />
+                    <Button type="text" danger size="small" icon={<Trash2 size={14} />} aria-label={t('session.delete')} />
                   </Popconfirm>,
                 ]}
               >
@@ -172,10 +175,7 @@ export default function SessionsPage() {
             <Select
               placeholder={t('session.selectKBPlaceholder')}
               allowClear
-              options={knowledgeBases.map((kb) => ({
-                label: kb.name,
-                value: kb.id,
-              }))}
+              options={kbOptions}
             />
           </Form.Item>
           <Form.Item name="title" label={t('session.sessionTitleOptional')}>

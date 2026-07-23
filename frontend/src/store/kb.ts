@@ -9,16 +9,18 @@ interface KBState {
   loading: boolean;
   loadingDocs: Record<number, boolean>;
   error: string | null;
-  fetchKBs: () => Promise<void>;
+  // Task 49: 轮询进度连续失败达上限后置 true, 供 UI 显示"进度获取失败, 点击重试"
+  pollError: boolean;
+  fetchKBs: (signal?: AbortSignal) => Promise<void>;
   createKB: (name: string, description: string) => Promise<KnowledgeBase>;
   updateKB: (id: number, name: string, description: string) => Promise<KnowledgeBase>;
   deleteKB: (id: number) => Promise<void>;
-  fetchDocuments: (kbId: number, page?: number, pageSize?: number) => void;
+  fetchDocuments: (kbId: number, page?: number, pageSize?: number, signal?: AbortSignal) => void;
   uploadDocument: (kbId: number, file: File, onProgress?: (progress: number) => void) => Promise<void>;
   deleteDocument: (kbId: number, docId: number) => Promise<void>;
   reparseDocument: (kbId: number, docId: number, force?: boolean) => Promise<void>;
-  getProgress: (docId: number) => Promise<DocumentProgress>;
-  pollProgress: (docId: number, onUpdate: (p: DocumentProgress) => void) => () => void;
+  getProgress: (docId: number, signal?: AbortSignal) => Promise<DocumentProgress>;
+  pollProgress: (docId: number, onUpdate: (p: DocumentProgress) => void, signal?: AbortSignal) => () => void;
 }
 
 export const useKBStore = create<KBState>((set, get) => ({
@@ -28,14 +30,17 @@ export const useKBStore = create<KBState>((set, get) => ({
   loading: false,
   loadingDocs: {},
   error: null,
+  pollError: false,
 
-  fetchKBs: async () => {
+  fetchKBs: async (signal?: AbortSignal) => {
     set({ loading: true, error: null });
     try {
-      const data = await kbApi.list(1, 100);
+      const data = await kbApi.list(1, 100, signal);
       set({ knowledgeBases: data.items || [] });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (e: unknown) {
+      // 组件卸载 abort 后的 CanceledError 静默处理，不写入 error 状态
+      if (e instanceof Error && e.name === 'CanceledError') return;
+      set({ error: e instanceof Error ? e.message : String(e) });
     } finally {
       set({ loading: false });
     }
@@ -63,14 +68,18 @@ export const useKBStore = create<KBState>((set, get) => ({
     }));
   },
 
-  fetchDocuments: async (kbId, page = 1, pageSize = 20) => {
+  fetchDocuments: async (kbId, page = 1, pageSize = 20, signal?: AbortSignal) => {
     set((state) => ({ loadingDocs: { ...state.loadingDocs, [kbId]: true } }));
     try {
-      const data = await documentApi.list(kbId, page, pageSize);
+      const data = await documentApi.list(kbId, page, pageSize, signal);
       set((state) => ({
         documents: { ...state.documents, [kbId]: data.items || [] },
         docTotal: { ...state.docTotal, [kbId]: data.total || 0 },
       }));
+    } catch (e: unknown) {
+      // 组件卸载 abort 后的 CanceledError 静默处理
+      if (e instanceof Error && e.name === 'CanceledError') return;
+      throw e;
     } finally {
       set((state) => ({ loadingDocs: { ...state.loadingDocs, [kbId]: false } }));
     }
@@ -100,11 +109,11 @@ export const useKBStore = create<KBState>((set, get) => ({
     await get().fetchDocuments(kbId);
   },
 
-  getProgress: async (docId) => {
-    return documentApi.getProgress(docId);
+  getProgress: async (docId, signal?: AbortSignal) => {
+    return documentApi.getProgress(docId, ...(signal ? [signal] : []));
   },
 
-  pollProgress: (docId, onUpdate) => {
+  pollProgress: (docId, onUpdate, signal?: AbortSignal) => {
     let stopped = false;
     let timer: number;
     let errorCount = 0;
@@ -113,7 +122,7 @@ export const useKBStore = create<KBState>((set, get) => ({
     const poll = async () => {
       if (stopped) return;
       try {
-        const progress = await get().getProgress(docId);
+        const progress = await get().getProgress(docId, ...(signal ? [signal] : []));
         errorCount = 0;
         onUpdate(progress);
         if (progress.status === 'done' || progress.status === 'failed') {
@@ -123,10 +132,14 @@ export const useKBStore = create<KBState>((set, get) => ({
         const interval = progress.status === 'embedding' ? 1000 : 2000;
         timer = window.setTimeout(poll, interval);
       } catch (e) {
+        // 组件卸载 abort 后的 CanceledError 静默停止轮询
+        if (e instanceof Error && e.name === 'CanceledError') return;
         errorCount++;
         console.error('poll progress error:', e);
         if (errorCount >= MAX_ERRORS) {
           console.error('poll progress: max errors reached, stopping');
+          // Task 49: 上报轮询失败状态, 供 UI 显示"进度获取失败, 点击重试"
+          set({ pollError: true });
           return;
         }
         timer = window.setTimeout(poll, 2000);

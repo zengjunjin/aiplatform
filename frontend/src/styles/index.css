@@ -36,15 +36,22 @@
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
   --bg-hover: #e2e8f0;
+  --bg-active: #e6f4ff;
   --border-color: #e2e8f0;
+  --border-color-light: #f0f0f0;
   --text-primary: #0f172a;
   --text-secondary: #64748b;
-  --text-tertiary: #94a3b8;
+  --text-tertiary: #64748b;
   --accent-primary: #3b82f6;
+  --accent-primary-light: #1677ff;
   --accent-secondary: #8b5cf6;
   --accent-success: #10b981;
+  --accent-success-light: #52c41a;
   --accent-warning: #f59e0b;
   --accent-danger: #ef4444;
+  --accent-danger-light: #ff4d4f;
+  --accent-info-bg: #e6f4ff;
+  --accent-success-bg: #f6ffed;
 }
 
 /* ===== 设计 Token：暗色模式 ===== */
@@ -53,10 +60,20 @@
   --bg-secondary: #1e293b;
   --bg-tertiary: #334155;
   --bg-hover: #475569;
+  --bg-active: #1e3a5f;
   --border-color: #334155;
+  --border-color-light: #2a3a52;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
+  --text-tertiary: #94a3b8;
+  --accent-primary-light: #60a5fa;
+  --accent-success: #34d399;
+  --accent-success-light: #34d399;
+  --accent-warning: #fbbf24;
+  --accent-danger: #f87171;
+  --accent-danger-light: #f87171;
+  --accent-info-bg: #1e3a5f;
+  --accent-success-bg: #1a3a2a;
 }
 
 /* ===== 暗色模式：覆盖 Ant Design 默认色，统一为 slate 色系 ===== */
@@ -130,8 +147,16 @@
   box-sizing: border-box;
 }
 
-/* Global transitions */
-* {
+/* Element-specific transitions (避免全局 * 选择器影响性能) */
+button,
+a,
+.ant-btn,
+.ant-card,
+.ant-tag,
+.ant-list-item,
+.ant-menu-item,
+.ant-input,
+.ant-select-selector {
   transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base);
 }
 
@@ -405,15 +430,7 @@ body {
   border: 1px solid var(--border-color);
 }
 
-.ant-menu-item {
-  margin-bottom: 2px !important;
-  border-radius: 6px !important;
-}
-
-.ant-menu-item-selected {
-  background: var(--bg-secondary) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
+/* 注：.ant-menu-item / .ant-menu-item-selected 样式由 Task 57 迁移至文件末尾统一管理 */
 
 .ant-table {
   border-radius: 8px;
@@ -486,5 +503,89 @@ body {
 }
 .message-bubble-enter {
   animation: messageIn var(--transition-slow) ease-out;
+}
+
+/* ===== Task 24: onMouseEnter/Leave 改用 CSS :hover 伪类 ===== */
+
+/* 知识库卡片 hover (替换 inline style transform/boxShadow) */
+.kb-card-hoverable {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+.kb-card-hoverable:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* 会话列表项 hover (替换 inline style background) */
+.session-item-hoverable {
+  transition: background var(--transition-base);
+}
+.session-item-hoverable:hover {
+  background: var(--bg-tertiary);
+}
+
+/* ChatPage 左侧会话列表项 hover (非选中项; 选中项保持高亮) */
+.chat-session-item {
+  transition: background var(--transition-base);
+}
+.chat-session-item:hover {
+  background: var(--bg-hover);
+}
+.chat-session-item.is-active {
+  background: var(--bg-active);
+}
+
+/* ===== Task 37: 无障碍 skip-to-content 链接 ===== */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--accent-primary);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 0 0 6px 0;
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid var(--accent-primary-light);
+  outline-offset: 2px;
+}
+
+/* ===== Task 57: Layout 内联 <style> 迁移 ===== */
+
+/* 用户下拉触发器 hover */
+.user-dropdown-trigger:hover {
+  background: var(--bg-hover);
+}
+
+/* 侧边栏菜单项样式覆盖 (Layout 侧边栏专用) */
+.ant-menu-item {
+  margin-bottom: 2px !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-base) !important;
+  border-left: 3px solid transparent !important;
+  padding-left: 21px !important;
+}
+.ant-menu-item:hover {
+  background: var(--bg-tertiary) !important;
+}
+.ant-menu-item-selected {
+  background: var(--bg-tertiary) !important;
+  box-shadow: var(--shadow-sm) !important;
+  border-left: 3px solid var(--accent-primary) !important;
+  padding-left: 21px !important;
+}
+
+/* Logo 渐变动画 */
+@keyframes logoGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 

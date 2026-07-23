@@ -10,8 +10,12 @@
     "settings": "设置",
     "logout": "退出登录",
     "changePassword": "修改密码",
+    "toggleTheme": "切换主题",
+    "toggleLanguage": "切换语言",
     "platformName": "RAG 知识库平台",
-    "platformSubtitle": "智能知识库系统"
+    "platformSubtitle": "智能知识库系统",
+    "dashboard": "仪表盘",
+    "system": "系统状态"
   },
   "chat": {
     "newChat": "新建对话",
@@ -40,6 +44,7 @@
     "createFailed": "创建失败",
     "deleteSuccess": "删除成功",
     "deleteFailed": "删除失败",
+    "fetchMessagesFailed": "加载消息失败",
     "stop": "停止",
     "send": "发送",
     "enterHint": "Enter 发送 · Shift+Enter 换行",
@@ -49,6 +54,7 @@
     "copy": "复制",
     "regenerate": "重新生成",
     "referencesCount": "{{count}} 个引用",
+    "reference": "引用",
     "like": "点赞",
     "dislike": "点踩",
     "feedbackTitle": "反馈",
@@ -65,7 +71,27 @@
       "tooVerbose": "回答过于冗长",
       "tooBrief": "回答过于简短",
       "other": "其他"
-    }
+    },
+    "askAnything": "向知识库提问任意内容",
+    "model": "模型:",
+    "modelAuto": "自动选择",
+    "modelOffline": "(离线)",
+    "deleteSession": "删除会话",
+    "toggleSidebar": "切换侧栏",
+    "unauthorized": "未授权,请重新登录",
+    "emptyResponse": "响应体为空",
+    "readTimeout": "连接超时, 请检查网络或重试",
+    "serverTimeout": "服务器响应超时, 请稍后重试",
+    "errorLabel": "错误",
+    "connectionLost": "连接中断,请重试",
+    "alreadyStreaming": "正在生成回复中，请稍候或先停止当前对话",
+    "tokens": "输入 {{input}} / 输出 {{output}}",
+    "tokensTooltip": "Token 消耗（输入 / 输出）",
+    "latencyMillis": "{{ms}} ms",
+    "latencySeconds": "{{s}} s",
+    "latencyTooltip": "响应时长",
+    "totalTokens": "累计 {{count}} tokens",
+    "totalTokensTooltip": "本会话累计 token 消耗（输入: {{input}} / 输出: {{output}}）"
   },
   "kb": {
     "myKnowledgeBases": "我的知识库",
@@ -80,6 +106,11 @@
     "documents": "{{count}} 文档",
     "chunks": "{{count}} 分块",
     "updatedAt": "更新于",
+    "totalKBs": "知识库总数",
+    "totalDocs": "总文档数",
+    "totalChunks": "总分块数",
+    "weeklyNewKBs": "本周新增",
+    "weeklyNewTrend": "近 7 天新建趋势",
     "create": "创建",
     "kbName": "知识库名称",
     "kbNameRequired": "请输入知识库名称",
@@ -167,7 +198,12 @@
     "reparsed": "已重新解析",
     "operationFailed": "操作失败",
     "loadFailed": "加载失败",
-    "kbLabel": "知识库 #{{kbId}}"
+    "kbLabel": "知识库 #{{kbId}}",
+    "uploadFailed": "上传失败",
+    "statsStatus": "状态分布",
+    "statsType": "类型分布",
+    "statsTotalSize": "总大小",
+    "statsFailedBadge": "失败"
   },
   "auth": {
     "login": "登录",
@@ -216,7 +252,18 @@
     "changePasswordTitle": "修改密码",
     "changePasswordConfirm": "确认修改",
     "changePasswordSuccess": "密码修改成功，请重新登录",
-    "changePasswordFailed": "修改失败"
+    "changePasswordFailed": "修改失败",
+    "passwordStrength": {
+      "title": "密码强度",
+      "length": "长度 ≥ 8",
+      "uppercase": "大写字母",
+      "lowercase": "小写字母",
+      "digit": "数字",
+      "symbol": "特殊字符",
+      "hint": "请满足以下条件以提升账户安全性",
+      "allMet": "密码强度已达标",
+      "confirmMismatch": "两次输入的密码不一致"
+    }
   },
   "session": {
     "mySessions": "我的对话",
@@ -280,6 +327,198 @@
     "loading": "加载中...",
     "noData": "暂无数据",
     "ok": "确定",
-    "platformWindowTitle": "RAG 知识库平台"
+    "platformWindowTitle": "RAG 知识库平台",
+    "requestFailed": "请求失败",
+    "skipToMainContent": "跳转到主要内容",
+    "offlineWarning": "网络已断开，部分功能可能不可用",
+    "backOnline": "网络已恢复"
+  },
+  "markdown": {
+    "referenceLabel": "引用 {{n}}",
+    "codeBlockLabel": "代码块 ({{lang}})",
+    "imageWithoutAlt": "无描述图片"
+  },
+  "documentPreview": {
+    "loadFailed": "预览失败",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "pageInfo": "{{page}} / {{total}} 页 ({{lines}} 行)"
+  },
+  "errorBoundary": {
+    "title": "页面出错了",
+    "unknownError": "发生了未知错误，请刷新页面重试",
+    "reload": "刷新页面",
+    "retry": "重试",
+    "detailsLabel": "错误详情（仅供参考）：",
+    "globalErrorToast": "发生未知错误",
+    "unhandledRejectionToast": "异步操作失败"
+  },
+  "notFound": {
+    "subtitle": "抱歉,您访问的页面不存在",
+    "backHome": "返回首页"
+  },
+  "feedback": {
+    "title": "反馈管理",
+    "loadStatsFailed": "加载统计数据失败",
+    "loadFeedbacksFailed": "加载反馈列表失败",
+    "totalFeedback": "总反馈数",
+    "positiveRate": "好评率",
+    "negativeRate": "差评率",
+    "byType": "按类型",
+    "typesSuffix": "类型",
+    "typeDistribution": "反馈类型分布",
+    "dailyFeedbackTrend": "每日反馈堆叠趋势",
+    "positive": "正反馈",
+    "negative": "负反馈",
+    "trendAnalysis": "反馈趋势分析",
+    "trendRange7": "近 7 天",
+    "trendRange30": "近 30 天",
+    "trendRange90": "近 90 天",
+    "positiveRateTrend": "正反馈率趋势",
+    "lowRatedHeatmap": "低分反馈热力日历",
+    "lowRatedCount": "低分反馈数",
+    "filterByKB": "按知识库筛选",
+    "filterByType": "按类型筛选",
+    "lowRatedAnswers": "低分回答",
+    "totalItems": "共 {{count}} 条",
+    "question": "问题",
+    "answer": "回答",
+    "kbId": "知识库 ID",
+    "time": "时间",
+    "noQuestion": "(无问题)",
+    "systemAnswer": "系统回答",
+    "userFeedback": "用户反馈",
+    "noFeedbackData": "暂无反馈数据",
+    "na": "无"
+  },
+  "evaluation": {
+    "trend": "评估趋势",
+    "history": "评估历史",
+    "refresh": "刷新",
+    "trigger": "触发评估",
+    "noData": "暂无评估数据",
+    "noRecords": "暂无评估记录，点击「触发评估」开始",
+    "triggerModalTitle": "触发评估",
+    "startEval": "开始评估",
+    "selectKB": "选择知识库",
+    "selectKBRequired": "请选择知识库",
+    "selectKBPlaceholder": "选择要评估的知识库",
+    "questionCount": "问题数量",
+    "detailTitle": "评估详情 #{{id}}",
+    "perQuestionResults": "逐题结果",
+    "detail": "详情",
+    "delete": "删除",
+    "deleteConfirmTitle": "确定删除此评估记录？",
+    "loadHistoryFailed": "加载评估历史失败",
+    "triggerSuccess": "评估任务已触发",
+    "triggerFailed": "触发评估失败",
+    "deleteSuccess": "评估记录已删除",
+    "deleteFailed": "删除失败",
+    "ragasThreshold": "RAGAS 推荐阈值",
+    "metricDistribution": "指标分布",
+    "deltaUp": "较上次 +{{delta}}%",
+    "deltaDown": "较上次 -{{delta}}%",
+    "deltaFlat": "与上次持平",
+    "deltaNoPrev": "首次评估",
+    "thresholdLow": "差",
+    "thresholdMid": "中",
+    "thresholdGood": "良",
+    "thresholdGreat": "优",
+    "autoRefreshing": "评估运行中，每 30 秒自动刷新",
+    "estimateTitle": "预估消耗",
+    "estimateTime": "预计耗时",
+    "estimateTimeValue": "约 {{minutes}} 分钟",
+    "estimateTokens": "预计 Token",
+    "estimateTokensValue": "约 {{tokens}}K tokens",
+    "estimateHint": "估算基于问题数量（约 3 秒/题，约 1500 tokens/题），实际耗时取决于模型与文档规模",
+    "estimateMinutes": "{{minutes}} 分钟",
+    "progressTitle": "评估进度",
+    "progressQuestion": "第 {{current}} / {{total}} 题",
+    "progressRunning": "评估运行中...",
+    "progressCompleted": "评估已完成",
+    "status": {
+      "pending": "待执行",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "metrics": {
+      "faithfulness": "忠实度",
+      "answerRelevancy": "答案相关性",
+      "contextPrecision": "上下文精确度",
+      "contextRecall": "上下文召回率",
+      "relevancy": "相关性",
+      "precision": "精确度",
+      "recall": "召回率"
+    },
+    "columns": {
+      "kb": "知识库",
+      "status": "状态",
+      "questionCount": "题目数",
+      "createdAt": "创建时间",
+      "actions": "操作"
+    },
+    "resultColumns": {
+      "question": "问题",
+      "generatedAnswer": "生成答案"
+    },
+    "detail": {
+      "status": "状态",
+      "questionCount": "题目数",
+      "startTime": "开始时间",
+      "completeTime": "完成时间",
+      "error": "错误信息"
+    }
+  },
+  "notification": {
+    "title": "通知",
+    "empty": "暂无通知",
+    "clear": "清空通知",
+    "default": "通知: {{type}}"
+  },
+  "system": {
+    "title": "系统状态",
+    "loadFailed": "加载系统状态失败",
+    "components": {
+      "postgresql": "PostgreSQL",
+      "redis": "Redis",
+      "ollama": "Ollama",
+      "qdrant": "Qdrant",
+      "celery": "Celery"
+    },
+    "status": {
+      "healthy": "健康",
+      "unhealthy": "故障"
+    },
+    "ollamaModels": "Ollama 可用模型",
+    "qdrantCollections": "Qdrant 集合",
+    "celeryWorkers": "Celery Workers",
+    "collectionSuffix": "个集合"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "todayChats": "今日问答数",
+    "healthStatus": "系统健康",
+    "totalDocs": "总文档数",
+    "totalChunks": "总分块数",
+    "docTrend": "近 7 天文档解析趋势",
+    "evalTrend": "评估指标趋势",
+    "feedbackRatio": "反馈正负比",
+    "positive": "正反馈",
+    "negative": "负反馈",
+    "modelHealth": "模型健康",
+    "availableModels": "可用模型数"
+  },
+  "status": {
+    "pending": "等待处理",
+    "parsing": "解析中",
+    "chunking": "分块中",
+    "embedding": "向量化中",
+    "done": "已就绪",
+    "failed": "失败"
+  },
+  "errors": {
+    "websocketConnectionFailed": "WebSocket 连接失败，请刷新页面重试",
+    "loadCollaboratorsFailed": "加载协作者失败"
   }
 }

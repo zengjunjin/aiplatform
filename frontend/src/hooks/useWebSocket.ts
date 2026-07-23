@@ -1,4 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { message } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { getApiBase } from '../api/client';
 
 /** WebSocket 通知消息类型 */
@@ -18,6 +20,11 @@ function getWsBase(): string {
   return `${protocol}//${url.host}/api/v1/ws`;
 }
 
+// 重连参数：指数退避 3s → 6s → 12s → 24s → 30s（capped）
+const MAX_RETRY = 5;
+const INITIAL_DELAY = 3000; // 3s
+const MAX_DELAY = 30000; // 30s
+
 /**
  * WebSocket 实时通知 Hook
  *
@@ -29,7 +36,7 @@ export function useWebSocket(
   token: string | null,
   onMessage: (data: WSNotification) => void,
   options?: {
-    /** 自动重连间隔（毫秒），默认 3000 */
+    /** 初始重连间隔（毫秒），默认 3000；后续按指数退避翻倍直至 MAX_DELAY */
     reconnectInterval?: number;
     /** 心跳间隔（毫秒），默认 30000 */
     pingInterval?: number;
@@ -40,11 +47,16 @@ export function useWebSocket(
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
   const onMessageRef = useRef(onMessage);
+  const retryCountRef = useRef(0);
+  const { t } = useTranslation();
+  // t 通过 ref 读取，避免加入 connect 依赖导致语言切换时 WebSocket 重连
+  const tRef = useRef(t);
+  tRef.current = t;
 
   // 保持最新的回调引用
   onMessageRef.current = onMessage;
 
-  const { reconnectInterval = 3000, pingInterval = 30000 } = options || {};
+  const { reconnectInterval = INITIAL_DELAY, pingInterval = 30000 } = options || {};
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -66,7 +78,8 @@ export function useWebSocket(
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('[WebSocket] Connected');
+      // 连接成功，重置重连计数
+      retryCountRef.current = 0;
       // 启动心跳
       pingTimerRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -78,8 +91,15 @@ export function useWebSocket(
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as WSNotification;
+        // 认证成功, 无需日志
         if (data.type === 'connected') {
-          console.log('[WebSocket] Authenticated:', data.user_id);
+          return;
+        }
+        // Task 33: 处理服务端心跳 ping 事件，回复 pong（避免 NAT 空闲超时断连）
+        if ('event' in data && data.event === 'ping') {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event: 'pong' }));
+          }
           return;
         }
         onMessageRef.current(data);
@@ -89,18 +109,26 @@ export function useWebSocket(
     };
 
     ws.onclose = (event) => {
-      console.log('[WebSocket] Disconnected:', event.code, event.reason);
       clearTimers();
       wsRef.current = null;
 
       // 非正常关闭（非 4001 认证错误）时自动重连
       if (event.code !== 4001 && mountedRef.current && token) {
+        // 指数退避：达到上限后停止重连并提示用户刷新页面
+        if (retryCountRef.current >= MAX_RETRY) {
+          message.warning(tRef.current('errors.websocketConnectionFailed'));
+          return;
+        }
+        const delay = Math.min(
+          reconnectInterval * Math.pow(2, retryCountRef.current),
+          MAX_DELAY
+        );
         reconnectTimerRef.current = setTimeout(() => {
           if (mountedRef.current && token) {
-            console.log('[WebSocket] Reconnecting...');
+            retryCountRef.current += 1;
             connect();
           }
-        }, reconnectInterval);
+        }, delay);
       }
     };
 
@@ -112,6 +140,8 @@ export function useWebSocket(
 
   useEffect(() => {
     mountedRef.current = true;
+    // 每次新的 token/挂载周期开始时重置重连计数（用户手动刷新页面也会重新挂载）
+    retryCountRef.current = 0;
     connect();
 
     return () => {

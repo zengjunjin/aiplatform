@@ -1,11 +1,82 @@
-import { Form, Input, Button, Typography, App as AntdApp } from 'antd';
+import { Form, Input, Button, Typography, App as AntdApp, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles } from 'lucide-react';
+import { getErrorMessage } from '../utils/errorReporter';
+import { createPasswordRules } from '../constants/auth';
 
 const { Title, Text } = Typography;
+
+/**
+ * Task 55: 密码强度可视化组件
+ * 5 段分别对应：长度 / 大写字母 / 小写字母 / 数字 / 特殊字符
+ * 每段满足时高亮（绿），未满足时灰显
+ */
+function PasswordStrengthBar({ value }: { value: string }) {
+  const { t } = useTranslation();
+  const checks = useMemo(() => {
+    return [
+      { key: 'length', label: t('auth.passwordStrength.length'), met: value.length >= 8 },
+      { key: 'uppercase', label: t('auth.passwordStrength.uppercase'), met: /[A-Z]/.test(value) },
+      { key: 'lowercase', label: t('auth.passwordStrength.lowercase'), met: /[a-z]/.test(value) },
+      { key: 'digit', label: t('auth.passwordStrength.digit'), met: /\d/.test(value) },
+      { key: 'symbol', label: t('auth.passwordStrength.symbol'), met: /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]/.test(value) },
+    ];
+  }, [value, t]);
+
+  const allMet = checks.every((c) => c.met);
+
+  return (
+    <div style={{ marginTop: 8 }} aria-label={t('auth.passwordStrength.title')}>
+      {/* 5 段强度条 */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+        {checks.map((c) => (
+          <Tooltip key={c.key} title={c.label}>
+            <div
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                background: c.met ? 'var(--accent-success)' : 'var(--bg-hover)',
+                transition: 'background var(--transition-fast)',
+              }}
+            />
+          </Tooltip>
+        ))}
+      </div>
+      {/* 标签列表 */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {checks.map((c) => (
+          <Text
+            key={c.key}
+            style={{
+              fontSize: 11,
+              color: c.met ? 'var(--accent-success)' : 'var(--text-tertiary)',
+              transition: 'color var(--transition-fast)',
+            }}
+          >
+            {c.met ? '✓ ' : '○ '}
+            {c.label}
+          </Text>
+        ))}
+      </div>
+      {value && (
+        <Text
+          style={{
+            display: 'block',
+            marginTop: 4,
+            fontSize: 11,
+            color: allMet ? 'var(--accent-success)' : 'var(--text-tertiary)',
+          }}
+        >
+          {allMet ? t('auth.passwordStrength.allMet') : t('auth.passwordStrength.hint')}
+        </Text>
+      )}
+    </div>
+  );
+}
 
 export default function RegisterPage() {
   const { t } = useTranslation();
@@ -14,6 +85,9 @@ export default function RegisterPage() {
   const register = useAuthStore((s) => s.register);
   const navigate = useNavigate();
   const { message: msg } = AntdApp.useApp();
+
+  // Task 55: 监听 password 字段值，实时更新 strength bar
+  const passwordValue = Form.useWatch('password', form) as string | undefined;
 
   const onFinish = async (values: { username: string; email: string; password: string; confirm: string }) => {
     if (values.password !== values.confirm) {
@@ -25,8 +99,8 @@ export default function RegisterPage() {
       await register(values.username, values.email, values.password);
       msg.success(t('auth.registerSuccess'));
       navigate('/');
-    } catch (e: any) {
-      msg.error(e.message || t('auth.registerFailed'));
+    } catch (e: unknown) {
+      msg.error(getErrorMessage(e) || t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
@@ -119,6 +193,8 @@ export default function RegisterPage() {
             <Form.Item
               name="username"
               label={t('auth.username')}
+              validateFirst
+              hasFeedback
               rules={[
                 { required: true, message: t('auth.usernameRequired') },
                 { min: 3, message: t('auth.usernameMinLength') },
@@ -129,6 +205,8 @@ export default function RegisterPage() {
             <Form.Item
               name="email"
               label={t('auth.email')}
+              validateFirst
+              hasFeedback
               rules={[
                 { required: true, message: t('auth.emailRequired') },
                 { type: 'email', message: t('auth.emailInvalid') },
@@ -139,21 +217,33 @@ export default function RegisterPage() {
             <Form.Item
               name="password"
               label={t('auth.password')}
-              rules={[
-                { required: true, message: t('auth.passwordRequired') },
-                { min: 8, message: t('auth.passwordMinLength') },
-                {
-                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]).+$/,
-                  message: t('auth.passwordComplexity'),
-                },
-              ]}
+              validateFirst
+              hasFeedback
+              rules={createPasswordRules(t)}
             >
               <Input.Password placeholder={t('auth.passwordPlaceholder')} size="large" />
             </Form.Item>
+            {/* Task 55: 密码强度可视化（5 段 strength bar） */}
+            <PasswordStrengthBar value={passwordValue || ''} />
             <Form.Item
               name="confirm"
               label={t('auth.confirmPassword')}
-              rules={[{ required: true, message: t('auth.confirmPasswordRequired') }]}
+              dependencies={['password']}
+              validateFirst
+              hasFeedback
+              // 失焦时实时校验匹配；同时保留 onChange 校验以显示同步反馈
+              validateTrigger={['onBlur', 'onChange']}
+              rules={[
+                { required: true, message: t('auth.confirmPasswordRequired') },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('password') === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error(t('auth.passwordMismatch')));
+                  },
+                }),
+              ]}
             >
               <Input.Password placeholder={t('auth.confirmPasswordPlaceholder')} size="large" />
             </Form.Item>

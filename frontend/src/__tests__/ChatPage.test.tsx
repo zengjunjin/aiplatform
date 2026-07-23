@@ -9,6 +9,15 @@ vi.mock('react-i18next', () => ({
     if (params && params.count !== undefined) return `${key} ${params.count}`;
     return key;
   }}),
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+
+// Mock i18n 模块以避免初始化依赖
+vi.mock('../i18n', () => ({
+  globalT: (key: string, params?: any) => {
+    if (params && params.count !== undefined) return `${key} ${params.count}`;
+    return key;
+  },
 }));
 
 // Mock react-router-dom
@@ -25,15 +34,18 @@ vi.mock('../store/chat', () => ({
   useChatStore: (selector: any) => {
     const state = {
       sessions: [],
-      messages: {},
+      messagesById: {},
+      messageOrder: {},
       streaming: false,
       loading: false,
+      warnings: [],
       fetchSessions: vi.fn(),
       fetchMessages: vi.fn(),
       sendMessage: vi.fn(),
       stopStreaming: vi.fn(),
       createSession: vi.fn(),
       deleteSession: vi.fn(),
+      clearWarnings: vi.fn(),
     };
     return selector(state);
   },
@@ -69,8 +81,8 @@ vi.mock('antd', async () => {
 
 // Mock format utils
 vi.mock('../utils/format', () => ({
-  formatDateTime: (d: any) => '2024-01-01 00:00',
-  truncate: (t: string, n: number) => t,
+  formatDateTime: (_d: unknown) => '2024-01-01 00:00',
+  truncate: (t: string, _n: number) => t,
 }));
 
 describe('ChatPage', () => {
@@ -94,7 +106,7 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
     // ChatInput renders with a placeholder textarea
-    const textarea = document.querySelector('textarea');
+    const textarea = screen.getByRole('textbox');
     expect(textarea).toBeInTheDocument();
   });
 

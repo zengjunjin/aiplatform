@@ -1,502 +1,282 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  Table,
-  Tag,
-  Button,
-  Space,
-  Popconfirm,
-  App as AntdApp,
-  Card,
-  Skeleton,
-  Empty,
-  Modal,
-  Descriptions,
-  Statistic,
-  Row,
-  Col,
-  InputNumber,
-  Select,
-  Form,
-  Typography,
-} from 'antd';
-import {
-  BarChart3,
-  Play,
-  Trash2,
-  Eye,
-  RefreshCw,
-  TrendingUp,
-} from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { App as AntdApp } from 'antd';
 import { useTranslation } from 'react-i18next';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
-import { LineChart, BarChart } from 'echarts/charts';
+import { LineChart, BarChart, BoxplotChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  MarkLineComponent,
+  DataZoomComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { evaluationApi, kbApi } from '../api';
-import type { EvaluationRunItem, EvaluationMetrics, EvaluationResultItem } from '../api/evaluation';
+import type { EvaluationRunItem, EvaluationResultItem } from '../api/evaluation';
+import type { EvaluationMetrics } from '../types';
+import { getErrorMessage } from '../utils/errorReporter';
+import { useApiToast } from '../hooks/useApiToast';
 
-echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer]);
+import EvaluationTrendChart from './evaluation/EvaluationTrendChart';
+import EvaluationHistoryTable from './evaluation/EvaluationHistoryTable';
+import TriggerEvalModal, { type TriggerEvalValues } from './evaluation/TriggerEvalModal';
+import ProgressPanel, { type ProgressState } from './evaluation/ProgressPanel';
+import RunDetailModal from './evaluation/RunDetailModal';
 
-const { Text } = Typography;
-
-const STATUS_MAP: Record<string, { color: string; label: string }> = {
-  pending: { color: 'default', label: '待执行' },
-  running: { color: 'processing', label: '运行中' },
-  completed: { color: 'success', label: '已完成' },
-  failed: { color: 'error', label: '失败' },
-};
+// Task 4.1: echarts 组件注册保留在容器组件（全局一次性注册）
+echarts.use([
+  LineChart,
+  BarChart,
+  BoxplotChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  TitleComponent,
+  MarkLineComponent,
+  DataZoomComponent,
+  CanvasRenderer,
+]);
 
 export default function EvaluationPage() {
   const { t } = useTranslation();
   const { message } = AntdApp.useApp();
+  const { runWithToast } = useApiToast();
   const [runs, setRuns] = useState<EvaluationRunItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [kbs, setKbs] = useState<{ id: number; name: string }[]>([]);
+  // Task 44: 服务端分页状态
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0 });
+  const paginationRef = useRef(pagination);
+  paginationRef.current = pagination;
   const [triggerModal, setTriggerModal] = useState(false);
   const [detailModal, setDetailModal] = useState(false);
   const [selectedRun, setSelectedRun] = useState<EvaluationRunItem | null>(null);
   const [results, setResults] = useState<EvaluationResultItem[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
-  const [form] = Form.useForm();
+  // Task 58: 评估进度面板状态（提交后显示进度条 + 题号）
+  const [progressState, setProgressState] = useState<ProgressState | null>(null);
 
-  const fetchRuns = useCallback(async () => {
-    setLoading(true);
+  const fetchRuns = useCallback(async (silent = false, signal?: AbortSignal, page?: number, pageSize?: number) => {
+    if (!silent) setLoading(true);
     try {
-      const data = await evaluationApi.listRuns({ page_size: 50 });
+      // Task 44: 服务端分页 - 使用传入或当前分页状态
+      const p = page ?? paginationRef.current.page;
+      const ps = pageSize ?? paginationRef.current.pageSize;
+      // Task 30: 传递 signal 支持取消请求；signal 为空时保持单参数调用，兼容测试断言
+      const data = signal
+        ? await evaluationApi.listRuns({ page: p, page_size: ps }, signal)
+        : await evaluationApi.listRuns({ page: p, page_size: ps });
       setRuns(data?.items || []);
-    } catch (e: any) {
-      message.error(e.message || '加载评估历史失败');
+      // 同步分页元信息（total / 当前页 / 每页大小）
+      setPagination((prev) => ({
+        ...prev,
+        page: data?.page ?? p,
+        pageSize: data?.page_size ?? ps,
+        total: data?.total ?? 0,
+      }));
+    } catch (e: unknown) {
+      // 组件卸载 abort 后的 CanceledError 静默处理
+      if (e instanceof Error && e.name === 'CanceledError') return;
+      // 静默刷新失败不弹错误 toast，避免每 30s 噪音
+      if (!silent) {
+        message.error(getErrorMessage(e) || t('evaluation.loadHistoryFailed'));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [message]);
+  }, [message, t]);
 
-  const fetchKbs = useCallback(async () => {
+  const fetchKbs = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await kbApi.list(1, 100);
-      setKbs((data?.items || []).map((kb: any) => ({ id: kb.id, name: kb.name })));
-    } catch {
-      // ignore
+      const data = await kbApi.list(1, 100, signal);
+      setKbs((data?.items || []).map((kb) => ({ id: kb.id, name: kb.name })));
+    } catch (e: unknown) {
+      // 组件卸载 abort 后的 CanceledError 静默处理
+      if (e instanceof Error && e.name === 'CanceledError') return;
+      message.error(getErrorMessage(e) || t('common.requestFailed'));
     }
-  }, []);
+  }, [message, t]);
 
+  // Task 30: mount 时创建 AbortController，卸载时取消所有请求
   useEffect(() => {
-    fetchRuns();
-    fetchKbs();
+    const controller = new AbortController();
+    fetchRuns(false, controller.signal);
+    fetchKbs(controller.signal);
+    return () => controller.abort();
   }, [fetchRuns, fetchKbs]);
 
-  const handleTrigger = async () => {
-    try {
-      const values = await form.validateFields();
-      await evaluationApi.triggerEvaluation(values.kb_id, values.num_questions || 50);
-      message.success('评估任务已触发');
-      setTriggerModal(false);
-      form.resetFields();
-      fetchRuns();
-    } catch (e: any) {
-      if (e.errorFields) return;
-      message.error(e.message || '触发评估失败');
-    }
-  };
+  // running 状态下 30s 自动刷新（不闪烁 Skeleton，使用 silent 模式）
+  const hasRunningRuns = useMemo(
+    () => runs.some((r) => r.status === 'running'),
+    [runs],
+  );
+  const fetchRunsRef = useRef(fetchRuns);
+  fetchRunsRef.current = fetchRuns;
+  useEffect(() => {
+    if (!hasRunningRuns) return;
+    // Task 30: 每次轮询创建新 controller，新请求开始时取消上一个未完成的请求
+    let controller: AbortController | null = null;
+    const timer = setInterval(() => {
+      controller?.abort();
+      controller = new AbortController();
+      fetchRunsRef.current(true, controller.signal);
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [hasRunningRuns]);
 
-  const handleViewDetail = async (run: EvaluationRunItem) => {
+  // Task 8.2: 当 runs 列表中 running 状态消失（变为 completed/failed）时，自动关闭进度面板
+  // 依赖拆分：仅依赖 progressState 的 completed/startTime 字段，不依赖整个对象（current 变化不触发）
+  const psCompleted = progressState?.completed;
+  const psStartTime = progressState?.startTime;
+  useEffect(() => {
+    // psCompleted !== false 表示 progressState 为 null 或已完成，跳过
+    if (psCompleted !== false) return;
+    // 避免刚触发就误判：至少经过 5 秒后才检查 runs 状态（fetchRuns 可能尚未返回）
+    if (Date.now() - (psStartTime ?? 0) < 5000) return;
+    // 仍有 running 状态的 run，继续等待
+    if (runs.some((r) => r.status === 'running')) return;
+    // 没有运行中的 run，但进度面板还开着 —— 说明评估已结束，标记完成
+    setProgressState((prev) => (prev ? { ...prev, completed: true } : prev));
+  }, [runs, psCompleted, psStartTime]);
+
+  // Task 5.2: handleTrigger 用 useCallback（TriggerEvalModal onTrigger 依赖稳定）
+  const handleTrigger = useCallback(async (values: TriggerEvalValues): Promise<boolean> => {
+    try {
+      await evaluationApi.triggerEvaluation(values.kb_id, values.num_questions);
+      message.success(t('evaluation.triggerSuccess'));
+      setTriggerModal(false);
+      // Task 58: 启动进度面板（前端模拟，结合 30s 自动 fetchRuns 校正）
+      setProgressState({
+        total: values.num_questions,
+        current: 0,
+        startTime: Date.now(),
+        completed: false,
+      });
+      fetchRuns();
+      return true;
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('evaluation.triggerFailed'));
+      return false;
+    }
+  }, [message, t, fetchRuns]);
+
+  // Task 5.2: handleViewDetail 用 useCallback（EvaluationHistoryTable columns 依赖稳定）
+  const handleViewDetail = useCallback(async (run: EvaluationRunItem) => {
     setSelectedRun(run);
     setDetailModal(true);
     setResultsLoading(true);
     try {
       const data = await evaluationApi.getResults(run.id, 1, 100);
       setResults(data?.items || []);
-    } catch {
+    } catch (e: unknown) {
+      // 组件卸载 abort 后的 CanceledError 静默处理
+      if (e instanceof Error && e.name === 'CanceledError') return;
+      message.error(getErrorMessage(e) || t('evaluation.loadHistoryFailed'));
       setResults([]);
     } finally {
       setResultsLoading(false);
     }
-  };
+  }, [message, t]);
 
-  const handleDelete = async (runId: number) => {
-    try {
-      await evaluationApi.deleteRun(runId);
-      message.success('评估记录已删除');
-      fetchRuns();
-    } catch (e: any) {
-      message.error(e.message || '删除失败');
-    }
-  };
+  // Task 5.2: handleDelete 用 useCallback（EvaluationHistoryTable columns 依赖稳定）
+  const handleDelete = useCallback(async (runId: number) => {
+    await runWithToast(() => evaluationApi.deleteRun(runId), {
+      successKey: 'evaluation.deleteSuccess',
+      errorKey: 'evaluation.deleteFailed',
+      onSuccess: () => fetchRuns(),
+    });
+  }, [runWithToast, fetchRuns]);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     fetchRuns();
-  };
+  }, [fetchRuns]);
 
-  const renderMetricCard = (label: string, value: number | null | undefined) => (
-    <Card size="small">
-      <Statistic
-        title={label}
-        value={value != null ? (value * 100).toFixed(1) : '-'}
-        suffix={value != null ? '%' : ''}
-        valueStyle={{ color: value != null ? (value >= 0.7 ? '#52c41a' : value >= 0.4 ? '#faad14' : '#ff4d4f') : undefined }}
-      />
-    </Card>
+  // Task 44: Table onChange 触发服务端分页
+  const handleTableChange = useCallback((page: number, pageSize: number) => {
+    setPagination((prev) => ({ ...prev, page, pageSize }));
+    fetchRuns(false, undefined, page, pageSize);
+  }, [fetchRuns]);
+
+  // ProgressPanel onProgress 回调（useCallback 保证 1s 计时器 useEffect 依赖稳定）
+  const handleProgressUpdate = useCallback(
+    (updater: (prev: ProgressState | null) => ProgressState | null) => {
+      setProgressState(updater);
+    },
+    [],
   );
 
-  const trendChartOption = useMemo(() => {
-    const completedRuns = runs
+  const handleCloseProgress = useCallback(() => {
+    setProgressState(null);
+    fetchRuns();
+  }, [fetchRuns]);
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailModal(false);
+    setSelectedRun(null);
+    setResults([]);
+  }, []);
+
+  // 计算与 selectedRun 的上一次 completed run 的 delta（按时间正序的前一项）
+  const prevRunMetrics = useMemo<EvaluationMetrics | null>(() => {
+    if (!selectedRun) return null;
+    const completed = runs
       .filter((r) => r.status === 'completed' && r.metrics)
-      .reverse()
-      .slice(-20);
-
-    return {
-      tooltip: { trigger: 'axis' as const },
-      legend: { data: ['忠实度', '答案相关性', '上下文精确度', '上下文召回率'], top: 0 },
-      grid: { left: '3%', right: '4%', bottom: '3%', top: 40, containLabel: true },
-      xAxis: {
-        type: 'category' as const,
-        data: completedRuns.map((r) => `#${r.id}`),
-        axisLabel: { rotate: 45 },
-      },
-      yAxis: {
-        type: 'value' as const,
-        min: 0,
-        max: 1,
-        axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` },
-      },
-      series: [
-        {
-          name: '忠实度',
-          type: 'line',
-          data: completedRuns.map((r) => r.metrics?.faithfulness ?? 0),
-          smooth: true,
-        },
-        {
-          name: '答案相关性',
-          type: 'line',
-          data: completedRuns.map((r) => r.metrics?.answer_relevancy ?? 0),
-          smooth: true,
-        },
-        {
-          name: '上下文精确度',
-          type: 'line',
-          data: completedRuns.map((r) => r.metrics?.context_precision ?? 0),
-          smooth: true,
-        },
-        {
-          name: '上下文召回率',
-          type: 'line',
-          data: completedRuns.map((r) => r.metrics?.context_recall ?? 0),
-          smooth: true,
-        },
-      ],
-    };
-  }, [runs]);
-
-  const columns = [
-    {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 70,
-    },
-    {
-      title: '知识库',
-      dataIndex: 'knowledge_base_id',
-      key: 'kb_id',
-      width: 100,
-      render: (id: number) => {
-        const kb = kbs.find((k) => k.id === id);
-        return kb?.name || `KB #${id}`;
-      },
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => {
-        const cfg = STATUS_MAP[status] || { color: 'default', label: status };
-        return <Tag color={cfg.color}>{cfg.label}</Tag>;
-      },
-    },
-    {
-      title: '题目数',
-      dataIndex: 'total_questions',
-      key: 'total_questions',
-      width: 80,
-    },
-    {
-      title: '忠实度',
-      key: 'faithfulness',
-      width: 100,
-      render: (_: any, record: EvaluationRunItem) => {
-        const v = record.metrics?.faithfulness;
-        return v != null ? `${(v * 100).toFixed(1)}%` : '-';
-      },
-    },
-    {
-      title: '答案相关性',
-      key: 'answer_relevancy',
-      width: 100,
-      render: (_: any, record: EvaluationRunItem) => {
-        const v = record.metrics?.answer_relevancy;
-        return v != null ? `${(v * 100).toFixed(1)}%` : '-';
-      },
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 180,
-      render: (v: string | null) => (v ? new Date(v).toLocaleString() : '-'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 160,
-      render: (_: any, record: EvaluationRunItem) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<Eye size={14} />}
-            onClick={() => handleViewDetail(record)}
-          >
-            详情
-          </Button>
-          <Popconfirm
-            title="确定删除此评估记录？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button type="link" size="small" danger icon={<Trash2 size={14} />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
-  const resultColumns = [
-    { title: '#', dataIndex: 'id', key: 'id', width: 60 },
-    {
-      title: '问题',
-      dataIndex: 'question',
-      key: 'question',
-      width: 200,
-      ellipsis: true,
-    },
-    {
-      title: '生成答案',
-      dataIndex: 'generated_answer',
-      key: 'generated_answer',
-      width: 250,
-      ellipsis: true,
-    },
-    {
-      title: '忠实度',
-      dataIndex: 'faithfulness',
-      key: 'faithfulness',
-      width: 80,
-      render: (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '-'),
-    },
-    {
-      title: '相关性',
-      dataIndex: 'answer_relevancy',
-      key: 'answer_relevancy',
-      width: 80,
-      render: (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '-'),
-    },
-    {
-      title: '精确度',
-      dataIndex: 'context_precision',
-      key: 'context_precision',
-      width: 80,
-      render: (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '-'),
-    },
-    {
-      title: '召回率',
-      dataIndex: 'context_recall',
-      key: 'context_recall',
-      width: 80,
-      render: (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '-'),
-    },
-  ];
+      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    const idx = completed.findIndex((r) => r.id === selectedRun.id);
+    if (idx <= 0) return null;
+    return completed[idx - 1]?.metrics ?? null;
+  }, [runs, selectedRun]);
 
   return (
     <div>
       {/* Trend Chart */}
-      <Card
-        title={
-          <Space>
-            <TrendingUp size={20} />
-            <span>评估趋势</span>
-          </Space>
-        }
-        style={{ marginBottom: 16 }}
-      >
-        {runs.filter((r) => r.status === 'completed' && r.metrics).length > 0 ? (
-          <ReactEChartsCore
-            echarts={echarts}
-            option={trendChartOption}
-            style={{ height: 300 }}
-            notMerge
-          />
-        ) : (
-          <Empty description="暂无评估数据" />
-        )}
-      </Card>
+      <EvaluationTrendChart
+        runs={runs}
+        loading={loading}
+        hasRunningRuns={hasRunningRuns}
+      />
 
       {/* Runs Table */}
-      <Card
-        title={
-          <Space>
-            <BarChart3 size={20} />
-            <span>评估历史</span>
-          </Space>
-        }
-        extra={
-          <Space>
-            <Button icon={<RefreshCw size={14} />} onClick={handleRefresh}>
-              刷新
-            </Button>
-            <Button
-              type="primary"
-              icon={<Play size={14} />}
-              onClick={() => setTriggerModal(true)}
-            >
-              触发评估
-            </Button>
-          </Space>
-        }
-      >
-        {loading ? (
-          <Skeleton active paragraph={{ rows: 8 }} />
-        ) : runs.length === 0 ? (
-          <Empty description="暂无评估记录，点击「触发评估」开始" />
-        ) : (
-          <Table
-            dataSource={runs}
-            columns={columns}
-            rowKey="id"
-            pagination={{ pageSize: 20 }}
-          />
-        )}
-      </Card>
+      <EvaluationHistoryTable
+        runs={runs}
+        loading={loading}
+        kbs={kbs}
+        onRefresh={handleRefresh}
+        onTrigger={() => setTriggerModal(true)}
+        onViewDetail={handleViewDetail}
+        onDelete={handleDelete}
+        pagination={{ current: pagination.page, pageSize: pagination.pageSize, total: pagination.total }}
+        onTableChange={handleTableChange}
+      />
 
       {/* Trigger Modal */}
-      <Modal
-        title="触发评估"
+      <TriggerEvalModal
         open={triggerModal}
-        onOk={handleTrigger}
-        onCancel={() => {
-          setTriggerModal(false);
-          form.resetFields();
-        }}
-        transitionName=""
-        maskTransitionName=""
-        okText="开始评估"
-        cancelText="取消"
-        centered
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="kb_id"
-            label="选择知识库"
-            rules={[{ required: true, message: '请选择知识库' }]}
-          >
-            <Select
-              placeholder="选择要评估的知识库"
-              options={kbs.map((kb) => ({
-                label: kb.name,
-                value: kb.id,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="num_questions"
-            label="问题数量"
-            initialValue={50}
-          >
-            <InputNumber min={5} max={200} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        kbs={kbs}
+        onTrigger={handleTrigger}
+        onCancel={() => setTriggerModal(false)}
+      />
+
+      {/* Task 58: 进度面板 Modal */}
+      <ProgressPanel
+        progressState={progressState}
+        onProgress={handleProgressUpdate}
+        onClose={handleCloseProgress}
+      />
 
       {/* Detail Modal */}
-      <Modal
-        title={`评估详情 #${selectedRun?.id}`}
+      <RunDetailModal
         open={detailModal}
-        onCancel={() => {
-          setDetailModal(false);
-          setSelectedRun(null);
-          setResults([]);
-        }}
-        transitionName=""
-        maskTransitionName=""
-        footer={null}
-        width={900}
-        centered
-      >
-        {selectedRun && (
-          <>
-            <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="状态">
-                <Tag color={STATUS_MAP[selectedRun.status]?.color}>
-                  {STATUS_MAP[selectedRun.status]?.label}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="题目数">{selectedRun.total_questions}</Descriptions.Item>
-              <Descriptions.Item label="开始时间">
-                {selectedRun.started_at ? new Date(selectedRun.started_at).toLocaleString() : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="完成时间">
-                {selectedRun.completed_at ? new Date(selectedRun.completed_at).toLocaleString() : '-'}
-              </Descriptions.Item>
-              {selectedRun.error_message && (
-                <Descriptions.Item label="错误信息" span={2}>
-                  <Text type="danger">{selectedRun.error_message}</Text>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            {selectedRun.metrics && (
-              <Row gutter={16} style={{ marginBottom: 16 }}>
-                <Col span={6}>
-                  {renderMetricCard('忠实度', selectedRun.metrics.faithfulness)}
-                </Col>
-                <Col span={6}>
-                  {renderMetricCard('答案相关性', selectedRun.metrics.answer_relevancy)}
-                </Col>
-                <Col span={6}>
-                  {renderMetricCard('上下文精确度', selectedRun.metrics.context_precision)}
-                </Col>
-                <Col span={6}>
-                  {renderMetricCard('上下文召回率', selectedRun.metrics.context_recall)}
-                </Col>
-              </Row>
-            )}
-
-            <Text strong style={{ display: 'block', marginBottom: 8 }}>逐题结果</Text>
-            {resultsLoading ? (
-              <Skeleton active paragraph={{ rows: 6 }} />
-            ) : (
-              <Table
-                dataSource={results}
-                columns={resultColumns}
-                rowKey="id"
-                size="small"
-                pagination={{ pageSize: 10 }}
-                scroll={{ x: 800 }}
-              />
-            )}
-          </>
-        )}
-      </Modal>
+        selectedRun={selectedRun}
+        results={results}
+        resultsLoading={resultsLoading}
+        prevRunMetrics={prevRunMetrics}
+        onClose={handleCloseDetail}
+      />
     </div>
   );
 }

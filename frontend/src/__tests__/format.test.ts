@@ -7,7 +7,7 @@ import {
   groupMessagesByDate,
   truncate,
   getStatusColor,
-  getStatusText,
+  getStatusTextKey,
   getFileTypeColor,
   copyToClipboard,
   debounce,
@@ -139,18 +139,18 @@ describe('getStatusColor', () => {
   });
 });
 
-describe('getStatusText', () => {
+describe('getStatusTextKey', () => {
   it('should return Chinese labels', () => {
-    expect(getStatusText('pending')).toBe('等待处理');
-    expect(getStatusText('parsing')).toBe('解析中');
-    expect(getStatusText('chunking')).toBe('分块中');
-    expect(getStatusText('embedding')).toBe('向量化中');
-    expect(getStatusText('done')).toBe('已就绪');
-    expect(getStatusText('failed')).toBe('失败');
+    expect(getStatusTextKey('pending')).toBe('等待处理');
+    expect(getStatusTextKey('parsing')).toBe('解析中');
+    expect(getStatusTextKey('chunking')).toBe('分块中');
+    expect(getStatusTextKey('embedding')).toBe('向量化中');
+    expect(getStatusTextKey('done')).toBe('已就绪');
+    expect(getStatusTextKey('failed')).toBe('失败');
   });
 
   it('should return original status for unknown', () => {
-    expect(getStatusText('unknown_status')).toBe('unknown_status');
+    expect(getStatusTextKey('unknown_status')).toBe('unknown_status');
   });
 });
 

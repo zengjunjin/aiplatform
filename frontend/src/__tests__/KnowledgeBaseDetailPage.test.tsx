@@ -9,6 +9,15 @@ vi.mock('react-i18next', () => ({
     if (params && params.count !== undefined) return `${key} ${params.count}`;
     return key;
   }}),
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+
+// Mock i18n 模块以避免初始化依赖
+vi.mock('../i18n', () => ({
+  globalT: (key: string, params?: any) => {
+    if (params && params.count !== undefined) return `${key} ${params.count}`;
+    return key;
+  },
 }));
 
 // Mock react-router-dom
@@ -26,6 +35,7 @@ vi.mock('../store/kb', () => ({
     const state = {
       knowledgeBases: [{ id: 1, name: 'Test KB', description: 'A test knowledge base', doc_count: 0, chunk_count: 0, updated_at: '2024-01-01', owner_id: 1 }],
       documents: { 1: [] },
+      docTotal: { 1: 0 },
       loading: false,
       loadingDocs: { 1: false },
       fetchKBs: vi.fn(),
@@ -65,9 +75,9 @@ vi.mock('antd', async () => {
 // Mock format utils
 vi.mock('../utils/format', () => ({
   formatFileSize: (s: number) => `${s} B`,
-  formatDateTime: (d: any) => '2024-01-01 00:00',
-  getStatusColor: (s: string) => 'default',
-  getStatusText: (s: string) => s,
+  formatDateTime: (_d: unknown) => '2024-01-01 00:00',
+  getStatusColor: (_s: string) => 'default',
+  getStatusTextKey: (s: string) => s,
 }));
 
 describe('KnowledgeBaseDetailPage', () => {

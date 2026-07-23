@@ -1,23 +1,10 @@
 import client, { extractData } from './client';
+import { getWithOptionalSignal } from './helpers';
+import type { EvaluationRun, EvaluationMetrics } from '../types';
 
-export interface EvaluationRunItem {
-  id: number;
-  knowledge_base_id: number;
-  status: string;
-  metrics: EvaluationMetrics | null;
-  total_questions: number;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string | null;
-  error_message: string | null;
-}
-
-export interface EvaluationMetrics {
-  faithfulness: number;
-  answer_relevancy: number;
-  context_precision: number;
-  context_recall: number;
-}
+// 兼容旧名称: EvaluationRunItem 是 EvaluationRun 的别名
+// (EvaluationPage.tsx 仍引用 EvaluationRunItem, 通过 alias 避免破坏其 import 路径)
+export type { EvaluationRun as EvaluationRunItem, EvaluationMetrics };
 
 export interface EvaluationResultItem {
   id: number;
@@ -41,11 +28,11 @@ export interface PaginatedData<T> {
 
 const evaluationApi = {
   /** Trigger a new evaluation run */
-  triggerEvaluation: async (kbId: number, numQuestions: number = 50) => {
+  triggerEvaluation: async (kbId: number, numQuestions: number = 50): Promise<EvaluationRun> => {
     const resp = await client.post('/evaluation/runs', null, {
       params: { kb_id: kbId, num_questions: numQuestions },
     });
-    return extractData(resp);
+    return extractData<EvaluationRun>(resp);
   },
 
   /** List evaluation runs */
@@ -53,29 +40,33 @@ const evaluationApi = {
     kb_id?: number;
     page?: number;
     page_size?: number;
-  }) => {
-    const resp = await client.get('/evaluation/runs', { params });
-    return extractData<PaginatedData<EvaluationRunItem>>(resp);
+  }, signal?: AbortSignal): Promise<PaginatedData<EvaluationRun>> => {
+    // 保持原行为：即使 params 为 undefined 也传 config 对象（测试期望 { params: undefined }）
+    const resp = await client.get('/evaluation/runs', {
+      params,
+      ...(signal ? { signal } : {}),
+    });
+    return extractData<PaginatedData<EvaluationRun>>(resp);
   },
 
   /** Get single evaluation run */
-  getRun: async (runId: number) => {
+  getRun: async (runId: number): Promise<EvaluationRun> => {
     const resp = await client.get(`/evaluation/runs/${runId}`);
-    return extractData<EvaluationRunItem>(resp);
+    return extractData<EvaluationRun>(resp);
   },
 
   /** Get per-question results */
-  getResults: async (runId: number, page?: number, pageSize?: number) => {
-    const resp = await client.get(`/evaluation/runs/${runId}/results`, {
-      params: { page, page_size: pageSize },
-    });
-    return extractData<PaginatedData<EvaluationResultItem>>(resp);
+  getResults: async (runId: number, page?: number, pageSize?: number, signal?: AbortSignal): Promise<PaginatedData<EvaluationResultItem>> => {
+    return getWithOptionalSignal<PaginatedData<EvaluationResultItem>>(
+      `/evaluation/runs/${runId}/results`,
+      { page, page_size: pageSize },
+      signal,
+    );
   },
 
   /** Delete evaluation run */
-  deleteRun: async (runId: number) => {
-    const resp = await client.delete(`/evaluation/runs/${runId}`);
-    return extractData(resp);
+  deleteRun: async (runId: number): Promise<void> => {
+    await client.delete(`/evaluation/runs/${runId}`);
   },
 };
 

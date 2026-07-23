@@ -2,6 +2,8 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth';
 import type { ApiResponse } from '../types';
 import { isTauri } from '../utils/tauri';
+import { addBreadcrumb } from '../utils/errorReporter';
+import { globalT } from '../i18n';
 
 /** 获取 API 基础路径：Tauri 环境下使用完整 URL，浏览器环境使用相对路径 */
 export const getApiBase = (): string => {
@@ -18,10 +20,25 @@ const client = axios.create({
 
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retryCount?: number;
+  /** 标记该请求因 401 已尝试过一次 refresh + 重试，避免无限循环 */
+  _retry?: boolean;
 }
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
+
+/**
+ * 并发锁：多个请求同时收到 401 时，只允许第一个触发 refreshAccessToken，
+ * 其余请求复用同一个 Promise，避免用旧 refreshToken 并发刷新导致轮换失败。
+ */
+let refreshPromise: Promise<boolean> | null = null;
+function refreshAccessTokenOnce(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = useAuthStore.getState().refreshAccessToken().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
 
 function isRetryableError(error: AxiosError): boolean {
   if (!error.config) return false;
@@ -43,7 +60,7 @@ function delay(ms: number): Promise<void> {
 
 function getErrorMessage(error: AxiosError): string {
   const responseData = error.response?.data as { message?: string } | undefined;
-  return responseData?.message || error.message || '请求失败';
+  return responseData?.message || error.message || globalT('common.requestFailed');
 }
 
 client.interceptors.request.use((config) => {
@@ -51,6 +68,11 @@ client.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // API 面包屑：仅记录 method + url，不记录 body / headers（避免敏感信息泄露）
+  addBreadcrumb({
+    type: 'api',
+    message: `${(config.method || 'GET').toUpperCase()} ${config.url || ''}`,
+  });
   return config;
 });
 
@@ -58,7 +80,7 @@ client.interceptors.response.use(
   (response) => {
     const data = response.data as ApiResponse;
     if (data.code !== 0 && data.code !== undefined) {
-      return Promise.reject(new Error(data.message || '请求失败'));
+      return Promise.reject(new Error(data.message || globalT('common.requestFailed')));
     }
     return response;
   },
@@ -70,10 +92,31 @@ client.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      // 标记 logout 请求自身，避免 logout API 返回 401 时重复触发 logout
+      // logout 请求自身的 401：不触发 refresh / logout，直接 reject
       const isLogoutRequest = config.url?.includes('/auth/logout');
-      if (!isLogoutRequest) {
-        useAuthStore.getState().logout();
+      // refresh 请求自身的 401：不再次触发 refresh，避免递归
+      const isRefreshRequest = config.url?.includes('/auth/refresh');
+
+      // 仅对普通请求、且未重试过的请求尝试一次 refresh + 重试
+      if (!config._retry && !isLogoutRequest && !isRefreshRequest) {
+        config._retry = true;
+        const ok = await refreshAccessTokenOnce();
+        if (ok) {
+          // 用新 access_token 重试原请求
+          const newToken = useAuthStore.getState().token;
+          if (newToken) {
+            config.headers.Authorization = `Bearer ${newToken}`;
+          }
+          return client(config);
+        }
+        // refresh 失败：refreshAccessToken 内部已 logout
+        const msg = getErrorMessage(error);
+        return Promise.reject(new Error(msg));
+      }
+
+      // 已重试过 / logout / refresh 请求的 401：清理本地态后 reject
+      if (!isLogoutRequest && !isRefreshRequest) {
+        await useAuthStore.getState().logout();
       }
       const msg = getErrorMessage(error);
       return Promise.reject(new Error(msg));

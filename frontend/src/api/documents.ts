@@ -1,5 +1,6 @@
-import client, { extractData, getApiBase } from './client';
-import { useAuthStore } from '../store/auth';
+import client, { extractData } from './client';
+import { getWithOptionalSignal } from './helpers';
+import { globalT } from '../i18n';
 import type { Document, DocumentProgress } from '../types';
 
 export interface DocumentPreviewData {
@@ -13,18 +14,23 @@ export interface DocumentPreviewData {
 }
 
 export const documentApi = {
-  /** 获取文档列表 */
-  async list(kbId: number, page = 1, pageSize = 20): Promise<{ items: Document[]; total: number; page: number; page_size: number; total_pages: number }> {
-    const res = await client.get('/documents', {
-      params: { kb_id: kbId, page, page_size: pageSize },
-    });
-    return extractData(res) as any;
+  /** 获取文档列表 (kbId 省略时后端返回所有有权限的文档, 实现真正的服务端分页) */
+  async list(kbId?: number, page = 1, pageSize = 20, signal?: AbortSignal): Promise<{ items: Document[]; total: number; page: number; page_size: number; total_pages: number }> {
+    return getWithOptionalSignal<{ items: Document[]; total: number; page: number; page_size: number; total_pages: number }>(
+      '/documents',
+      {
+        ...(kbId !== undefined ? { kb_id: kbId } : {}),
+        page,
+        page_size: pageSize,
+      },
+      signal,
+    );
   },
 
   /** 获取文档详情 */
   async get(docId: number): Promise<Document> {
     const res = await client.get(`/documents/${docId}`);
-    return extractData(res);
+    return extractData<Document>(res);
   },
 
   /** 上传文档 */
@@ -33,43 +39,31 @@ export const documentApi = {
     file: File,
     onProgress?: (loaded: number, total: number) => void,
   ): Promise<{ document_id: number; status: string; task_id: string }> {
-    const token = useAuthStore.getState().token;
     const formData = new FormData();
     formData.append('file', file);
     formData.append('kb_id', String(kbId));
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${getApiBase()}/documents/upload`);
-    xhr.timeout = 120000; // 上传超时 2 分钟
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
-    if (onProgress) {
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(e.loaded, e.total);
-      };
+    try {
+      const res = await client.post(
+        '/documents/upload',
+        formData,
+        {
+          timeout: 120000, // 上传超时 2 分钟
+          onUploadProgress: (progressEvent) => {
+            if (onProgress && progressEvent.total) {
+              onProgress(progressEvent.loaded, progressEvent.total);
+            }
+          },
+        },
+      );
+      return extractData<{ document_id: number; status: string; task_id: string }>(res);
+    } catch (error) {
+      // client 拦截器已统一提取服务器 message；上传场景无 message 时使用 i18n 兜底
+      if (error instanceof Error && error.message) {
+        throw error;
+      }
+      throw new Error(globalT('document.uploadFailed'));
     }
-
-    return new Promise((resolve, reject) => {
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data.data || data);
-          } catch {
-            reject(new Error('响应解析失败'));
-          }
-        } else {
-          let msg = `上传失败 (${xhr.status})`;
-          try {
-            const data = JSON.parse(xhr.responseText);
-            msg = data.message || msg;
-          } catch {}
-          reject(new Error(msg));
-        }
-      };
-      xhr.onerror = () => reject(new Error('网络错误'));
-      xhr.send(formData);
-    });
   },
 
   /** 删除文档 */
@@ -86,9 +80,8 @@ export const documentApi = {
   },
 
   /** 获取文档处理进度 */
-  async getProgress(docId: number): Promise<DocumentProgress> {
-    const res = await client.get(`/documents/${docId}/progress`);
-    return extractData(res);
+  async getProgress(docId: number, signal?: AbortSignal): Promise<DocumentProgress> {
+    return getWithOptionalSignal<DocumentProgress>(`/documents/${docId}/progress`, undefined, signal);
   },
 
   /** 预览文档内容 */
@@ -96,7 +89,7 @@ export const documentApi = {
     const res = await client.get(`/documents/${docId}/preview`, {
       params: { page, page_size: pageSize },
     });
-    return extractData(res);
+    return extractData<DocumentPreviewData>(res);
   },
 };
 

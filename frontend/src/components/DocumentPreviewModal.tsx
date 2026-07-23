@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, Space, Button, Typography, Spin, Skeleton, App as AntdApp, Tag } from 'antd';
 import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useTranslation } from 'react-i18next';
 import { documentApi } from '../api';
 import type { DocumentPreviewData } from '../api/documents';
+import { getErrorMessage } from '../utils/errorReporter';
 
 const { Text } = Typography;
 
@@ -24,6 +26,7 @@ export default function DocumentPreviewModal({
   fileType,
   onClose,
 }: DocumentPreviewModalProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DocumentPreviewData | null>(null);
   const [page, setPage] = useState(1);
@@ -36,14 +39,14 @@ export default function DocumentPreviewModal({
         const result = await documentApi.preview(docId, p, PAGE_SIZE);
         setData(result);
         setPage(result.page);
-      } catch (e: any) {
-        message.error(e.message || '预览失败');
+      } catch (e: unknown) {
+        message.error(getErrorMessage(e) || t('documentPreview.loadFailed'));
         setData(null);
       } finally {
         setLoading(false);
       }
     },
-    [docId, message],
+    [docId, message, t],
   );
 
   useEffect(() => {
@@ -88,7 +91,7 @@ export default function DocumentPreviewModal({
       <div style={{ minHeight: 400, maxHeight: '60vh', overflow: 'auto' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60 }}>
-            <Spin size="large" tip="加载中..." />
+            <Spin size="large" tip={t('common.loading')} />
           </div>
         ) : data ? (
           <div>
@@ -136,15 +139,17 @@ export default function DocumentPreviewModal({
             onClick={handlePrev}
             disabled={page <= 1 || loading}
             size="small"
+            aria-label={t('documentPreview.prevPage')}
           />
           <Text type="secondary" style={{ fontSize: 13 }}>
-            {page} / {data.total_pages} 页 ({data.total_lines} 行)
+            {t('documentPreview.pageInfo', { page, total: data.total_pages, lines: data.total_lines })}
           </Text>
           <Button
             icon={<ChevronRight size={14} />}
             onClick={handleNext}
             disabled={page >= data.total_pages || loading}
             size="small"
+            aria-label={t('documentPreview.nextPage')}
           />
         </div>
       )}

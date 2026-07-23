@@ -1,5 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Result, Button, Typography } from 'antd';
+import { reportError } from '../utils/errorReporter';
+import { globalT } from '../i18n';
 
 const { Paragraph } = Typography;
 
@@ -26,8 +28,8 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error);
-    console.error('Component stack:', errorInfo.componentStack);
+    // 上报到全局错误收集器（console + localStorage 面包屑，后续可接 Sentry）
+    reportError(error, errorInfo);
     this.setState({ errorInfo });
   }
 
@@ -54,21 +56,21 @@ export default class ErrorBoundary extends Component<Props, State> {
         <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}>
           <Result
             status="error"
-            title="页面出错了"
-            subTitle={this.state.error?.message || '发生了未知错误，请刷新页面重试'}
+            title={globalT('errorBoundary.title')}
+            subTitle={this.state.error?.message || globalT('errorBoundary.unknownError')}
             extra={[
               <Button key="reload" type="primary" onClick={this.handleReload}>
-                刷新页面
+                {globalT('errorBoundary.reload')}
               </Button>,
               <Button key="retry" onClick={this.handleReset}>
-                重试
+                {globalT('errorBoundary.retry')}
               </Button>,
             ]}
           >
             {isDev && this.state.error && (
               <div style={{ textAlign: 'left', maxWidth: 600, margin: '0 auto' }}>
                 <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                  错误详情（仅供参考）：
+                  {globalT('errorBoundary.detailsLabel')}
                 </Paragraph>
                 <pre
                   style={{

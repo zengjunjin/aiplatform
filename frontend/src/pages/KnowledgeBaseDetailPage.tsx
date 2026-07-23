@@ -1,58 +1,50 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Button,
   Table,
   Tag,
   Space,
   Typography,
-  Upload,
   Modal,
   Progress,
   Popconfirm,
   App as AntdApp,
-  Breadcrumb,
   Tooltip,
   Card,
   Skeleton,
   Empty,
   Form,
   Input,
-  Select,
-  Divider,
-  List,
-  Avatar,
-  AutoComplete,
+  Steps,
 } from 'antd';
+import { useShallow } from 'zustand/react/shallow';
 import {
-  ArrowLeft,
-  Upload as UploadIcon,
   RefreshCw,
   Trash2,
   FileText,
   AlertCircle,
   CheckCircle,
   Clock,
-  Edit3,
-  Users,
-  UserPlus,
-  UserX,
   Eye,
+  Upload as UploadIcon,
 } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useKBStore } from '../store/kb';
-import { documentApi, kbApi } from '../api';
-import authApi from '../api/auth';
-import { formatFileSize, formatDateTime, getStatusColor, getStatusText } from '../utils/format';
-import type { Document, DocumentProgress, CollaboratorInfo } from '../types';
+import { formatFileSize, formatDateTime, getStatusColor, getStatusTextKey } from '../utils/format';
+import type { Document, DocumentProgress } from '../types';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import DocumentUploadModal from '../components/DocumentUploadModal';
+import KBCollaboratorModal from '../components/KBCollaboratorModal';
+import KBBreadcrumbHeader from '../components/KBBreadcrumbHeader';
+import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { useApiToast } from '../hooks/useApiToast';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function KnowledgeBaseDetailPage() {
   const { t } = useTranslation();
   const { kbId } = useParams<{ kbId: string }>();
-  const navigate = useNavigate();
   // 精细化订阅
   const knowledgeBases = useKBStore((s) => s.knowledgeBases);
   const fetchKBs = useKBStore((s) => s.fetchKBs);
@@ -64,113 +56,102 @@ export default function KnowledgeBaseDetailPage() {
   const [uploadModal, setUploadModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [collabModal, setCollabModal] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [progressMap, setProgressMap] = useState<Record<number, DocumentProgress>>({});
-  const [collaborators, setCollaborators] = useState<CollaboratorInfo[]>([]);
-  const [collabLoading, setCollabLoading] = useState(false);
+  // Task 21: 通过 ref 读取最新的 progressMap，避免轮询更新导致 columns 频繁重建
+  const progressMapRef = useRef(progressMap);
+  progressMapRef.current = progressMap;
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [docPage, setDocPage] = useState(1);
   const [docPageSize, setDocPageSize] = useState(20);
-  const [addCollabForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const { message } = AntdApp.useApp();
-
-  // 用户搜索（协作者添加）
-  const [userOptions, setUserOptions] = useState<{ value: number; label: string }[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  const handleUserSearch = useCallback(async (query: string) => {
-    if (!query || query.length < 1) {
-      setUserOptions([]);
-      return;
-    }
-    setSearching(true);
-    try {
-      const users = await authApi.searchUsers(query);
-      setUserOptions(users.map((u) => ({ value: u.id, label: `${u.username} (ID: ${u.id})` })));
-    } catch {
-      setUserOptions([]);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
+  const { runWithToast } = useApiToast();
 
   const kbIdNum = parseInt(kbId || '0', 10);
   const kb = knowledgeBases.find((k) => k.id === kbIdNum);
-  const documents = useKBStore((s) => s.documents[kbIdNum] || []);
+  // useShallow: documents 数组元素引用不变时, 返回旧引用避免重渲染
+  // (fetchDocuments 后即使 doc 对象引用全变, useShallow 也会做浅比较决定是否触发更新)
+  const documents = useKBStore(
+    useShallow((s) => s.documents[kbIdNum] || [])
+  );
   const docTotal = useKBStore((s) => s.docTotal[kbIdNum] || 0);
   const loading = useKBStore((s) => s.loadingDocs[kbIdNum] || false);
 
+  // Task 30: mount 时创建 AbortController，卸载时取消 fetchKBs/fetchDocuments
   useEffect(() => {
-    if (kbIdNum > 0) {
-      fetchKBs();
-      fetchDocuments(kbIdNum, docPage, docPageSize);
-    }
+    if (kbIdNum <= 0) return;
+    const controller = new AbortController();
+    fetchKBs(controller.signal);
+    fetchDocuments(kbIdNum, docPage, docPageSize, controller.signal);
+    return () => controller.abort();
   }, [kbIdNum, fetchKBs, fetchDocuments, docPage, docPageSize]);
 
-  // Poll only for documents that are still processing.
-  // Use a stable string key to avoid infinite re-trigger when documents array reference changes.
-  const pendingDocIds = documents
-    .filter((d) => d.status !== 'done' && d.status !== 'failed')
-    .map((d) => d.id)
-    .join(',');
+  // pendingDocIds: 仍处于处理中 (非 done/failed) 的文档 ID 数组, 用 useMemo 缓存避免每次 render 重算
+  const pendingDocIds = useMemo(
+    () => documents.filter((d) => d.status !== 'done' && d.status !== 'failed').map((d) => d.id),
+    [documents]
+  );
 
+  // Task 52: useRef + 手动比较替代 pendingDocIds.join(',') 依赖, 移除 eslint-disable.
+  // ID 集合不变时 (如 fetchDocuments 后 doc 对象引用变化但 pending ID 集合不变) 不重新触发轮询.
+  // 通过 ref 管理清理函数, 使 effect 不返回 cleanup, 避免 docPage/docPageSize 等依赖变化时
+  // cleanup 误取消正在进行的轮询.
+  const prevPendingKeyRef = useRef('');
+  const pollCleanupRef = useRef<(() => void) | null>(null);
+
+  // Task 30: pollProgress 传入 signal，卸载时 abort 取消轮询中的 getProgress 请求
   useEffect(() => {
-    if (!pendingDocIds) return;
-    const ids = pendingDocIds.split(',').map(Number);
+    const currentKey = pendingDocIds.join(',');
+    // 手动值比较: ID 集合不变时跳过轮询重建
+    if (currentKey === prevPendingKeyRef.current) return;
+    prevPendingKeyRef.current = currentKey;
+
+    // 清理上一次轮询
+    pollCleanupRef.current?.();
+    pollCleanupRef.current = null;
+
+    if (pendingDocIds.length === 0) return;
+    const controller = new AbortController();
     const stopFns: (() => void)[] = [];
-    ids.forEach((docId) => {
-      const stop = pollProgress(docId, (p) => {
-        setProgressMap((prev) => ({ ...prev, [docId]: p }));
-        if (p.status === 'done' || p.status === 'failed') {
-          fetchDocuments(kbIdNum, docPage, docPageSize);
-        }
-      });
+    pendingDocIds.forEach((docId) => {
+      const stop = pollProgress(
+        docId,
+        (p) => {
+          setProgressMap((prev) => ({ ...prev, [docId]: p }));
+          if (p.status === 'done' || p.status === 'failed') {
+            fetchDocuments(kbIdNum, docPage, docPageSize);
+          }
+        },
+        controller.signal,
+      );
       stopFns.push(stop);
     });
-    return () => stopFns.forEach((fn) => fn());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDocIds, kbIdNum]);
+    pollCleanupRef.current = () => {
+      controller.abort();
+      stopFns.forEach((fn) => fn());
+    };
+  }, [pendingDocIds, kbIdNum, pollProgress, fetchDocuments, docPage, docPageSize]);
 
-  const handleUpload = async (file: File, onSuccess?: (body: any) => void, onError?: (err: Error) => void) => {
-    setUploading(true);
-    setUploadProgress(0);
-    try {
-      const result = await documentApi.upload(kbIdNum, file, (loaded, total) => {
-        setUploadProgress(Math.round((loaded / total) * 100));
-      });
-      message.success(t('kb.uploadSuccess'));
-      onSuccess?.(result);
-      setUploadModal(false);
-      fetchDocuments(kbIdNum, docPage, docPageSize);
-    } catch (e: any) {
-      message.error(e.message || t('kb.uploadFailed'));
-      onError?.(e);
-      setUploadModal(false);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  };
+  // 组件卸载时清理轮询
+  useEffect(() => {
+    return () => {
+      pollCleanupRef.current?.();
+    };
+  }, []);
 
-  const handleReparse = async (docId: number, force: boolean = false) => {
-    try {
-      await reparseDocument(kbIdNum, docId, force);
-      message.success(t('kb.reparsed'));
-    } catch (e: any) {
-      message.error(e.message || t('kb.operationFailed'));
-    }
-  };
+  const handleReparse = useCallback(async (docId: number, force: boolean = false) => {
+    await runWithToast(() => reparseDocument(kbIdNum, docId, force), {
+      successKey: 'kb.reparsed',
+      errorKey: 'kb.operationFailed',
+    });
+  }, [runWithToast, reparseDocument, kbIdNum]);
 
-  const handleDelete = async (docId: number) => {
-    try {
-      await deleteDocument(kbIdNum, docId);
-      message.success(t('kb.deleteSuccess'));
-    } catch (e: any) {
-      message.error(e.message || t('kb.deleteFailed'));
-    }
-  };
+  const handleDelete = useCallback(async (docId: number) => {
+    await runWithToast(() => deleteDocument(kbIdNum, docId), {
+      successKey: 'kb.deleteSuccess',
+      errorKey: 'kb.deleteFailed',
+    });
+  }, [runWithToast, deleteDocument, kbIdNum]);
 
   const handleEditClick = () => {
     editForm.setFieldsValue({
@@ -186,54 +167,16 @@ export default function KnowledgeBaseDetailPage() {
       await updateKB(kbIdNum, values.name, values.description || '');
       message.success(t('kb.updateSuccess'));
       setEditModal(false);
-    } catch (e: any) {
-      if (e.errorFields) return;
-      message.error(e.message || t('kb.updateFailed'));
+    } catch (e: unknown) {
+      if (isFormValidationError(e)) return;
+      message.error(getErrorMessage(e) || t('kb.updateFailed'));
       setEditModal(false);
     }
   };
 
-  const fetchCollaborators = async () => {
-    setCollabLoading(true);
-    try {
-      const data = await kbApi.getCollaborators(kbIdNum);
-      setCollaborators(data);
-    } catch (e: any) {
-      message.error(e.message || 'Failed to load collaborators');
-    } finally {
-      setCollabLoading(false);
-    }
-  };
+  const refreshDocuments = () => fetchDocuments(kbIdNum, docPage, docPageSize);
 
-  const handleOpenCollab = () => {
-    setCollabModal(true);
-    fetchCollaborators();
-  };
-
-  const handleAddCollaborator = async () => {
-    try {
-      const values = await addCollabForm.validateFields();
-      await kbApi.addCollaborator(kbIdNum, values);
-      message.success(t('kb.collaboratorAdded'));
-      addCollabForm.resetFields();
-      fetchCollaborators();
-    } catch (e: any) {
-      if (e.errorFields) return;
-      message.error(e.message || t('kb.operationFailed'));
-    }
-  };
-
-  const handleRemoveCollaborator = async (userId: number) => {
-    try {
-      await kbApi.removeCollaborator(kbIdNum, userId);
-      message.success(t('kb.collaboratorRemoved'));
-      fetchCollaborators();
-    } catch (e: any) {
-      message.error(e.message || t('kb.operationFailed'));
-    }
-  };
-
-  const columns = [
+  const columns = useMemo(() => [
     {
       title: t('kb.filename'),
       dataIndex: 'filename',
@@ -262,26 +205,53 @@ export default function KnowledgeBaseDetailPage() {
     {
       title: t('kb.status'),
       key: 'status',
-      width: 220,
-      render: (_: any, record: Document) => {
-        const progress = progressMap[record.id];
-        const statusText = progress?.status ? getStatusText(progress.status) : getStatusText(record.status);
-        const statusColor = progress?.status ? getStatusColor(progress.status) : getStatusColor(record.status);
+      width: 320,
+      render: (_: unknown, record: Document) => {
+        const progress = progressMapRef.current[record.id];
+        const currentStatus = progress?.status || record.status;
+        const statusText = getStatusTextKey(currentStatus);
+        const statusColor = getStatusColor(currentStatus);
         const progressVal = progress?.progress || 0;
 
-        const StatusIcon = record.status === 'failed' ? AlertCircle : record.status === 'done' ? CheckCircle : Clock;
+        const StatusIcon = currentStatus === 'failed' ? AlertCircle : currentStatus === 'done' ? CheckCircle : Clock;
+
+        // Task 38: 5 阶段 Stepper - pending → parsing → chunking → embedding → done
+        // 当前阶段索引 + 进度条; failed 状态用红色 Tag 单独展示.
+        const STAGES = ['pending', 'parsing', 'chunking', 'embedding', 'done'] as const;
+        const stageIndex = STAGES.indexOf(currentStatus as typeof STAGES[number]);
+        const isInPipeline = stageIndex >= 0 && stageIndex < STAGES.length - 1 && currentStatus !== 'failed';
 
         return (
           <div>
-            <Space>
+            <Space style={{ marginBottom: 4 }}>
               <Tag color={statusColor} icon={<StatusIcon size={12} />}>
                 {statusText}
               </Tag>
             </Space>
-            {(record.status === 'parsing' || record.status === 'chunking' || record.status === 'embedding') && (
-              <Progress percent={progressVal} size="small" style={{ marginTop: 4, width: 140 }} />
-            )}
-            {record.status === 'failed' && record.error_message && (
+            {isInPipeline ? (
+              <>
+                <Steps
+                  size="small"
+                  current={stageIndex}
+                  style={{ marginTop: 4, maxWidth: 280 }}
+                  items={STAGES.map((s) => ({
+                    title: getStatusTextKey(s),
+                  }))}
+                />
+                <Progress percent={progressVal} size="small" style={{ marginTop: 4, width: 280 }} />
+              </>
+            ) : currentStatus === 'done' ? (
+              <Steps
+                size="small"
+                current={STAGES.length - 1}
+                status="finish"
+                style={{ marginTop: 4, maxWidth: 280 }}
+                items={STAGES.map((s) => ({
+                  title: getStatusTextKey(s),
+                }))}
+              />
+            ) : null}
+            {currentStatus === 'failed' && record.error_message && (
               <Tooltip title={record.error_message}>
                 <Text type="danger" style={{ fontSize: 12, cursor: 'pointer' }}>
                   {t('kb.viewErrorDetails')}
@@ -310,7 +280,7 @@ export default function KnowledgeBaseDetailPage() {
       title: t('kb.actions'),
       key: 'actions',
       width: 200,
-      render: (_: any, record: Document) => (
+      render: (_: unknown, record: Document) => (
         <Space>
           <Button
             size="small"
@@ -333,46 +303,23 @@ export default function KnowledgeBaseDetailPage() {
             okText={t('kb.delete')}
             cancelText={t('kb.cancel')}
           >
-            <Button size="small" danger icon={<Trash2 size={14} />} />
+            <Button size="small" danger icon={<Trash2 size={14} />} aria-label={t('kb.delete')} />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ], [t, progressMap, handleReparse, handleDelete, setPreviewDoc]);
 
   return (
     <div>
-      <Breadcrumb style={{ marginBottom: 16 }}>
-        <Breadcrumb.Item>
-          <a onClick={() => navigate('/knowledge-bases')} style={{ cursor: 'pointer' }}>
-            {t('kb.kb')}
-          </a>
-        </Breadcrumb.Item>
-        <Breadcrumb.Item>{kb?.name || t('common.loading')}</Breadcrumb.Item>
-      </Breadcrumb>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            {kb?.name || t('common.loading')}
-          </Title>
-          <Text type="secondary">{kb?.description || ''}</Text>
-        </div>
-        <Space>
-          <Button icon={<Edit3 size={16} />} onClick={handleEditClick}>
-            {t('kb.edit')}
-          </Button>
-          <Button icon={<Users size={16} />} onClick={handleOpenCollab}>
-            {t('kb.collaborators')}
-          </Button>
-          <Button icon={<RefreshCw size={16} />} onClick={() => fetchDocuments(kbIdNum, docPage, docPageSize)} loading={loading}>
-            {t('kb.refresh')}
-          </Button>
-          <Button type="primary" icon={<UploadIcon size={16} />} onClick={() => setUploadModal(true)}>
-            {t('kb.uploadDocument')}
-          </Button>
-        </Space>
-      </div>
+      <KBBreadcrumbHeader
+        kb={kb}
+        loading={loading}
+        onEditClick={handleEditClick}
+        onCollabClick={() => setCollabModal(true)}
+        onRefreshClick={refreshDocuments}
+        onUploadClick={() => setUploadModal(true)}
+      />
 
       <Card>
         {loading ? (
@@ -412,36 +359,12 @@ export default function KnowledgeBaseDetailPage() {
         )}
       </Card>
 
-      <Modal
-        title={t('kb.uploadModalTitle')}
+      <DocumentUploadModal
         open={uploadModal}
-        onCancel={() => setUploadModal(false)}
-        transitionName=""
-        maskTransitionName=""
-        footer={null}
-      >
-        <Upload.Dragger
-          name="file"
-          customRequest={({ file, onSuccess, onError }) => handleUpload(file as File, onSuccess, onError)}
-          showUploadList={false}
-          accept=".pdf,.docx,.md,.markdown,.txt"
-          multiple={false}
-          disabled={uploading}
-        >
-          <p className="ant-upload-drag-icon">
-            <UploadIcon size={48} style={{ color: 'var(--accent-primary)' }} />
-          </p>
-          <p className="ant-upload-text">
-            {uploading ? t('kb.uploading') : t('kb.uploadDragText')}
-          </p>
-          <p className="ant-upload-hint">
-            {t('kb.uploadDragHint')}
-          </p>
-        </Upload.Dragger>
-        {uploading && uploadProgress > 0 && (
-          <Progress percent={uploadProgress} style={{ marginTop: 16 }} />
-        )}
-      </Modal>
+        kbId={kbIdNum}
+        onClose={() => setUploadModal(false)}
+        onUploaded={refreshDocuments}
+      />
 
       <Modal
         title={t('kb.editKB')}
@@ -467,86 +390,11 @@ export default function KnowledgeBaseDetailPage() {
         </Form>
       </Modal>
 
-      <Modal
-        title={t('kb.collaborators')}
+      <KBCollaboratorModal
         open={collabModal}
-        onCancel={() => { setCollabModal(false); addCollabForm.resetFields(); }}
-        transitionName=""
-        maskTransitionName=""
-        footer={null}
-        width={500}
-      >
-        <Divider orientation="left" style={{ fontSize: 13, marginTop: 0 }}>
-          {t('kb.addCollaborator')}
-        </Divider>
-        <Form form={addCollabForm} layout="inline" style={{ marginBottom: 16 }}>
-          <Form.Item
-            name="user_id"
-            rules={[{ required: true, message: t('kb.userIdRequired') }]}
-          >
-            <AutoComplete
-              options={userOptions}
-              onSearch={handleUserSearch}
-              placeholder={t('kb.userSearchPlaceholder')}
-              style={{ width: 200 }}
-              notFoundContent={searching ? t('kb.searching') : t('kb.noUserFound')}
-            />
-          </Form.Item>
-          <Form.Item
-            name="permission"
-            rules={[{ required: true, message: t('kb.permissionRequired') }]}
-          >
-            <Select style={{ width: 120 }} placeholder={t('kb.permission')}>
-              <Select.Option value="read">{t('kb.permRead')}</Select.Option>
-              <Select.Option value="write">{t('kb.permWrite')}</Select.Option>
-              <Select.Option value="admin">{t('kb.permAdmin')}</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" icon={<UserPlus size={14} />} onClick={handleAddCollaborator}>
-              {t('kb.add')}
-            </Button>
-          </Form.Item>
-        </Form>
-
-        <Divider orientation="left" style={{ fontSize: 13 }}>
-          {t('kb.currentCollaborators')}
-        </Divider>
-        {collabLoading ? (
-          <Skeleton active paragraph={{ rows: 3 }} />
-        ) : collaborators.length === 0 ? (
-          <Empty description={t('kb.noCollaborators')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <List
-            dataSource={collaborators}
-            renderItem={(item: CollaboratorInfo) => (
-              <List.Item
-                actions={[
-                  <Popconfirm
-                    key="remove"
-                    title={t('kb.removeCollaboratorConfirm')}
-                    onConfirm={() => handleRemoveCollaborator(item.user_id)}
-                    okText={t('kb.delete')}
-                    cancelText={t('kb.cancel')}
-                  >
-                    <Button size="small" danger icon={<UserX size={14} />} />
-                  </Popconfirm>,
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={<Avatar icon={<Users size={16} />} />}
-                  title={item.username}
-                  description={
-                    <Tag color={item.permission === 'admin' ? 'red' : item.permission === 'write' ? 'blue' : 'default'}>
-                      {item.permission === 'admin' ? t('kb.permAdmin') : item.permission === 'write' ? t('kb.permWrite') : t('kb.permRead')}
-                    </Tag>
-                  }
-                />
-              </List.Item>
-            )}
-          />
-        )}
-      </Modal>
+        kbId={kbIdNum}
+        onClose={() => setCollabModal(false)}
+      />
 
       <DocumentPreviewModal
         open={!!previewDoc}

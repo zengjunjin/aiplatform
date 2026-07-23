@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/auth';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles } from 'lucide-react';
+import { getErrorMessage } from '../utils/errorReporter';
 
 const { Title, Text } = Typography;
 
@@ -19,9 +20,9 @@ export default function LoginPage() {
     try {
       await login(values.username, values.password);
       msg.success(t('auth.loginSuccess'));
-      navigate('/');
-    } catch (e: any) {
-      msg.error(e.message || t('auth.loginFailed'));
+      navigate('/dashboard');
+    } catch (e: unknown) {
+      msg.error(getErrorMessage(e) || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,5 @@
 import client, { extractData } from './client';
+import { getWithOptionalSignal } from './helpers';
 import type { KnowledgeBase, PaginatedResponse, CollaboratorInfo } from '../types';
 
 export interface CreateKBParams {
@@ -18,29 +19,30 @@ export interface AddCollaboratorParams {
 
 export const kbApi = {
   /** 获取知识库列表 */
-  async list(page = 1, pageSize = 100): Promise<PaginatedResponse<KnowledgeBase>> {
-    const res = await client.get('/knowledge-bases', {
-      params: { page, page_size: pageSize },
-    });
-    return extractData(res) as PaginatedResponse<KnowledgeBase>;
+  async list(page = 1, pageSize = 100, signal?: AbortSignal): Promise<PaginatedResponse<KnowledgeBase>> {
+    return getWithOptionalSignal<PaginatedResponse<KnowledgeBase>>(
+      '/knowledge-bases',
+      { page, page_size: pageSize },
+      signal,
+    );
   },
 
   /** 获取知识库详情 */
   async get(id: number): Promise<KnowledgeBase> {
     const res = await client.get(`/knowledge-bases/${id}`);
-    return extractData(res);
+    return extractData<KnowledgeBase>(res);
   },
 
   /** 创建知识库 */
   async create(params: CreateKBParams): Promise<KnowledgeBase> {
     const res = await client.post('/knowledge-bases', params);
-    return extractData(res);
+    return extractData<KnowledgeBase>(res);
   },
 
   /** 更新知识库 */
   async update(id: number, params: UpdateKBParams): Promise<KnowledgeBase> {
     const res = await client.put(`/knowledge-bases/${id}`, params);
-    return extractData(res);
+    return extractData<KnowledgeBase>(res);
   },
 
   /** 删除知识库 */
@@ -51,13 +53,13 @@ export const kbApi = {
   /** 获取协作者列表 */
   async getCollaborators(kbId: number): Promise<CollaboratorInfo[]> {
     const res = await client.get(`/knowledge-bases/${kbId}/collaborators`);
-    return extractData(res);
+    return extractData<CollaboratorInfo[]>(res);
   },
 
   /** 添加协作者 */
   async addCollaborator(kbId: number, params: AddCollaboratorParams): Promise<CollaboratorInfo> {
     const res = await client.post(`/knowledge-bases/${kbId}/collaborators`, params);
-    return extractData(res);
+    return extractData<CollaboratorInfo>(res);
   },
 
   /** 移除协作者 */

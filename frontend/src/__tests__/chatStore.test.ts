@@ -9,16 +9,23 @@ vi.mock('../api', () => ({
     getSession: vi.fn(),
   },
   streamChat: vi.fn(),
+  feedbackApi: {
+    getFeedback: vi.fn().mockResolvedValue(null),
+    submitFeedback: vi.fn(),
+  },
 }));
 
 import { useChatStore } from '../store/chat';
-import { chatApi } from '../api';
+import { chatApi, streamChat, feedbackApi } from '../api';
 
 describe('chatStore', () => {
   beforeEach(() => {
     useChatStore.setState({
       sessions: [],
-      messages: {},
+      messagesById: {},
+      messageOrder: {},
+      feedbackByMessageId: {},
+      _fetchingFeedback: {},
       currentSessionId: null,
       streaming: false,
       loading: false,
@@ -93,7 +100,7 @@ describe('chatStore', () => {
 
       await useChatStore.getState().fetchMessages(1);
 
-      const msgs = useChatStore.getState().messages[1];
+      const msgs = useChatStore.getState().getMessagesBySession(1);
       expect(msgs).toHaveLength(2);
       expect(msgs[0].role).toBe('user');
       expect(msgs[0].content).toBe('Hello');
@@ -116,6 +123,231 @@ describe('chatStore', () => {
 
       expect(mockAbort).toHaveBeenCalled();
       expect(useChatStore.getState().streaming).toBe(false);
+    });
+
+    it('should handle when _abortController is null', () => {
+      useChatStore.setState({ _abortController: null, streaming: true });
+
+      useChatStore.getState().stopStreaming();
+
+      expect(useChatStore.getState().streaming).toBe(false);
+    });
+  });
+
+  describe('clearWarnings', () => {
+    it('should clear all warnings', () => {
+      useChatStore.setState({ warnings: ['warn1', 'warn2'] });
+
+      useChatStore.getState().clearWarnings();
+
+      expect(useChatStore.getState().warnings).toEqual([]);
+    });
+  });
+
+  describe('getMessagesBySession', () => {
+    it('should return empty array for unknown session', () => {
+      const msgs = useChatStore.getState().getMessagesBySession(999);
+      expect(msgs).toEqual([]);
+    });
+
+    it('should return ordered messages for known session', () => {
+      useChatStore.setState({
+        messagesById: {
+          1: {
+            10: { id: 10, role: 'user', content: 'hello' },
+            11: { id: 11, role: 'assistant', content: 'hi' },
+          },
+        },
+        messageOrder: { 1: [10, 11] },
+      });
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      expect(msgs).toHaveLength(2);
+      expect(msgs[0].id).toBe(10);
+      expect(msgs[1].id).toBe(11);
+    });
+
+    it('should skip missing messages in byId', () => {
+      useChatStore.setState({
+        messagesById: { 1: { 10: { id: 10, role: 'user', content: 'hi' } } },
+        messageOrder: { 1: [10, 99] },
+      });
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      expect(msgs).toHaveLength(1);
+    });
+  });
+
+  describe('getFeedback', () => {
+    it('should return cached feedback when available', () => {
+      const fb = { id: 1, message_id: 10, user_id: 1, rating: 1, comment: null, feedback_type: null, created_at: '' };
+      useChatStore.setState({ feedbackByMessageId: { 10: fb } });
+
+      const result = useChatStore.getState().getFeedback(10);
+      expect(result).toEqual(fb);
+    });
+
+    it('should return null when cached as null', () => {
+      useChatStore.setState({ feedbackByMessageId: { 10: null } });
+
+      const result = useChatStore.getState().getFeedback(10);
+      expect(result).toBeNull();
+    });
+
+    it('should return undefined and trigger fetch when not cached', () => {
+      vi.mocked(feedbackApi.getFeedback).mockResolvedValue(null);
+
+      const result = useChatStore.getState().getFeedback(999);
+      expect(result).toBeUndefined();
+      expect(feedbackApi.getFeedback).toHaveBeenCalledWith(999);
+    });
+
+    it('should return undefined when already fetching', () => {
+      useChatStore.setState({ _fetchingFeedback: { 42: true } });
+
+      const result = useChatStore.getState().getFeedback(42);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('setFeedback', () => {
+    it('should write feedback to cache', () => {
+      const fb = { id: 1, message_id: 10, user_id: 1, rating: 1, comment: 'good', feedback_type: null, created_at: '' };
+
+      useChatStore.getState().setFeedback(10, fb);
+
+      expect(useChatStore.getState().feedbackByMessageId[10]).toEqual(fb);
+    });
+
+    it('should write null feedback to cache', () => {
+      useChatStore.getState().setFeedback(20, null);
+
+      expect(useChatStore.getState().feedbackByMessageId[20]).toBeNull();
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('should not send when already streaming', async () => {
+      useChatStore.setState({ streaming: true });
+
+
+      await useChatStore.getState().sendMessage(1, 'hello');
+
+      expect(streamChat).not.toHaveBeenCalled();
+    });
+
+    it('should create user and assistant messages on send', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        // no events
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hello');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      expect(msgs).toHaveLength(2);
+      expect(msgs[0].role).toBe('user');
+      expect(msgs[0].content).toBe('hello');
+      expect(msgs[1].role).toBe('assistant');
+      expect(useChatStore.getState().streaming).toBe(false);
+    });
+
+    it('should accumulate delta content', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'delta', content: 'Hello' };
+        yield { event: 'delta', content: ' world' };
+        yield { event: 'done', references: [], message_id: 100 };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.content).toBe('Hello world');
+      expect(assistantMsg.isStreaming).toBe(false);
+    });
+
+    it('should handle error event', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'error', message: 'something broke' };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.content).toContain('something broke');
+      expect(assistantMsg.isStreaming).toBe(false);
+    });
+
+    it('should handle warn event', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'warn', message: 'degraded mode' };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      expect(useChatStore.getState().warnings).toContain('degraded mode');
+    });
+
+    it('should handle stream throw with AbortError', async () => {
+
+      const abortErr = new Error('aborted');
+      abortErr.name = 'AbortError';
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        throw abortErr;
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.isStreaming).toBe(false);
+    });
+
+    it('should handle stream throw with generic error', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        throw new Error('connection lost');
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.content).toContain('connection lost');
+      expect(assistantMsg.isStreaming).toBe(false);
+    });
+
+    it('should handle cancelled event', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'cancelled' };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.isStreaming).toBe(false);
+    });
+
+    it('should handle searching event', async () => {
+
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'searching' };
+        yield { event: 'delta', content: 'result' };
+        yield { event: 'done', references: [], message_id: 200 };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      expect(assistantMsg.content).toBe('result');
     });
   });
 });

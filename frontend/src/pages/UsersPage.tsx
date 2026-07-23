@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Tag,
   Button,
   Space,
-  Switch,
   Popconfirm,
   App as AntdApp,
   Card,
@@ -16,7 +15,8 @@ import { useTranslation } from 'react-i18next';
 import { usersApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import type { User } from '../types';
-import type { TablePaginationConfig } from 'antd/es/table';
+import { getErrorMessage } from '../utils/errorReporter';
+import { useApiToast } from '../hooks/useApiToast';
 
 export default function UsersPage() {
   const { t } = useTranslation();
@@ -27,6 +27,7 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const currentUser = useAuthStore((s) => s.user);
   const { message } = AntdApp.useApp();
+  const { runWithToast } = useApiToast();
 
   const fetchUsers = useCallback(async (p = page, ps = pageSize) => {
     setLoading(true);
@@ -34,25 +35,28 @@ export default function UsersPage() {
       const data = await usersApi.list({ page: p, page_size: ps });
       setUsers(data.items || []);
       setTotal(data.total || 0);
-    } catch (e: any) {
-      message.error(e.message || t('user.loadFailed'));
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('user.loadFailed'));
     } finally {
       setLoading(false);
     }
   }, [page, pageSize, message, t]);
 
+  // Task 45: 使用 fetchUsersRef 模式避免 useEffect 依赖告警
+  // (参考 DocumentsPage.tsx 的 fetchDocumentsRef 模式)
+  const fetchUsersRef = useRef(fetchUsers);
+  fetchUsersRef.current = fetchUsers;
+
   useEffect(() => {
-    fetchUsers();
+    fetchUsersRef.current();
   }, []);
 
   const handleRoleChange = async (userId: number, role: 'user' | 'admin') => {
-    try {
-      await usersApi.updateRole(userId, role);
-      message.success(t('user.roleUpdated'));
-      fetchUsers(page, pageSize);
-    } catch (e: any) {
-      message.error(e.message || t('user.operationFailed'));
-    }
+    await runWithToast(() => usersApi.updateRole(userId, role), {
+      successKey: 'user.roleUpdated',
+      errorKey: 'user.operationFailed',
+      onSuccess: () => fetchUsers(page, pageSize),
+    });
   };
 
   const handleStatusChange = async (userId: number, active: boolean) => {
@@ -60,8 +64,8 @@ export default function UsersPage() {
       await usersApi.updateStatus(userId, active);
       message.success(active ? t('user.userEnabled') : t('user.userDisabled'));
       fetchUsers(page, pageSize);
-    } catch (e: any) {
-      message.error(e.message || t('user.operationFailed'));
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('user.operationFailed'));
     }
   };
 
@@ -106,7 +110,7 @@ export default function UsersPage() {
       title: t('user.actions'),
       key: 'actions',
       width: 280,
-      render: (_: any, record: User) => (
+      render: (_: unknown, record: User) => (
         <Space>
           {record.id === currentUser?.id ? (
             <Tag color="default">{t('user.currentUser')}</Tag>

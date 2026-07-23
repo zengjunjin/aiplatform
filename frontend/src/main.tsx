@@ -1,10 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
-import { ConfigProvider, App as AntdApp } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 import { isTauri } from './utils/tauri';
+import { reportError } from './utils/errorReporter';
 import './i18n';
 import './styles/index.css';
 
@@ -18,14 +17,26 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+// 全局错误监听：捕获 React 边界之外的运行时错误
+window.addEventListener('error', (event) => {
+  // event.error 可能不存在（如跨域脚本错误），退化为构造一个 Error
+  reportError(event.error || new Error(event.message || 'window.error'));
+});
+
+// 捕获未处理的 Promise rejection
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  reportError(error);
+});
+
+const rootEl = document.getElementById('root');
+if (!rootEl) throw new Error('Root element #root not found');
+
+ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <ConfigProvider locale={zhCN}>
-      <AntdApp>
-        <Router>
-          <App />
-        </Router>
-      </AntdApp>
-    </ConfigProvider>
+    <Router>
+      <App />
+    </Router>
   </React.StrictMode>,
 );

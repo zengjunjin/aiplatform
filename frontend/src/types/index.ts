@@ -84,19 +84,14 @@ export interface Reference {
   score: number;
 }
 
-export interface SSEEvent {
-  event: 'searching' | 'delta' | 'done' | 'error' | 'model' | 'cancelled' | 'warn';
-  chunks_found?: number;
-  content?: string;
-  message_id?: number;
-  references?: Reference[];
-  message?: string;
-  model_name?: string;
-  display_name?: string;
-  fallback?: boolean;
-}
+export type SSEEvent =
+  | { event: 'searching'; chunks_found?: number }
+  | { event: 'delta'; content?: string }
+  | { event: 'done'; message_id?: number; references?: Reference[] }
+  | { event: 'model'; model_name?: string; display_name?: string; fallback?: boolean }
+  | { event: 'error' | 'cancelled' | 'warn'; message?: string };
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   code: number;
   message: string;
   data: T;
@@ -109,16 +104,10 @@ export interface PaginatedResponse<T> {
   page_size: number;
 }
 
-export interface Message {
-  id: number;
-  session_id: number;
-  role: 'user' | 'assistant';
-  content: string;
+// Task 55: Message 继承 ChatMessage, 仅将 referenced_chunks 替换为 references,
+// 避免两个接口字段重复定义导致维护时遗漏同步
+export interface Message extends Omit<ChatMessage, 'referenced_chunks'> {
   references: Reference[] | null;
-  token_input: number | null;
-  token_output: number | null;
-  latency_ms: number | null;
-  created_at: string;
 }
 
 export interface MessageWithRefs {
@@ -128,6 +117,10 @@ export interface MessageWithRefs {
   references?: Reference[];
   isStreaming?: boolean;
   created_at?: string;
+  /** Task 39: token 消耗与响应时长, 仅 assistant 消息有效; 历史消息从后端读取, 流式消息在 done 事件后写入 */
+  token_input?: number | null;
+  token_output?: number | null;
+  latency_ms?: number | null;
 }
 
 export interface LoginResponse {
@@ -146,6 +139,9 @@ export interface EvaluationRun {
   total_questions: number;
   started_at: string | null;
   completed_at: string | null;
+  // 以下字段为后端实际返回, 保留原始字段名供 EvaluationPage 等使用方读取
+  created_at: string | null;
+  error_message: string | null;
 }
 
 export interface EvaluationMetrics {
@@ -158,9 +154,10 @@ export interface EvaluationMetrics {
 export interface MessageFeedback {
   id: number;
   message_id: number;
+  user_id: number;
   rating: number;
   comment: string | null;
-  feedback_type: FeedbackType;
+  feedback_type: FeedbackType | null;
   created_at: string;
 }
 

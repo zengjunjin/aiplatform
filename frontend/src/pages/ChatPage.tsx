@@ -1,21 +1,22 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Layout, Button, Tag, Drawer, Empty, Breadcrumb, Card, Modal, Form, Select, Input, App as AntdApp } from 'antd';
-import { Send, BookOpen, Plus, Trash2, Menu, FileText, Sparkles } from 'lucide-react';
+import { Layout, App as AntdApp } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../store/chat';
 import { useKBStore } from '../store/kb';
-import { MessageBubble } from '../components/MessageBubble';
 import ChatInput from '../components/ChatInput';
-import { formatDateTime, truncate } from '../utils/format';
+import SessionSider from '../components/SessionSider';
+import ReferencesDrawer from '../components/ReferencesDrawer';
+import NewSessionModal from '../components/NewSessionModal';
 import { systemApi } from '../api';
-import type { Reference } from '../types';
+import type { MessageWithRefs, Reference } from '../types';
 import type { ModelInfo } from '../api/system';
-
-const { Sider, Content } = Layout;
+import { getErrorMessage } from '../utils/errorReporter';
+import { ChatHeader, ChatMessagesArea, ChatModelSelector } from './ChatPage.parts';
 
 /** 空消息数组的稳定引用，避免 selector 每次返回新数组导致重渲染 */
-const EMPTY_MESSAGES: never[] = [];
+const EMPTY_MESSAGES: MessageWithRefs[] = [];
 
 export default function ChatPage() {
   const { t } = useTranslation();
@@ -25,10 +26,23 @@ export default function ChatPage() {
 
   // 精细化订阅: 仅订阅需要的状态片断, 避免整个 store 变化触发重渲染
   const sessions = useChatStore((s) => s.sessions);
-  // 使用空数组常量作为 fallback，避免每次 selector 返回新引用导致重渲染
-  const sessionMsgs = useChatStore((s) => s.messages[sessionIdNum]) ?? EMPTY_MESSAGES;
+  // 从 messagesById + messageOrder 组装有序消息数组, 使用 useShallow 做浅比较:
+  // 流式更新只改变单条消息引用, 其余消息引用不变, 浅比较命中后避免不必要的重渲染
+  const sessionMsgs = useChatStore(
+    useShallow((s) => {
+      const order = s.messageOrder[sessionIdNum] || [];
+      const byId = s.messagesById[sessionIdNum] || {};
+      const result: MessageWithRefs[] = [];
+      for (let i = 0; i < order.length; i++) {
+        const msg = byId[order[i]];
+        if (msg) result.push(msg);
+      }
+      return result.length > 0 ? result : EMPTY_MESSAGES;
+    })
+  );
   const streaming = useChatStore((s) => s.streaming);
   const warnings = useChatStore((s) => s.warnings);
+  const messagesError = useChatStore((s) => s.messagesError);
   // actions 引用稳定, 不会触发重渲染
   const fetchSessions = useChatStore((s) => s.fetchSessions);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
@@ -37,6 +51,7 @@ export default function ChatPage() {
   const createSession = useChatStore((s) => s.createSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
   const clearWarnings = useChatStore((s) => s.clearWarnings);
+  const clearMessagesError = useChatStore((s) => s.clearMessagesError);
 
   const knowledgeBases = useKBStore((s) => s.knowledgeBases);
   const fetchKBs = useKBStore((s) => s.fetchKBs);
@@ -44,7 +59,6 @@ export default function ChatPage() {
   const [referencesVisible, setReferencesVisible] = useState(false);
   const [currentRefs, setCurrentRefs] = useState<Reference[]>([]);
   const [newSessionModal, setNewSessionModal] = useState(false);
-  const [form] = Form.useForm();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { message } = AntdApp.useApp();
@@ -52,7 +66,9 @@ export default function ChatPage() {
   // 模型选择器状态
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem('chat-selected-model') || '';
+    const val = localStorage.getItem('chat-selected-model');
+    // Task 70: typeof 校验防止 localStorage 被篡改为非 string 类型
+    return typeof val === 'string' ? val : '';
   });
 
   const pendingSessionId = useRef<number | null>(null);
@@ -68,7 +84,8 @@ export default function ChatPage() {
     [sessionMsgs]
   );
 
-  // 加载数据
+  // 仅挂载时初始化默认模型，故意省略 selectedModel
+  // 避免每次 selectedModel 变化时重新加载模型列表
   useEffect(() => {
     let mounted = true;
     fetchSessions();
@@ -80,13 +97,19 @@ export default function ChatPage() {
       // 如果当前没有选中模型，使用默认模型
       if (!selectedModel && res.default_model) {
         setSelectedModel(res.default_model);
-        localStorage.setItem('chat-selected-model', res.default_model);
       }
     }).catch(() => {
       // 模型列表加载失败不影响聊天功能
     });
     return () => { mounted = false; };
   }, [fetchSessions, fetchKBs]);
+
+  // localStorage 写入下沉到独立 useEffect，避免 onChange 中重复写入
+  useEffect(() => {
+    if (selectedModel) {
+      localStorage.setItem('chat-selected-model', selectedModel);
+    }
+  }, [selectedModel]);
 
   // 切换会话时自动中断旧 SSE 流，防止 streaming 状态卡死
   useEffect(() => {
@@ -109,6 +132,14 @@ export default function ChatPage() {
     }
   }, [warnings, message, clearWarnings]);
 
+  // Task 48: 监听 fetchMessages 错误上报, 通过 message.error 提示用户
+  useEffect(() => {
+    if (messagesError !== null && messagesError !== undefined) {
+      message.error(getErrorMessage(messagesError) || t('chat.fetchMessagesFailed'));
+      clearMessagesError();
+    }
+  }, [messagesError, message, clearMessagesError, t]);
+
   // 自动滚动: 监听消息内容变化 (不只是数量)
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -120,40 +151,56 @@ export default function ChatPage() {
     if (lastMsg) {
       scrollToBottom();
     }
-  }, [sessionMsgs, scrollToBottom]);
+  }, [sessionMsgs.length, scrollToBottom]);
 
-  // 当 streaming 时, 定时滚动 (流式内容更新不会触发 useEffect)
+  // 当 streaming 时, 用 IntersectionObserver 监听底部哨兵: 哨兵离开视口说明内容增长超过视口,
+  // 自动滚动到最新内容. 相比 setInterval 200ms 轮询, 避免空闲帧浪费与不必要滚动.
   useEffect(() => {
     if (!isCurrentSessionStreaming) return;
-    const interval = setInterval(() => {
-      scrollToBottom();
-    }, 200);
-    return () => clearInterval(interval);
-  }, [isCurrentSessionStreaming, scrollToBottom]);
+    const sentinel = messagesEndRef.current;
+    const root = scrollContainerRef.current;
+    if (!sentinel || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry.isIntersecting) {
+          // 哨兵离开视口: 内容已增长到视口外, 自动滚动到底
+          sentinel.scrollIntoView({ behavior: 'auto' });
+        }
+      },
+      { root, threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isCurrentSessionStreaming]);
 
   const handleSend = useCallback(async (content: string) => {
-    if (streaming) return; // 全局保护: 同时只允许一个 streaming
+    if (streaming) {
+      // 全局保护: 同时只允许一个 streaming
+      message.warning(t('chat.alreadyStreaming'));
+      return;
+    }
     try {
       await sendMessage(sessionIdNum, content, selectedModel || undefined);
-    } catch (e: any) {
-      message.error(e.message || t('chat.sendFailed'));
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('chat.sendFailed'));
     }
   }, [streaming, sendMessage, sessionIdNum, selectedModel, message, t]);
 
-  const handleNewSession = useCallback(async () => {
+  // NewSessionModal 提交回调: 由 NewSessionModal 内部完成表单校验后调用.
+  // 校验失败时不进入此回调 (NewSessionModal handleOk catch 拦截).
+  // 创建成功: 设置 pendingSessionId, 关闭弹窗, 等 afterClose 回调再导航.
+  // 创建失败: 显示错误消息并关闭弹窗 (与原行为一致).
+  const handleNewSessionSubmit = useCallback(async (values: { kb_id?: number; title?: string }) => {
     try {
-      const values = await form.validateFields();
       const session = await createSession(values.kb_id, values.title);
       pendingSessionId.current = session.id;
-      // 关闭弹窗，不在这里导航，等 afterClose 回调再导航
       setNewSessionModal(false);
-      form.resetFields();
-    } catch (e: any) {
-      if (e.errorFields) return; // 表单验证错误，不关闭弹窗
-      message.error(e.message || t('chat.createFailed'));
-      setNewSessionModal(false); // 创建失败时关闭弹窗
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('chat.createFailed'));
+      setNewSessionModal(false);
     }
-  }, [form, createSession, message, t]);
+  }, [createSession, message, t]);
 
   const handleDeleteSession = useCallback(async (id: number) => {
     try {
@@ -162,11 +209,13 @@ export default function ChatPage() {
         navigate('/chat');
       }
       message.success(t('chat.deleteSuccess'));
-    } catch (e: any) {
-      message.error(e.message || t('chat.deleteFailed'));
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e) || t('chat.deleteFailed'));
     }
   }, [deleteSession, sessionIdNum, navigate, message, t]);
 
+  // handleRegenerate 正常声明依赖: streaming 期间所有消息的 onRegenerate 为 undefined,
+  // 故 handleRegenerate 引用变化不会触发 streaming 期间的额外重渲染 (Task 71 已改用默认 memo).
   const handleRegenerate = useCallback(() => {
     if (streaming) return; // 正在流式输出时禁止重新生成
     // 找到最后一条 user 消息
@@ -176,7 +225,7 @@ export default function ChatPage() {
         return;
       }
     }
-  }, [streaming, sessionMsgs, sendMessage, sessionIdNum, selectedModel]);
+  }, [streaming, sessionMsgs, sessionIdNum, selectedModel, sendMessage]);
 
   const getKBName = useCallback((kbId: number | null) => {
     if (!kbId) return t('chat.generalChat');
@@ -192,236 +241,79 @@ export default function ChatPage() {
   // 模型选择器 options 派生数据, 仅在 models 变化时重新计算
   const modelOptions = useMemo(
     () => models.map((m) => ({
-      label: `${m.display_name} ${m.status === 'unhealthy' ? '(离线)' : ''}`,
+      label: `${m.display_name} ${m.status === 'unhealthy' ? t('chat.modelOffline') : ''}`,
       value: m.name,
       disabled: m.status === 'unhealthy',
     })),
-    [models]
+    [models, t]
   );
+
+  // Task 39: 累计 token 统计 (input + output), 仅聚合 assistant 消息
+  // 历史消息从后端读取 token 字段, 流式消息 done 事件未携带 token 故不计数 (下次 fetchMessages 时填充)
+  const totalTokens = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let hasAny = false;
+    for (const msg of sessionMsgs) {
+      if (msg.role !== 'assistant') continue;
+      if (msg.token_input != null) {
+        input += msg.token_input;
+        hasAny = true;
+      }
+      if (msg.token_output != null) {
+        output += msg.token_output;
+        hasAny = true;
+      }
+    }
+    return hasAny ? { input, output, total: input + output } : null;
+  }, [sessionMsgs]);
 
   return (
     <Layout style={{ height: 'calc(100vh - 112px)' }}>
       {/* 左侧会话列表 */}
-      <Sider
-        width={280}
-        style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-color)' }}
-        trigger={null}
-        collapsible
-        collapsed={!siderVisible}
-        collapsedWidth={0}
-      >
-        <div style={{ padding: 16, borderBottom: '1px solid #f0f0f0' }}>
-          <Button
-            type="primary"
-            icon={<Plus size={16} />}
-            block
-            onClick={() => setNewSessionModal(true)}
-          >
-            {t('chat.newChat')}
-          </Button>
-        </div>
-        <div style={{ overflow: 'auto', height: 'calc(100% - 60px)' }}>
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => navigate(`/chat/${s.id}`)}
-              style={{
-                padding: '10px 16px',
-                cursor: 'pointer',
-                background: s.id === sessionIdNum ? '#e6f4ff' : 'transparent',
-                borderLeft: s.id === sessionIdNum ? '3px solid #1677ff' : '3px solid transparent',
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                if (s.id !== sessionIdNum) e.currentTarget.style.background = '#f0f0f0';
-              }}
-              onMouseLeave={(e) => {
-                if (s.id !== sessionIdNum) e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      fontWeight: s.id === sessionIdNum ? 600 : 400,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      fontSize: 14,
-                    }}
-                  >
-                    {s.title || t('chat.newSession')}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
-                    {getKBName(s.kb_id)}
-                  </div>
-                </div>
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<Trash2 size={14} />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSession(s.id);
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Sider>
+      <SessionSider
+        siderVisible={siderVisible}
+        sessions={sessions}
+        sessionIdNum={sessionIdNum}
+        onNavigate={(id) => navigate(`/chat/${id}`)}
+        onDeleteSession={handleDeleteSession}
+        onNewSessionClick={() => setNewSessionModal(true)}
+        getKBName={getKBName}
+      />
 
       <Layout>
         {/* 顶部栏 */}
-        <div
-          style={{
-            padding: '0 16px',
-            height: 52,
-            display: 'flex',
-            alignItems: 'center',
-            borderBottom: '1px solid #f0f0f0',
-            background: '#fff',
-          }}
-        >
-          <Button
-            type="text"
-            icon={<Menu size={18} />}
-            onClick={() => setSiderVisible(!siderVisible)}
-          />
-          <Breadcrumb style={{ marginLeft: 12 }}>
-            <Breadcrumb.Item>
-              <a onClick={() => navigate('/chat')} style={{ cursor: 'pointer' }}>{t('chat.chat')}</a>
-            </Breadcrumb.Item>
-            <Breadcrumb.Item>
-              {currentSession?.title || t('chat.loading')}
-            </Breadcrumb.Item>
-          </Breadcrumb>
-          {currentSession?.kb_id && (
-            <Tag color="blue" style={{ marginLeft: 'auto' }}>
-              <BookOpen size={12} style={{ marginRight: 4 }} />
-              {getKBName(currentSession.kb_id)}
-            </Tag>
-          )}
-        </div>
+        <ChatHeader
+          onToggleSider={() => setSiderVisible(!siderVisible)}
+          currentSession={currentSession}
+          getKBName={getKBName}
+          totalTokens={totalTokens}
+        />
 
         {/* 消息列表 */}
-        <Content
-          ref={scrollContainerRef as any}
-          style={{
-            padding: '16px 24px',
-            overflow: 'auto',
-            background: 'var(--bg-tertiary)',
-          }}
-        >
-          {sessionMsgs.length === 0 ? (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              minHeight: 400,
-              padding: '40px 0',
-            }}>
-              <div
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: 20,
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)',
-                  backgroundSize: '200% 200%',
-                  animation: 'logoGradient 4s ease infinite',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 24,
-                  boxShadow: '0 8px 32px rgba(102, 126, 234, 0.25)',
-                }}
-              >
-                <Sparkles size={36} color="#ffffff" strokeWidth={1.5} />
-              </div>
-              <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 8px 0' }}>
-                {t('chat.startFirstChat')}
-              </h2>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: '0 0 32px 0' }}>
-                {t('chat.selectKBAndAsk')}
-              </p>
-              <div style={{
-                width: '100%',
-                maxWidth: 600,
-                padding: '24px',
-                background: 'var(--bg-secondary)',
-                borderRadius: 'var(--radius-lg)',
-                boxShadow: 'var(--shadow-md)',
-                border: '1px solid var(--border-color)',
-              }}>
-                <p style={{ fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center', margin: 0 }}>
-                  Ask anything about your knowledge base
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div style={{ maxWidth: 900, margin: '0 auto' }}>
-              {sessionMsgs.map((msg, idx) => (
-                <div key={msg.id || `msg-${idx}`} className="message-bubble-enter">
-                  <MessageBubble
-                    role={msg.role}
-                    content={msg.content}
-                    messageId={msg.id}
-                    isStreaming={msg.isStreaming}
-                    references={msg.references}
-                    createdAt={msg.created_at}
-                    onRegenerate={
-                      msg.role === 'assistant' && !msg.isStreaming && !streaming && idx === sessionMsgs.length - 1
-                        ? handleRegenerate
-                        : undefined
-                    }
-                  />
-                  {msg.references && msg.references.length > 0 && !msg.isStreaming && (
-                    <div style={{ marginLeft: 48, marginBottom: 16 }}>
-                      <Tag
-                        color="blue"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => showReferences(msg.references!)}
-                      >
-                        {t('chat.viewReferencesCount', { count: msg.references.length })}
-                      </Tag>
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </Content>
+        <ChatMessagesArea
+          sessionMsgs={sessionMsgs}
+          streaming={streaming}
+          scrollContainerRef={scrollContainerRef}
+          messagesEndRef={messagesEndRef}
+          onRegenerate={handleRegenerate}
+          onShowReferences={showReferences}
+        />
 
         {/* 输入框 */}
         {/* 模型选择器 */}
-        <div style={{ padding: '8px 24px 0', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>模型:</span>
-            <Select
-              value={selectedModel || undefined}
-              onChange={(val) => {
-                setSelectedModel(val);
-                localStorage.setItem('chat-selected-model', val);
-              }}
-              placeholder="自动选择"
-              style={{ minWidth: 200 }}
-              size="small"
-              allowClear
-              options={modelOptions}
-            />
-          </div>
-        </div>
+        <ChatModelSelector
+          selectedModel={selectedModel}
+          onChange={setSelectedModel}
+          modelOptions={modelOptions}
+        />
         <ChatInput
           key={sessionIdNum}
           onSend={handleSend}
           onStop={stopStreaming}
           streaming={isCurrentSessionStreaming}
           kbName={currentSession?.kb_id ? getKBName(currentSession.kb_id) : undefined}
-          modelName={models.find(m => m.name === selectedModel)?.display_name || '自动选择'}
+          modelName={models.find(m => m.name === selectedModel)?.display_name || t('chat.modelAuto')}
           placeholder={
             currentSession?.kb_id
               ? t('chat.inputPlaceholder')
@@ -431,46 +323,17 @@ export default function ChatPage() {
       </Layout>
 
       {/* 参考来源抽屉 */}
-      <Drawer
-        title={t('chat.references')}
-        placement="right"
-        onClose={() => setReferencesVisible(false)}
+      <ReferencesDrawer
         open={referencesVisible}
-        width={420}
-      >
-        {currentRefs.map((ref, i) => (
-          <Card key={i} size="small" style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Tag color="blue">[{i + 1}]</Tag>
-              <FileText size={14} style={{ color: 'var(--accent-primary)' }} />
-              <span style={{ fontWeight: 600 }}>{ref.filename}</span>
-              {ref.page && <Tag color="orange">{t('chat.page', { num: ref.page })}</Tag>}
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-tertiary)',
-                padding: 10,
-                borderRadius: 6,
-                lineHeight: 1.7,
-                borderLeft: '3px solid #1677ff',
-              }}
-            >
-              {ref.snippet}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>
-              {t('chat.relevance')}: {(ref.score * 100).toFixed(1)}%
-            </div>
-          </Card>
-        ))}
-      </Drawer>
+        refs={currentRefs}
+        onClose={() => setReferencesVisible(false)}
+      />
 
       {/* 新建对话弹窗 */}
-      <Modal
-        title={t('chat.newChat')}
+      <NewSessionModal
         open={newSessionModal}
-        onOk={handleNewSession}
+        knowledgeBases={knowledgeBases}
+        onSubmit={handleNewSessionSubmit}
         onCancel={() => setNewSessionModal(false)}
         afterClose={() => {
           if (pendingSessionId.current) {
@@ -478,28 +341,7 @@ export default function ChatPage() {
             pendingSessionId.current = null;
           }
         }}
-        destroyOnClose
-        transitionName=""
-        maskTransitionName=""
-        okText={t('chat.create')}
-        cancelText={t('chat.cancel')}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="kb_id" label={t('chat.selectKB')}>
-            <Select
-              placeholder={t('chat.selectKBPlaceholder')}
-              allowClear
-              options={knowledgeBases.map((kb) => ({
-                label: `${kb.name} (${kb.doc_count || 0} ${t('kb.documents', { count: kb.doc_count || 0 })})`,
-                value: kb.id,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="title" label={t('chat.sessionTitleOptional')}>
-            <Input placeholder={t('chat.sessionTitleHint')} maxLength={100} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      />
     </Layout>
   );
 }

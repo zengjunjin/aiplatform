@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock API before importing store
 vi.mock('../api', () => ({
@@ -25,11 +25,16 @@ describe('kbStore', () => {
     useKBStore.setState({
       knowledgeBases: [],
       documents: {},
+      docTotal: {},
       loading: false,
       loadingDocs: {},
       error: null,
     });
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('fetchKBs', () => {
@@ -132,6 +137,141 @@ describe('kbStore', () => {
       await useKBStore.getState().reparseDocument(1, 1);
 
       expect(documentApi.reparse).toHaveBeenCalledWith(1, undefined);
+    });
+
+    it('should pass force flag to reparse API', async () => {
+      vi.mocked(documentApi.reparse).mockResolvedValue({ document_id: 1, task_id: 'task-1' });
+      vi.mocked(documentApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 200 } as any);
+
+      await useKBStore.getState().reparseDocument(1, 1, true);
+
+      expect(documentApi.reparse).toHaveBeenCalledWith(1, true);
+    });
+  });
+
+  describe('fetchKBs error handling', () => {
+    it('should set error string for non-Error throw', async () => {
+      vi.mocked(kbApi.list).mockRejectedValue('string error');
+
+      await useKBStore.getState().fetchKBs();
+
+      expect(useKBStore.getState().error).toBe('string error');
+    });
+  });
+
+  describe('fetchDocuments', () => {
+    it('should set loadingDocs flag during fetch', async () => {
+      vi.mocked(documentApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 200 } as any);
+
+      const promise = useKBStore.getState().fetchDocuments(1);
+      // After starting, loadingDocs should be true
+      expect(useKBStore.getState().loadingDocs[1]).toBe(true);
+
+      await promise;
+      expect(useKBStore.getState().loadingDocs[1]).toBe(false);
+    });
+
+    it('should handle null items in response', async () => {
+      vi.mocked(documentApi.list).mockResolvedValue({ items: null as any, total: null as any, page: 1, page_size: 200 } as any);
+
+      await useKBStore.getState().fetchDocuments(1);
+
+      expect(useKBStore.getState().documents[1]).toEqual([]);
+      expect(useKBStore.getState().docTotal[1]).toBe(0);
+    });
+  });
+
+  describe('uploadDocument', () => {
+    it('should call upload API with progress callback and refresh docs', async () => {
+      const mockFile = new File(['content'], 'test.txt', { type: 'text/plain' });
+      const onProgress = vi.fn();
+      vi.mocked(documentApi.upload).mockImplementation(async (_kbId, _file, onProgressCb) => {
+        onProgressCb?.(50, 100);
+        return {} as any;
+      });
+      vi.mocked(documentApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 200 } as any);
+
+      await useKBStore.getState().uploadDocument(1, mockFile, onProgress);
+
+      expect(documentApi.upload).toHaveBeenCalledWith(1, mockFile, expect.any(Function));
+      expect(onProgress).toHaveBeenCalledWith(50);
+    });
+
+    it('should not call onProgress when total is 0', async () => {
+      const mockFile = new File(['content'], 'test.txt', { type: 'text/plain' });
+      const onProgress = vi.fn();
+      vi.mocked(documentApi.upload).mockImplementation(async (_kbId, _file, onProgressCb) => {
+        onProgressCb?.(50, 0);
+        return {} as any;
+      });
+      vi.mocked(documentApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 200 } as any);
+
+      await useKBStore.getState().uploadDocument(1, mockFile, onProgress);
+
+      expect(onProgress).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getProgress', () => {
+    it('should call documentApi.getProgress', async () => {
+      const mockProgress = { document_id: 1, status: 'parsing', progress: 50, task_id: 'task-1' };
+      vi.mocked(documentApi.getProgress).mockResolvedValue(mockProgress as any);
+
+      const result = await useKBStore.getState().getProgress(1);
+
+      expect(documentApi.getProgress).toHaveBeenCalledWith(1);
+      expect(result).toEqual(mockProgress);
+    });
+  });
+
+  describe('pollProgress', () => {
+    it('should poll and stop on done status', async () => {
+      vi.useFakeTimers();
+      vi.mocked(documentApi.getProgress)
+        .mockResolvedValueOnce({ document_id: 1, status: 'parsing', progress: 50, task_id: 't1' } as any)
+        .mockResolvedValueOnce({ document_id: 1, status: 'done', progress: 100, task_id: 't1' } as any);
+
+      const onUpdate = vi.fn();
+      const stop = useKBStore.getState().pollProgress(1, onUpdate);
+
+      // First poll resolves immediately (parsing)
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'parsing' }));
+
+      // Second poll after 2000ms (done)
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }));
+
+      stop();
+    });
+
+    it('should stop on failed status', async () => {
+      vi.useFakeTimers();
+      vi.mocked(documentApi.getProgress).mockResolvedValueOnce({
+        document_id: 1,
+        status: 'failed',
+        progress: 0,
+        task_id: 't1',
+        error: 'parse error',
+      } as any);
+
+      const onUpdate = vi.fn();
+      const stop = useKBStore.getState().pollProgress(1, onUpdate);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+
+      stop();
+    });
+
+    it('should return a stop function', () => {
+      vi.useFakeTimers();
+      vi.mocked(documentApi.getProgress).mockResolvedValue({ document_id: 1, status: 'parsing', progress: 0, task_id: 't1' } as any);
+
+      const stop = useKBStore.getState().pollProgress(1, () => {});
+
+      expect(typeof stop).toBe('function');
+      stop();
     });
   });
 });

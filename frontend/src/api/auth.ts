@@ -21,19 +21,19 @@ export const authApi = {
   /** 登录 */
   async login(params: LoginParams): Promise<LoginResponse> {
     const res = await client.post('/auth/login', params);
-    return extractData(res);
+    return extractData<LoginResponse>(res);
   },
 
   /** 注册 */
   async register(params: RegisterParams): Promise<User> {
     const res = await client.post('/auth/register', params);
-    return extractData(res);
+    return extractData<User>(res);
   },
 
   /** 获取当前用户 */
   async getMe(): Promise<User> {
     const res = await client.get('/auth/me');
-    return extractData(res);
+    return extractData<User>(res);
   },
 
   /** 登出 */
@@ -44,7 +44,7 @@ export const authApi = {
   /** 刷新 token */
   async refreshToken(refreshToken: string): Promise<LoginResponse> {
     const res = await client.post('/auth/refresh', { refresh_token: refreshToken });
-    return extractData(res);
+    return extractData<LoginResponse>(res);
   },
 
   /** 修改密码 */
@@ -55,7 +55,7 @@ export const authApi = {
   /** 搜索用户（按用户名） */
   async searchUsers(query: string): Promise<{ id: number; username: string }[]> {
     const res = await client.get('/users/search', { params: { q: query } });
-    return extractData(res);
+    return extractData<{ id: number; username: string }[]>(res);
   },
 };
 

@@ -10,8 +10,12 @@
     "settings": "Settings",
     "logout": "Logout",
     "changePassword": "Change Password",
+    "toggleTheme": "Toggle theme",
+    "toggleLanguage": "Toggle language",
     "platformName": "RAG Platform",
-    "platformSubtitle": "Knowledge Base"
+    "platformSubtitle": "Knowledge Base",
+    "dashboard": "Dashboard",
+    "system": "System"
   },
   "chat": {
     "newChat": "New Chat",
@@ -40,6 +44,7 @@
     "createFailed": "Failed to create",
     "deleteSuccess": "Deleted successfully",
     "deleteFailed": "Failed to delete",
+    "fetchMessagesFailed": "Failed to load messages",
     "stop": "Stop",
     "send": "Send",
     "enterHint": "Enter to send · Shift+Enter for new line",
@@ -49,6 +54,7 @@
     "copy": "Copy",
     "regenerate": "Regenerate",
     "referencesCount": "{{count}} references",
+    "reference": "Reference",
     "like": "Like",
     "dislike": "Dislike",
     "feedbackTitle": "Feedback",
@@ -65,7 +71,27 @@
       "tooVerbose": "Too Verbose",
       "tooBrief": "Too Brief",
       "other": "Other"
-    }
+    },
+    "askAnything": "Ask anything about your knowledge base",
+    "model": "Model:",
+    "modelAuto": "Auto",
+    "modelOffline": "(Offline)",
+    "deleteSession": "Delete session",
+    "toggleSidebar": "Toggle sidebar",
+    "unauthorized": "Unauthorized, please log in again",
+    "emptyResponse": "Empty response body",
+    "readTimeout": "Read timeout, please check your network or retry",
+    "serverTimeout": "Server response timeout, please try again later",
+    "errorLabel": "Error",
+    "connectionLost": "Connection lost, please retry",
+    "alreadyStreaming": "A response is being generated. Please wait or stop the current conversation first",
+    "tokens": "In {{input}} / Out {{output}}",
+    "tokensTooltip": "Token consumption (input / output)",
+    "latencyMillis": "{{ms}} ms",
+    "latencySeconds": "{{s}} s",
+    "latencyTooltip": "Response latency",
+    "totalTokens": "{{count}} tokens total",
+    "totalTokensTooltip": "Session total token consumption (input: {{input}} / output: {{output}})"
   },
   "kb": {
     "myKnowledgeBases": "My Knowledge Bases",
@@ -78,8 +104,17 @@
     "cancel": "Cancel",
     "noDescription": "No description",
     "documents": "{{count}} documents",
+    "documents_one": "{{count}} document",
+    "documents_other": "{{count}} documents",
     "chunks": "{{count}} chunks",
+    "chunks_one": "{{count}} chunk",
+    "chunks_other": "{{count}} chunks",
     "updatedAt": "Updated",
+    "totalKBs": "Total KBs",
+    "totalDocs": "Total Documents",
+    "totalChunks": "Total Chunks",
+    "weeklyNewKBs": "New This Week",
+    "weeklyNewTrend": "Last 7 Days New Trend",
     "create": "Create",
     "kbName": "Knowledge Base Name",
     "kbNameRequired": "Please enter the knowledge base name",
@@ -167,7 +202,12 @@
     "reparsed": "Re-parsed",
     "operationFailed": "Operation failed",
     "loadFailed": "Failed to load",
-    "kbLabel": "KB #{{kbId}}"
+    "kbLabel": "KB #{{kbId}}",
+    "uploadFailed": "Upload failed",
+    "statsStatus": "Status Distribution",
+    "statsType": "Type Distribution",
+    "statsTotalSize": "Total Size",
+    "statsFailedBadge": "Failed"
   },
   "auth": {
     "login": "Login",
@@ -216,7 +256,18 @@
     "changePasswordTitle": "Change Password",
     "changePasswordConfirm": "Confirm Change",
     "changePasswordSuccess": "Password changed successfully, please log in again",
-    "changePasswordFailed": "Failed to change password"
+    "changePasswordFailed": "Failed to change password",
+    "passwordStrength": {
+      "title": "Password Strength",
+      "length": "Length ≥ 8",
+      "uppercase": "Uppercase",
+      "lowercase": "Lowercase",
+      "digit": "Digit",
+      "symbol": "Special char",
+      "hint": "Meet the following conditions to improve account security",
+      "allMet": "Password strength meets requirements",
+      "confirmMismatch": "Passwords do not match"
+    }
   },
   "session": {
     "mySessions": "My Conversations",
@@ -280,6 +331,200 @@
     "loading": "Loading...",
     "noData": "No Data",
     "ok": "OK",
-    "platformWindowTitle": "RAG Knowledge Base Platform"
+    "platformWindowTitle": "RAG Knowledge Base Platform",
+    "requestFailed": "Request failed",
+    "skipToMainContent": "Skip to main content",
+    "offlineWarning": "You are offline. Some features may be unavailable.",
+    "backOnline": "You are back online"
+  },
+  "markdown": {
+    "referenceLabel": "Reference {{n}}",
+    "codeBlockLabel": "Code block ({{lang}})",
+    "imageWithoutAlt": "undescribed image"
+  },
+  "documentPreview": {
+    "loadFailed": "Preview failed",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "pageInfo": "Page {{page}} / {{total}} ({{lines}} lines)"
+  },
+  "errorBoundary": {
+    "title": "Page error",
+    "unknownError": "An unknown error occurred, please refresh the page and try again",
+    "reload": "Reload page",
+    "retry": "Retry",
+    "detailsLabel": "Error details (for reference only):",
+    "globalErrorToast": "An unexpected error occurred",
+    "unhandledRejectionToast": "Async operation failed"
+  },
+  "notFound": {
+    "subtitle": "Sorry, the page you visited does not exist",
+    "backHome": "Back to home"
+  },
+  "feedback": {
+    "title": "Feedback Management",
+    "loadStatsFailed": "Failed to load stats",
+    "loadFeedbacksFailed": "Failed to load feedbacks",
+    "totalFeedback": "Total Feedback",
+    "positiveRate": "Positive Rate",
+    "negativeRate": "Negative Rate",
+    "byType": "By Type",
+    "typesSuffix": "types",
+    "typeDistribution": "Feedback Type Distribution",
+    "dailyFeedbackTrend": "Daily Feedback Stacked Trend",
+    "positive": "Positive",
+    "negative": "Negative",
+    "trendAnalysis": "Feedback Trend Analysis",
+    "trendRange7": "Last 7 days",
+    "trendRange30": "Last 30 days",
+    "trendRange90": "Last 90 days",
+    "positiveRateTrend": "Positive Rate Trend",
+    "lowRatedHeatmap": "Low-Rated Feedback Heatmap",
+    "lowRatedCount": "Low-Rated Count",
+    "filterByKB": "Filter by KB",
+    "filterByType": "Filter by Type",
+    "lowRatedAnswers": "Low-Rated Answers",
+    "totalItems": "Total {{count}} items",
+    "totalItems_one": "Total {{count}} item",
+    "totalItems_other": "Total {{count}} items",
+    "question": "Question",
+    "answer": "Answer",
+    "kbId": "KB ID",
+    "time": "Time",
+    "noQuestion": "(No question found)",
+    "systemAnswer": "System Answer",
+    "userFeedback": "User Feedback",
+    "noFeedbackData": "No feedback data",
+    "na": "N/A"
+  },
+  "evaluation": {
+    "trend": "Evaluation Trend",
+    "history": "Evaluation History",
+    "refresh": "Refresh",
+    "trigger": "Trigger Evaluation",
+    "noData": "No evaluation data",
+    "noRecords": "No evaluation records yet. Click \"Trigger Evaluation\" to start.",
+    "triggerModalTitle": "Trigger Evaluation",
+    "startEval": "Start Evaluation",
+    "selectKB": "Select Knowledge Base",
+    "selectKBRequired": "Please select a knowledge base",
+    "selectKBPlaceholder": "Select a knowledge base to evaluate",
+    "questionCount": "Number of Questions",
+    "detailTitle": "Evaluation Details #{{id}}",
+    "perQuestionResults": "Per-Question Results",
+    "detail": "Details",
+    "delete": "Delete",
+    "deleteConfirmTitle": "Delete this evaluation record?",
+    "loadHistoryFailed": "Failed to load evaluation history",
+    "triggerSuccess": "Evaluation triggered successfully",
+    "triggerFailed": "Failed to trigger evaluation",
+    "deleteSuccess": "Evaluation record deleted",
+    "deleteFailed": "Failed to delete",
+    "ragasThreshold": "RAGAS Recommended Threshold",
+    "metricDistribution": "Metric Distribution",
+    "deltaUp": "+{{delta}}% vs prev",
+    "deltaDown": "-{{delta}}% vs prev",
+    "deltaFlat": "No change vs prev",
+    "deltaNoPrev": "First run",
+    "thresholdLow": "Poor",
+    "thresholdMid": "Fair",
+    "thresholdGood": "Good",
+    "thresholdGreat": "Excellent",
+    "autoRefreshing": "Evaluation running, auto-refresh every 30s",
+    "estimateTitle": "Estimated Cost",
+    "estimateTime": "Estimated Time",
+    "estimateTimeValue": "~ {{minutes}} min",
+    "estimateTokens": "Estimated Tokens",
+    "estimateTokensValue": "~ {{tokens}}K tokens",
+    "estimateHint": "Estimate based on question count (~3s/question, ~1500 tokens/question). Actual cost depends on model and document size.",
+    "estimateMinutes": "{{minutes}} min",
+    "progressTitle": "Progress",
+    "progressQuestion": "Q {{current}} / {{total}}",
+    "progressRunning": "Evaluation running...",
+    "progressCompleted": "Evaluation completed",
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "metrics": {
+      "faithfulness": "Faithfulness",
+      "answerRelevancy": "Answer Relevancy",
+      "contextPrecision": "Context Precision",
+      "contextRecall": "Context Recall",
+      "relevancy": "Relevancy",
+      "precision": "Precision",
+      "recall": "Recall"
+    },
+    "columns": {
+      "kb": "Knowledge Base",
+      "status": "Status",
+      "questionCount": "Questions",
+      "createdAt": "Created At",
+      "actions": "Actions"
+    },
+    "resultColumns": {
+      "question": "Question",
+      "generatedAnswer": "Generated Answer"
+    },
+    "detail": {
+      "status": "Status",
+      "questionCount": "Questions",
+      "startTime": "Start Time",
+      "completeTime": "Complete Time",
+      "error": "Error"
+    }
+  },
+  "notification": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "clear": "Clear notifications",
+    "default": "Notification: {{type}}"
+  },
+  "system": {
+    "title": "System Status",
+    "loadFailed": "Failed to load system status",
+    "components": {
+      "postgresql": "PostgreSQL",
+      "redis": "Redis",
+      "ollama": "Ollama",
+      "qdrant": "Qdrant",
+      "celery": "Celery"
+    },
+    "status": {
+      "healthy": "Healthy",
+      "unhealthy": "Unhealthy"
+    },
+    "ollamaModels": "Ollama Available Models",
+    "qdrantCollections": "Qdrant Collections",
+    "celeryWorkers": "Celery Workers",
+    "collectionSuffix": "collections"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "todayChats": "Today's Chats",
+    "healthStatus": "System Health",
+    "totalDocs": "Total Documents",
+    "totalChunks": "Total Chunks",
+    "docTrend": "Document Parsing Trend (7d)",
+    "evalTrend": "Evaluation Trend",
+    "feedbackRatio": "Feedback Ratio",
+    "positive": "Positive",
+    "negative": "Negative",
+    "modelHealth": "Model Health",
+    "availableModels": "Available Models"
+  },
+  "status": {
+    "pending": "Pending",
+    "parsing": "Parsing",
+    "chunking": "Chunking",
+    "embedding": "Embedding",
+    "done": "Ready",
+    "failed": "Failed"
+  },
+  "errors": {
+    "websocketConnectionFailed": "WebSocket connection failed, please refresh the page and try again",
+    "loadCollaboratorsFailed": "Failed to load collaborators"
   }
 }

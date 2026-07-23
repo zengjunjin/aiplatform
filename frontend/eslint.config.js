@@ -4,6 +4,7 @@ import tsparser from '@typescript-eslint/parser';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import globals from 'globals';
 
 export default [
   {
@@ -24,8 +25,8 @@ export default [
         },
       },
       globals: {
-        window: 'readonly',
-        console: 'readonly',
+        ...globals.browser,
+        ...globals.es2021,
         process: 'readonly',
       },
     },
@@ -49,6 +50,8 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // Task 64: exhaustive-deps 提升为 error, 防止 useEffect/useCallback 依赖遗漏导致闭包陈旧
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
 ];

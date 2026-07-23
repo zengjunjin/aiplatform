@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
+import { globalT } from '../i18n';
 
+// dayjs locale 由 i18n/index.ts 统一管理，随语言切换动态变化
 dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
 
 /** 格式化文件大小 */
 export function formatFileSize(bytes: number): string {
@@ -61,17 +61,23 @@ export function getStatusColor(status: string): string {
   return map[status] || 'default';
 }
 
-/** 获取状态文本 */
-export function getStatusText(status: string): string {
-  const map: Record<string, string> = {
-    pending: '等待处理',
-    parsing: '解析中',
-    chunking: '分块中',
-    embedding: '向量化中',
-    done: '已就绪',
-    failed: '失败',
-  };
-  return map[status] || status;
+/** 状态 → i18n key 映射 */
+const STATUS_I18N_KEYS: Record<string, string> = {
+  pending: 'status.pending',
+  parsing: 'status.parsing',
+  chunking: 'status.chunking',
+  embedding: 'status.embedding',
+  done: 'status.done',
+  failed: 'status.failed',
+};
+
+/** 获取状态文本（通过 i18n 全局 t 函数翻译，未识别状态返回原始字符串） */
+export function getStatusTextKey(status: string): string {
+  const key = STATUS_I18N_KEYS[status];
+  if (key) {
+    return globalT(key);
+  }
+  return status;
 }
 
 /** 复制文本到剪贴板 (带 fallback) */
@@ -99,7 +105,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /** 防抖 */
-export function debounce<T extends (...args: any[]) => void>(
+export function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number
 ): (...args: Parameters<T>) => void {
