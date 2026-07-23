@@ -1,0 +1,421 @@
+name: Full CI & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: ${{ github.repository }}-backend
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
+
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run pytest with coverage
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_ci_pwd
+          POSTGRES_DB: rag_platform_ci
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: test-secret-key-for-ci-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: poetry run pytest tests/ -v -n auto --cov=app --cov-report=xml
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        run: npm run test -- --coverage
+
+      - name: Build production bundle
+        run: npm run build
+
+  deploy-staging:
+    name: Deploy to Staging (ghcr :main)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    # 仅 main 分支 push 时触发：构建并推到 ghcr `:main` tag 供 staging 环境拉取
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend Docker image (staging)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:main
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:staging-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            environment=staging
+
+      - name: Build and push frontend Docker image (staging)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:main
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:staging-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            environment=staging
+
+  e2e:
+    name: E2E Tests (docker-compose full stack)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    # main 分支 push 或 tag 推送时跑 E2E，PR 默认不跑（避免 E2E 拖慢 PR 反馈）
+    if: github.event_name == 'push'
+
+    env:
+      POSTGRES_DB: rag_platform_e2e
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag_e2e_pwd
+      JWT_SECRET: e2e-secret-key-for-ci-at-least-32-chars-long
+      JWT_ISSUER: rag-platform
+      JWT_AUDIENCE: rag-client
+      LLM_MODEL: qwen2.5:7b
+      EMBEDDING_MODEL: bge-m3
+      EMBEDDING_DIM: 1024
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-e2e-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-e2e-
+            ${{ runner.os }}-poetry-
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: poetry install --no-interaction
+
+      - name: Build backend & frontend images
+        run: |
+          docker compose -f deploy/docker-compose.yml build backend frontend
+
+      - name: Start full stack via docker-compose
+        working-directory: deploy
+        env:
+          POSTGRES_PASSWORD: rag_e2e_pwd
+        run: |
+          # 仅启动依赖 + backend（不启动 ollama，避免拉取大模型镜像；E2E 走 mock 或跳过 LLM 用例）
+          docker compose up -d postgres redis qdrant backend
+          # 等待 backend /readyz 通过（最多 120s）
+          timeout 120 bash -c 'until curl -fsS http://localhost:8000/readyz > /dev/null 2>&1; do sleep 3; done' || (docker compose logs backend && exit 1)
+
+      - name: Run pytest tests/e2e/
+        working-directory: backend
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_e2e_pwd
+          POSTGRES_DB: rag_platform_e2e
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          OLLAMA_HOST: http://localhost:11434
+          E2E_BASE_URL: http://localhost:8000
+        run: poetry run pytest tests/e2e/ -v --tb=short
+
+      - name: Dump backend logs on failure
+        if: failure()
+        working-directory: deploy
+        run: docker compose logs backend
+
+      - name: Tear down stack
+        if: always()
+        working-directory: deploy
+        run: docker compose down -v
+
+  build-and-push-images:
+    name: Build & Push Docker Images (tagged release)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test, e2e]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push backend Docker image
+        id: build-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+      - name: Extract metadata (tags, labels) for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push frontend Docker image
+        id: build-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign backend image
+        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}@${{ steps.build-backend.outputs.digest }}
+
+      - name: Sign frontend image
+        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}@${{ steps.build-frontend.outputs.digest }}
+
+  trivy-image-scan:
+    name: Trivy Image Scan (tagged release)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-images]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy scan backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Trivy scan frontend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-push-images]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Extract CHANGELOG section for this version
+        id: changelog
+        shell: bash
+        run: |
+          # 从 CHANGELOG.md 抽取当前版本段落（## [vX.Y.Z] 到下一个 ## 之间）
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="v${VERSION}"
+          # 同时匹配带 v 与不带 v 的版本号
+          SECTION=$(awk -v ver="$VERSION" -v tag="$TAG" '
+            /^## \[/ {
+              if (in_section) exit
+              header = $0
+              if (index(header, "["tag"]") > 0 || index(header, "["ver"]") > 0) {
+                in_section = 1
+                print header
+                next
+              }
+            }
+            in_section { print }
+          ' CHANGELOG.md || true)
+          if [ -z "$SECTION" ]; then
+            SECTION="（CHANGELOG.md 中未找到版本 ${TAG} 的段落，请手动补充）"
+          fi
+          # 写到文件以避免 multiline 字符串在 GitHub Actions output 中的限制
+          echo "$SECTION" > /tmp/release_body.md
+          echo "body_path=/tmp/release_body.md" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body_path: /tmp/release_body.md
+          # body_path 与 body 同时存在时，softprops/action-gh-release 会拼接两者
+          # 这里 body 提供镜像信息，body_path 提供 CHANGELOG 段落
+          body: |
+            ## RAG Platform ${{ github.ref_name }}
+
+            ### Docker Images
+            - Backend: `ghcr.io/${{ github.repository }}-backend:${{ github.ref_name }}`
+            - Frontend: `ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}`
+
+            ### CHANGELOG (from CHANGELOG.md)
+            The detailed changelog for this release is sourced from `CHANGELOG.md` (see below).

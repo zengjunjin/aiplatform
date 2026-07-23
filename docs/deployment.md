@@ -11,6 +11,9 @@
 2. [裸机部署](#2-裸机部署)
 3. [环境变量完整说明](#3-环境变量完整说明)
 4. [常见问题排查](#4-常见问题排查)
+5. [回滚流程](#5-回滚流程)
+6. [数据库备份](#6-数据库备份)
+7. [灾难恢复](#7-灾难恢复)
 
 ---
 
@@ -84,14 +87,14 @@ docker compose -f deploy/docker-compose.yml logs -f backend
 | postgres | postgres:16-alpine | 5432 | 关系型数据库 |
 | redis | redis:7-alpine | 6379 | 缓存与消息队列 |
 | qdrant | qdrant/qdrant:v1.10.1 | 6333, 6334 | 向量数据库 |
-| ollama | ollama/ollama:latest | 11434 | 本地 LLM 推理 |
+| ollama | ollama/ollama:0.3.14 | 11434 | 本地 LLM 推理 |
 
 ### 1.5 首次启动后操作
 
 ```bash
 # 1. 拉取 Ollama 模型（需要一些时间）
 docker exec -it deploy-ollama-1 ollama pull qwen2.5:7b
-docker exec -it deploy-ollama-1 ollama pull nomic-embed-text
+docker exec -it deploy-ollama-1 ollama pull bge-m3
 
 # 2. 数据库迁移已自动执行（backend 启动命令包含 alembic upgrade head）
 
@@ -180,7 +183,7 @@ tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz
 cd backend
 
 # 安装 Python 依赖
-poetry install --no-dev
+poetry install --without dev
 
 # 配置环境变量
 cp .env.example .env
@@ -292,7 +295,7 @@ sudo systemctl start rag-backend rag-celery
 | `POSTGRES_HOST` | `localhost` | PostgreSQL 主机地址 |
 | `POSTGRES_PORT` | `5432` | PostgreSQL 端口 |
 | `POSTGRES_USER` | `rag` | 数据库用户名 |
-| `POSTGRES_PASSWORD` | `rag_dev_pwd` | 数据库密码 |
+| `POSTGRES_PASSWORD` | `<must-be-set-strong-random>` | **生产环境必须修改！** 数据库密码 |
 | `POSTGRES_DB` | `rag_platform` | 数据库名称 |
 | `DB_POOL_SIZE` | `20` | 连接池大小 |
 | `DB_MAX_OVERFLOW` | `30` | 连接池最大溢出 |
@@ -319,8 +322,10 @@ sudo systemctl start rag-backend rag-celery
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `JWT_SECRET` | `change-me-in-production` | **生产环境必须修改！** JWT 签名密钥 |
+| `JWT_SECRET` | `<must-be-set-strong-random>` | **生产环境必须修改！** JWT 签名密钥 |
 | `JWT_ALGORITHM` | `HS256` | JWT 签名算法 |
+| `JWT_ISSUER` | `rag-platform` | JWT 签发者（iss 声明） |
+| `JWT_AUDIENCE` | `rag-client` | JWT 受众（aud 声明） |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access Token 有效期（分钟） |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh Token 有效期（天） |
 
@@ -332,6 +337,7 @@ sudo systemctl start rag-backend rag-celery
 | `LLM_PROVIDER` | `ollama` | 默认 LLM Provider |
 | `LLM_MODEL` | `qwen2.5:7b` | 默认 LLM 模型 |
 | `LLM_PROVIDERS` | JSON 数组 | 多 Provider 配置（详见下方） |
+| `LLM_PROVIDERS_JSON` | — | 多 LLM 提供商配置 JSON 字符串（与 `LLM_PROVIDERS` 等价，适用于环境变量注入场景，详见 3.15） |
 | `LLM_ROUTING_STRATEGY` | `round_robin` | 路由策略 |
 | `LLM_FALLBACK_ENABLED` | `true` | 是否启用 Fallback |
 | `LLM_HEALTH_CHECK_INTERVAL` | `30` | 健康检查间隔（秒） |
@@ -343,6 +349,8 @@ sudo systemctl start rag-backend rag-celery
 | `EMBEDDING_PROVIDER` | `ollama` | Embedding Provider |
 | `EMBEDDING_MODEL` | `bge-m3` | Embedding 模型名称 |
 | `EMBEDDING_DIM` | `1024` | 向量维度 |
+| `EMBEDDING_CACHE_ENABLED` | `true` | 是否启用 embedding 缓存（避免重复向量化，降低 LLM 推理成本） |
+| `EMBEDDING_CACHE_TTL` | `86400` | embedding 缓存 TTL（秒，默认 24 小时） |
 
 ### 3.8 Reranker 配置
 
@@ -377,8 +385,24 @@ sudo systemctl start rag-backend rag-celery
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `LOG_LEVEL` | `info` | 日志级别 (debug/info/warning/error/critical) |
+| `LOG_JSON` | `false` | 是否输出 JSON 结构化日志（生产环境建议开启，便于日志采集与检索） |
 
-### 3.13 LLM_PROVIDERS JSON 格式
+### 3.13 监控与可观测性配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `METRICS_TOKEN` | — | Prometheus 抓取 `/metrics` 端点使用的 Bearer Token（生产环境必填，未设置则 metrics 端点不鉴权） |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OpenTelemetry OTLP 导出端点（如 `http://otel-collector:4317`，未设置则不上报 Trace） |
+
+### 3.14 实时通信与限流配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `WEBSOCKET_ENABLED` | `true` | 是否启用 WebSocket（用于实时通知与进度推送） |
+| `SSE_MAX_CONCURRENT` | `100` | SSE 流式响应最大并发连接数（超出则拒绝新连接，防止资源耗尽） |
+| `RATE_LIMIT_ENABLED` | `true` | 是否启用 API 速率限制（基于 Redis 计数器，保护后端免受突发流量冲击） |
+
+### 3.15 LLM_PROVIDERS JSON 格式
 
 ```json
 [
@@ -475,11 +499,11 @@ curl http://localhost:11434/api/tags
 ```bash
 # Docker 环境
 docker exec -it deploy-ollama-1 ollama pull qwen2.5:7b
-docker exec -it deploy-ollama-1 ollama pull nomic-embed-text
+docker exec -it deploy-ollama-1 ollama pull bge-m3
 
 # 裸机环境
 ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ```
 
 ### 4.5 数据库迁移失败
@@ -564,3 +588,178 @@ sudo lsof -i :80
 
 # 修改端口（在 .env 或 docker-compose.yml 中）
 ```
+
+---
+
+## 5. 回滚流程
+
+### 5.1 代码回滚
+
+```bash
+# 查看历史版本
+git log --oneline -10
+# 回滚到指定版本
+git checkout <prev-tag>
+```
+
+### 5.2 数据库回滚
+
+```bash
+# 查看迁移历史
+alembic history
+# 回滚一个版本
+alembic downgrade -1
+# 回滚到指定版本
+alembic downgrade <revision>
+```
+
+### 5.3 服务重启
+
+```bash
+docker-compose down
+docker-compose up -d
+```
+
+---
+
+## 6. 数据库备份
+
+平台内置自动化备份脚本 `deploy/scripts/backup_db.sh`，支持从环境变量读取 PostgreSQL 凭据、自动按日期类型（daily/weekly/monthly）生成备份并执行 7/30/365 天分级保留策略。
+
+### 6.1 备份脚本
+
+**用法**：
+
+```bash
+# 直接运行（需提前 export POSTGRES_* 环境变量或 source .env）
+./deploy/scripts/backup_db.sh
+
+# 试运行（不实际执行备份与清理，仅打印将要执行的操作）
+./deploy/scripts/backup_db.sh --dry-run
+
+# 通过 Makefile 运行（自动读取 deploy/.env 中的环境变量）
+make backup
+
+# 通过 Makefile 试运行
+make backup ARGS=--dry-run
+```
+
+**环境变量**：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `POSTGRES_HOST` | `localhost` | PostgreSQL 主机地址 |
+| `POSTGRES_PORT` | `5432` | PostgreSQL 端口 |
+| `POSTGRES_USER` | — | 数据库用户名（必填） |
+| `POSTGRES_PASSWORD` | — | 数据库密码（必填） |
+| `POSTGRES_DB` | — | 数据库名称（必填） |
+| `BACKUP_DIR` | `./backups` | 备份输出目录 |
+
+### 6.2 备份类型与保留策略
+
+脚本根据当前日期自动确定备份类型：
+
+| 类型 | 触发条件 | 保留天数 | 文件名示例 |
+|------|----------|----------|------------|
+| `daily` | 每日 | 7 天 | `backup_daily_rag_platform_20260723_020000.dump` |
+| `weekly` | 每周日 | 30 天 | `backup_weekly_rag_platform_20260720_020000.dump` |
+| `monthly` | 每月 1 号 | 365 天 | `backup_monthly_rag_platform_20260701_020000.dump` |
+
+备份使用 `pg_dump -F c`（custom 格式），支持并行恢复与选择性恢复。
+
+### 6.3 定时备份（crontab）
+
+```bash
+# 每天凌晨 2 点自动备份（添加到 crontab -e）
+0 2 * * *  cd /opt/rag-platform && set -a && . ./deploy/.env && set +a && ./deploy/scripts/backup_db.sh >> /var/log/rag-backup.log 2>&1
+```
+
+### 6.4 恢复备份
+
+```bash
+# 恢复指定备份文件
+pg_restore -h localhost -U rag -d rag_platform -c backups/backup_daily_rag_platform_20260723_020000.dump
+
+# 恢复到新数据库（避免覆盖现有数据）
+pg_restore -h localhost -U rag -d rag_platform_restore -C backups/backup_daily_rag_platform_20260723_020000.dump
+```
+
+---
+
+## 7. 灾难恢复
+
+### 7.1 RPO/RTO 目标
+
+| 指标 | 目标 | 说明 |
+|------|------|------|
+| RPO（恢复点目标） | 24h | 可容忍的数据丢失量（依赖每日 `pg_dump` 备份） |
+| RTO（恢复时间目标） | 4h | 从故障发生到服务恢复的最长时间 |
+
+> 达成 RPO/RTO 的前提：每日 2:00 自动备份（见 6.3）、Qdrant 快照、Redis AOF 持久化均已配置并验证可用。
+
+### 7.2 Qdrant 备份
+
+```bash
+docker run --rm -v qdrant_data:/data -v $(pwd):/backup alpine tar czf /backup/qdrant_$(date +%Y%m%d).tar.gz /data
+```
+
+建议将 Qdrant 备份与 PostgreSQL 备份（见 6.1）一同纳入 crontab，每日执行，并归档到异地存储。
+
+### 7.3 Redis AOF 持久化
+
+为保证缓存与 Celery 队列状态持久化，建议在 `deploy/docker-compose.yml` 的 redis 服务中启用 AOF（**本文档仅说明所需变更，不实际修改 docker-compose.yml**）：
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+```
+
+启用后 Redis 将在 `appendonly.aof` 文件中追加记录每次写操作，重启后自动重放恢复数据。
+
+### 7.4 全栈恢复顺序
+
+发生灾难需全栈恢复时，按以下顺序依次启动服务，前一层就绪后再启动下一层：
+
+1. `postgres` — 关系型数据库（数据基座）
+2. `redis` — 缓存与消息队列
+3. `qdrant` — 向量数据库
+4. `backend` — FastAPI 后端
+5. `celery_worker` — 异步任务处理
+6. `frontend` — 前端静态资源
+7. `nginx` — 反向代理（统一入口，最后启动对外暴露）
+
+```bash
+# 按依赖顺序启动（Docker Compose 会处理 depends_on，但灾难恢复时建议逐个确认就绪）
+docker compose -f deploy/docker-compose.yml up -d postgres
+docker compose -f deploy/docker-compose.yml up -d redis qdrant
+docker compose -f deploy/docker-compose.yml up -d backend
+docker compose -f deploy/docker-compose.yml up -d celery_worker
+docker compose -f deploy/docker-compose.yml up -d frontend nginx
+```
+
+### 7.5 数据卷损坏应急
+
+当数据卷（postgres/qdrant）损坏无法正常启动时，从历史备份（`pg_dump` + Qdrant snapshot）重建数据卷：
+
+```bash
+# PostgreSQL 恢复
+docker exec -i rag-platform-postgres-1 pg_restore -U rag -d rag_platform < backup.dump
+# Qdrant 恢复
+docker run --rm -v qdrant_data:/data -v $(pwd):/backup alpine sh -c "cd /data && tar xzf /backup/qdrant_20260723.tar.gz"
+```
+
+**应急流程**：
+
+1. 停止相关服务：`docker compose -f deploy/docker-compose.yml stop backend celery_worker`
+2. 删除损坏的数据卷（谨慎！确认已有备份后再操作）：
+   ```bash
+   docker compose -f deploy/docker-compose.yml down -v
+   ```
+3. 重新启动基础服务以创建空卷：`docker compose -f deploy/docker-compose.yml up -d postgres redis qdrant`
+4. 执行上述 `pg_restore` 与 Qdrant tar 解压恢复数据
+5. 按 7.4 顺序恢复上层服务
+6. 校验数据完整性：检查文档数、向量集合数，并确认最近一次备份时间点之后产生的数据是否需要重新导入

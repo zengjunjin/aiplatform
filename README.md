@@ -1,8 +1,8 @@
 # RAG 知识库问答平台
 
-[![Backend CI](https://github.com/your-username/your-repo/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/your-username/your-repo/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/frontend-ci.yml)
-[![Full CI & Release](https://github.com/your-username/your-repo/actions/workflows/full-ci.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/full-ci.yml)
+[![Backend CI](https://github.com/zengjunjin/aiplatform/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/zengjunjin/aiplatform/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/zengjunjin/aiplatform/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/zengjunjin/aiplatform/actions/workflows/frontend-ci.yml)
+[![Full CI & Release](https://github.com/zengjunjin/aiplatform/actions/workflows/full-ci.yml/badge.svg)](https://github.com/zengjunjin/aiplatform/actions/workflows/full-ci.yml)
 
 基于 FastAPI + Qdrant + Ollama 的企业级 RAG (Retrieval-Augmented Generation) 知识库问答系统。
 
@@ -29,6 +29,63 @@
 | LLM | Ollama (兼容 OpenAI API) |
 | ORM/迁移 | SQLAlchemy + Alembic |
 | 认证 | JWT (access + refresh) |
+
+## 架构图
+
+```mermaid
+graph TB
+    subgraph Client["客户端层"]
+        Web["Web 浏览器<br/>(React 18 + Vite + AntD 5)"]
+        Tauri["Tauri 桌面端<br/>(Windows / WebView2)"]
+    end
+
+    subgraph Edge["接入层"]
+        Nginx["Nginx<br/>反向代理 + TLS + CSP"]
+    end
+
+    subgraph Backend["应用层"]
+        FastAPI["FastAPI 应用<br/>(Python 3.12 + asyncio)"]
+        Celery["Celery Worker<br/>文档解析 / 评估任务"]
+    end
+
+    subgraph Data["数据层"]
+        Postgres[("PostgreSQL<br/>用户 / KB / 文档 / 会话")]
+        Redis[("Redis<br/>缓存 / 队列 / 限流")]
+        Qdrant[("Qdrant<br/>向量检索")]
+    end
+
+    subgraph LLM["AI 推理层"]
+        Ollama["Ollama<br/>LLM + Embedding + Reranker"]
+    end
+
+    subgraph Obs["可观测性"]
+        Prom["Prometheus<br/>指标抓取 (/internal/metrics)"]
+        Jaeger["Jaeger<br/>分布式追踪 (OTLP)"]
+    end
+
+    Web --> Nginx
+    Tauri -->|"HTTP / SSE / WebSocket"| FastAPI
+    Nginx --> FastAPI
+    FastAPI --> Postgres
+    FastAPI --> Redis
+    FastAPI --> Qdrant
+    FastAPI --> Ollama
+    Celery --> Redis
+    Celery --> Postgres
+    Celery --> Qdrant
+    Celery --> Ollama
+    FastAPI -.metrics.-> Prom
+    Prom -.scrape.-> Ollama
+    FastAPI -.traces.-> Jaeger
+    Celery -.traces.-> Jaeger
+```
+
+**关键链路**：
+
+1. **问答流**：用户在 Web / Tauri 发起问答 → Nginx 反代到 FastAPI → BM25 关键词检索 + Qdrant 向量检索 → RRF 融合 → Reranker 重排序 → Ollama LLM 流式生成 → SSE 推送回前端
+2. **文档流**：FastAPI 接收上传 → 落盘到 `storage/` → 投递 Celery 任务 → Celery 调用 Ollama Embedding + 写入 Qdrant + 更新 PostgreSQL
+3. **可观测性**：Prometheus 抓取 `/internal/metrics`，OTel SDK 自动埋点 FastAPI / SQLAlchemy / Celery / httpx 调用并上报 Jaeger，结构化日志通过 `contextvars` 注入 `request_id`
+4. **鉴权**：JWT（iss=rag-platform, aud=rag-client）+ Redis 黑名单 + 单次刷新令牌 + 速率限制（60/min 默认，5/h 重解析等高成本端点更严）
 
 ## 快速开始
 
@@ -62,16 +119,9 @@ docker-compose up -d
 docker-compose exec backend alembic upgrade head
 
 # 创建管理员账号
-docker-compose exec backend python -c "
-import asyncio
-from app.db.database import async_session
-from app.services.user_service import create_user
-async def main():
-    async with async_session() as db:
-        await create_user(db, 'admin', 'admin123', 'admin@example.com', role='admin')
-        print('Admin created')
-asyncio.run(main())
-"
+# 管理员密码通过 INITIAL_ADMIN_PASSWORD 环境变量设置，未设置时自动生成随机密码
+docker-compose exec backend python init_db.py
+# 或显式指定密码：docker-compose exec -e INITIAL_ADMIN_PASSWORD=your-strong-password backend python init_db.py
 ```
 
 访问: http://localhost:8000
@@ -95,23 +145,16 @@ cd backend
 pip install poetry
 poetry install
 
-# 配置环境变量
-cp ../.env.example .env
+# 配置环境变量（.env.example 实际位于 backend/ 目录）
+cp ../backend/.env.example .env
 # 编辑 .env 填入你的配置
 
 # 数据库迁移
 poetry run alembic upgrade head
 
-# 创建管理员
-poetry run python -c "
-import asyncio
-from app.db.database import async_session
-from app.services.user_service import create_user
-async def main():
-    async with async_session() as db:
-        await create_user(db, 'admin', 'admin123', 'admin@example.com', role='admin')
-asyncio.run(main())
-"
+# 创建管理员（密码通过 INITIAL_ADMIN_PASSWORD 环境变量设置，未设置时自动生成随机密码）
+poetry run python init_db.py
+# 或显式指定密码：INITIAL_ADMIN_PASSWORD=your-strong-password poetry run python init_db.py
 
 # 启动后端
 poetry run uvicorn app.main:app --reload
@@ -248,8 +291,7 @@ aiplatform/
 │   ├── Makefile
 │   ├── docker-compose.yml
 │   └── nginx.conf
-├── docker-compose.yml
-└── .env.example
+└── docker-compose.yml
 ```
 
 ## 单元测试
@@ -269,21 +311,27 @@ poetry run pytest tests/ -v --cov=app
 
 ## 配置说明
 
+完整配置项请参考 `backend/.env.example`，核心环境变量如下：
+
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
-| `DATABASE_URL` | PostgreSQL 连接串 | - |
-| `REDIS_URL` | Redis 连接串 | - |
+| `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL 连接参数 | localhost:5432, rag, <must-be-set>, rag_platform |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | Redis 连接参数 | localhost:6379/0 |
 | `QDRANT_HOST` / `QDRANT_PORT` | Qdrant 地址 | localhost:6333 |
-| `JWT_SECRET` | JWT 签名密钥 | - |
-| `OLLAMA_BASE_URL` | Ollama API 地址 | http://localhost:11434 |
+| `JWT_SECRET` | JWT 签名密钥（至少 32 字符） | - |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | JWT iss/aud 校验 | rag-platform / rag-client |
+| `OLLAMA_HOST` | Ollama API 地址 | http://localhost:11434 |
 | `LLM_MODEL` | LLM 模型名 | qwen2.5:7b |
-| `EMBEDDING_MODEL` | Embedding 模型 | nomic-embed-text |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Embedding 模型与维度 | bge-m3 / 1024 |
 | `CHUNK_SIZE` | 文本分块大小 | 512 |
-| `TOP_K` | 检索返回数量 | 10 |
+| `RETRIEVAL_TOP_K` | 检索返回数量 | 10 |
+| `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Celery 消息队列与结果后端 | redis://localhost:6379/1, redis://localhost:6379/2 |
+| `METRICS_TOKEN` | Prometheus metrics 抓取 token（`/internal/metrics` 鉴权） | - |
 
 ## 安全说明
 
-- 生产环境必须修改 `JWT_SECRET`
+- 生产环境必须修改 `JWT_SECRET`（至少 32 字符的强随机字符串）
+- 生产环境必须修改 `POSTGRES_PASSWORD`（避免使用弱密码黑名单中的值）
 - 默认管理员账号请及时修改密码
 - 所有 API 均经过认证授权校验
 - JWT Token 支持黑名单机制
@@ -300,9 +348,31 @@ poetry run pytest tests/ -v --cov=app
 | [ADR-003](docs/adr/ADR-003-diy-rag-over-langchain-llamaindex.md) | 为何自建 RAG 管线而非使用 LangChain/LlamaIndex | 自建：避免框架锁定、深入理解原理 |
 | [ADR-004](docs/adr/ADR-004-sse-over-websocket-for-streaming.md) | 为何选择 SSE 而非 WebSocket 做流式生成 | SSE：单向数据流、HTTP 兼容、实现简单 |
 | [ADR-005](docs/adr/ADR-005-hybrid-retrieval-over-pure-vector.md) | 为何选择混合检索而非纯向量检索 | BM25 + 向量 + RRF：关键词与语义互补 |
+| [ADR-006](docs/adr/ADR-006-websocket-vs-sse.md) | 明确 WebSocket 与 SSE 的职责边界 | WebSocket 用于双向通知，SSE 用于流式生成 |
+| [ADR-007](docs/adr/007-observability-stack.md) | 可观测性技术栈选型 | OpenTelemetry（OTLP/HTTP）+ Jaeger all-in-one，环境变量驱动启用 |
+| [ADR-008](docs/adr/008-secret-management.md) | 密钥管理决策 | 环境变量 + Pydantic `model_post_init` 弱值黑名单校验（非 DEBUG 模式 raise） |
+| [ADR-009](docs/adr/009-tauri-updater.md) | Tauri 自动更新方案 | tauri-plugin-updater + 签名证书 thumbprint + 公钥校验 |
 
 新增 ADR 请使用 [TEMPLATE.md](docs/adr/TEMPLATE.md) 模板。
 
+## Contributing
+
+请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解协作流程，关键约定如下：
+
+- **Conventional Commits**：`feat(scope): ...` / `fix(scope): ...` / `chore(scope): ...` / `docs(scope): ...` / `refactor(scope): ...` / `test(scope): ...` / `perf(scope): ...` / `ci(scope): ...` / `build(scope): ...` / `security(scope): ...`，scope 对照表见 CONTRIBUTING.md
+- **PR 流程**：fork → 切 feature branch（命名 `feat/xxx` / `fix/xxx`）→ 提 PR → CI 通过 → review → merge；PR 模板包含 Breaking Changes / Test Plan / Checklist
+- **Coverage 门槛**：
+  - 后端 ≥ 70%（`backend/pyproject.toml` 中 `--cov-fail-under=70`）
+  - 前端 lines / statements / functions ≥ 70% / branches ≥ 60%（`frontend/vitest.config.ts`）
+- **测试约定**：新增功能必须配套单测；bug 修复必须先写复现测试；E2E 测试新增 `tests/e2e/test_NN_xxx_e2e.py`，编号自增
+- **安全约束**：
+  - 禁止提交 `.env` / `JWT_SECRET` / `POSTGRES_PASSWORD` 等密钥到 git
+  - Tauri `additionalBrowserArgs` 不得包含 `--remote-debugging-port=9222`（RCE 风险）
+  - `withGlobalTauri` 必须为 `false`
+  - 任何前端 URL 处理使用 MarkdownRenderer 的 urlTransform 白名单（仅允许 http/https/mailto）
+- **架构决策记录**：重大架构变更需在 `docs/adr/` 新增 ADR，使用 [TEMPLATE.md](docs/adr/TEMPLATE.md)；现有 ADR 001-009 涵盖 FastAPI/Qdrant/RAG 自建/SSE/WebSocket/混合检索/OTel/密钥管理/Tauri updater 决策
+- **Project Memory**：重大约束 / 经验教训请同步写入 `~/.trae-cn/memory/projects/<project>/project_memory.md`，避免未来重蹈覆辙
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 zengjunjin

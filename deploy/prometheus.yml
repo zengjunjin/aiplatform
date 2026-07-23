@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Task 2: 加载告警规则文件
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: 'rag-platform-backend'
+    metrics_path: '/internal/metrics'
+    # bearer token 通过环境变量 METRICS_TOKEN 注入（使用 envsubst 或 docker secrets）
+    # 在 deploy/.env.example 中配置 METRICS_TOKEN
+    bearer_token: '${METRICS_TOKEN}'
+    static_configs:
+      - targets: ['backend:8000']
+
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['qdrant:6333']
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Task 2: node-exporter 抓取主机指标（CPU/内存/磁盘）
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Task 88: Flower 抓取 Celery 任务指标（任务队列、worker 状态等）
+  - job_name: 'flower'
+    static_configs:
+      - targets: ['flower:5555']
+
+  # Task 88: nginx-exporter 抓取 nginx stub_status 指标（连接数、请求量等）
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # Task 88: Ollama 抓取 LLM 推理服务指标（默认 /metrics 端点）
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']

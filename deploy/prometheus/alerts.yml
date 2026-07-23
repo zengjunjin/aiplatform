@@ -1,0 +1,65 @@
+# Task 3: 告警规则 — 拆分 critical / warning 两组，修正指标名，添加 runbook_url
+groups:
+  - name: critical-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(rag_http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+          description: "5xx error rate is {{ $value }} per second"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-error-rate.md"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-memory-usage.md"
+
+      # Task 3.5: 数据库连接池使用率告警
+      - alert: DbPoolExhaustion
+        expr: rag_db_pool_in_use / rag_db_pool_size > 0.8
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "Pool usage {{ $value | humanizePercentage }} > 80%"
+
+      # Task 3.6: 检索服务零流量告警（持续 30 分钟无检索请求，可能服务异常）
+      - alert: ZeroRetrievalTraffic
+        expr: sum(rate(rag_retrievals_total[5m])) == 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Zero retrieval traffic for 30 minutes"
+          description: "No retrieval requests detected — service may be down or unreachable"
+
+  - name: warning-alerts
+    rules:
+      - alert: HighCpuUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-cpu-usage.md"
+
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}%"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-disk-usage.md"

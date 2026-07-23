@@ -1,0 +1,292 @@
+name: Performance Benchmark
+
+on:
+  schedule:
+    # 每周一凌晨 4:00 (UTC+8 = 北京时间)
+    # cron 使用 UTC 时间: 4:00 CST = 前一天 20:00 UTC
+    - cron: '0 20 * * 0'
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: '测试数据集 (small/medium/large)'
+        required: false
+        type: choice
+        default: 'small'
+        options:
+          - small
+          - medium
+          - large
+      kb_id:
+        description: '知识库 ID'
+        required: false
+        type: string
+        default: '1'
+      compare_mode:
+        description: '对比模式 (rerank/chunking)'
+        required: false
+        type: choice
+        default: 'rerank'
+        options:
+          - rerank
+          - chunking
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Run Performance Benchmarks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: raguser
+          POSTGRES_PASSWORD: ragpassword
+          POSTGRES_DB: ragdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: raguser
+      POSTGRES_PASSWORD: ragpassword
+      POSTGRES_DB: ragdb
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        id: cache-poetry
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Start services (Qdrant + Redis)
+        run: |
+          docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant:v1.10.1 || true
+          docker run -d --name redis -p 6379:6379 redis:7-alpine || true
+          sleep 5
+
+      - name: Start backend server
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_benchmark_pwd
+          POSTGRES_DB: rag_platform_benchmark
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: benchmark-secret-key-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: |
+          poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/api/v1/system/status > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run Retrieval Benchmark
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_benchmark_pwd
+          POSTGRES_DB: rag_platform_benchmark
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: benchmark-secret-key-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: |
+          poetry run python tests/performance/benchmark_retrieval.py \
+            --kb-id ${{ inputs.kb_id || '1' }} \
+            --dataset tests/performance/datasets/${{ inputs.dataset || 'small' }}.json \
+            --output benchmark_retrieval_report.json
+        continue-on-error: true
+
+      - name: Run E2E Benchmark
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_benchmark_pwd
+          POSTGRES_DB: rag_platform_benchmark
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: benchmark-secret-key-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: |
+          poetry run python tests/performance/benchmark_e2e.py \
+            --kb-id ${{ inputs.kb_id || '1' }} \
+            --base-url http://localhost:8000 \
+            --dataset tests/performance/datasets/${{ inputs.dataset || 'small' }}.json \
+            --output benchmark_e2e_report.json
+        continue-on-error: true
+
+      - name: Run Compare Benchmark
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_benchmark_pwd
+          POSTGRES_DB: rag_platform_benchmark
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: benchmark-secret-key-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: |
+          poetry run python tests/performance/benchmark_compare.py \
+            --kb-id ${{ inputs.kb_id || '1' }} \
+            --compare ${{ inputs.compare_mode || 'rerank' }} \
+            --dataset tests/performance/datasets/${{ inputs.dataset || 'small' }}.json \
+            --output benchmark_compare_report.json
+        continue-on-error: true
+
+      - name: Generate Summary Report
+        if: always()
+        run: |
+          echo "# Performance Benchmark Report" > benchmark_summary.md
+          echo "" >> benchmark_summary.md
+          echo "**Run Date:** $(date -u +'%Y-%m-%d %H:%M UTC')" >> benchmark_summary.md
+          echo "**Dataset:** ${{ inputs.dataset || 'small' }}" >> benchmark_summary.md
+          echo "**KB ID:** ${{ inputs.kb_id || '1' }}" >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
+          echo "## Results" >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
+
+          if [ -f benchmark_retrieval_report.json ]; then
+            echo "### Retrieval Benchmark" >> benchmark_summary.md
+            echo '```json' >> benchmark_summary.md
+            python3 -c "
+            import json
+            with open('benchmark_retrieval_report.json') as f:
+                d = json.load(f)
+                print(json.dumps(d.get('latency_stats', {}), indent=2))
+            " >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+          fi
+
+          if [ -f benchmark_e2e_report.json ]; then
+            echo "### E2E Benchmark" >> benchmark_summary.md
+            echo '```json' >> benchmark_summary.md
+            python3 -c "
+            import json
+            with open('benchmark_e2e_report.json') as f:
+                d = json.load(f)
+                summary = {
+                    'e2e_latency': d.get('e2e_latency_stats', {}),
+                    'ttft': d.get('ttft_stats', {}),
+                    'tokens_per_second': d.get('tokens_per_second_stats', {}),
+                }
+                print(json.dumps(summary, indent=2))
+            " >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+          fi
+
+          if [ -f benchmark_compare_report.json ]; then
+            echo "### Compare Benchmark (${{ inputs.compare_mode || 'rerank' }})" >> benchmark_summary.md
+            echo '```json' >> benchmark_summary.md
+            python3 -c "
+            import json
+            with open('benchmark_compare_report.json') as f:
+                d = json.load(f)
+                if 'without_rerank_stats' in d:
+                    summary = {
+                        'without_rerank': d.get('without_rerank_stats', {}),
+                        'with_rerank': d.get('with_rerank_stats', {}),
+                    }
+                elif 'configs' in d:
+                    summary = {'configs': d.get('configs', [])}
+                else:
+                    summary = d
+                print(json.dumps(summary, indent=2))
+            " >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+          fi
+
+      - name: Upload Benchmark Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-reports
+          path: |
+            backend/benchmark_retrieval_report.json
+            backend/benchmark_e2e_report.json
+            backend/benchmark_compare_report.json
+            backend/benchmark_summary.md
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop qdrant redis || true
+          docker rm qdrant redis || true

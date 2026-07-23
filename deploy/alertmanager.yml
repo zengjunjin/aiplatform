@@ -1,0 +1,54 @@
+global:
+  resolve_timeout: 5m
+  # Task 4.2: SMTP 配置（密码通过环境变量 SMTP_PASSWORD 注入）
+  smtp_smarthost: '${SMTP_SMARTHOST:smtp.your-domain.com:587}'
+  smtp_from: '${SMTP_FROM:alertmanager@your-domain.com}'
+  smtp_auth_username: '${SMTP_USER:alertmanager@your-domain.com}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: 'default'
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: 'critical-webhook'
+      continue: true
+    - matchers:
+        - severity = warning
+      receiver: 'warning-email'
+
+receivers:
+  - name: 'default'
+    # Task 4.1: webhook 转发到 webhook-receiver 服务
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-receiver:5001/'
+        send_resolved: true
+
+  - name: 'critical-webhook'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-receiver:5001/'
+        send_resolved: true
+    email_configs:
+      - to: '${ALERT_EMAIL_TO:ops@your-domain.com}'
+        send_resolved: true
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
+
+  - name: 'warning-email'
+    email_configs:
+      - to: '${ALERT_EMAIL_TO:ops@your-domain.com}'
+        send_resolved: true
+        headers:
+          Subject: '[WARNING] {{ .GroupLabels.alertname }}'
+
+# Task 89: 抑制规则 — backend down 时抑制 HighErrorRate
+inhibit_rules:
+  - source_matchers:
+      - alertname = BackendDown
+    target_matchers:
+      - alertname = HighErrorRate
+    equal: ['instance']

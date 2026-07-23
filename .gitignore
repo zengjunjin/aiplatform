@@ -18,13 +18,11 @@ release/
 # Large data directories
 storage/
 qdrant_storage/
+qdrant_data/
 
 # Binary executables
 qdrant.exe
 qdrant
-
-# CI workflows (use PAT without workflow scope)
-.github/workflows/
 
 # IDE
 .vscode/

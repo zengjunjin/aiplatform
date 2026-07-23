@@ -1,0 +1,327 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-audit:
+    name: Lint & Security Audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        id: cache-poetry
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Check code formatting with Ruff
+        run: |
+          if poetry run ruff --version 2>/dev/null; then
+            poetry run ruff check .
+          else
+            echo "Ruff not configured, skipping lint check"
+          fi
+
+      - name: Ruff format check
+        run: poetry run ruff format --check .
+
+      - name: Security audit (pip-audit, fail on critical)
+        run: |
+          poetry export -f requirements.txt -o requirements.txt
+          # --strict: treat vulnerability findings as errors (fail build on any vuln)
+          # Use --ignore-vuln for known unfixable issues (add as needed)
+          pip-audit -r requirements.txt --strict
+
+      - name: Generate SBOM (pip-licenses)
+        run: |
+          pip install pip-licenses
+          pip-licenses --from=classifier --format=json --output-file=sbom-backend.json
+
+      - name: License whitelist check (reject GPL-3.0/AGPL-3.0)
+        run: |
+          if grep -E 'GPL-3\.0|AGPL-3\.0' sbom-backend.json; then
+            echo "::error::Forbidden license detected (GPL-3.0 or AGPL-3.0)"
+            exit 1
+          fi
+          echo "License check passed: no GPL-3.0/AGPL-3.0 licenses found"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-sbom
+          path: backend/sbom-backend.json
+          retention-days: 30
+
+  unit-test:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+      actions: read
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        id: cache-poetry
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-${{ matrix.python-version }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run unit tests (exclude integration/e2e/real_rag)
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: test-secret-key-for-ci-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: poetry run pytest tests/ -v -m "not integration and not e2e and not real_rag" -n auto --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage.xml
+          flags: backend-unit
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-test-results-${{ matrix.python-version }}
+          path: |
+            backend/coverage.xml
+            backend/pytest-results.xml
+          retention-days: 7
+
+      - name: Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Unit Test Results (Python ${{ matrix.python-version }})
+          path: backend/pytest-results.xml
+          reporter: java-junit
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:6333/healthz"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        id: cache-poetry
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run integration tests
+        env:
+          POSTGRES_HOST: postgres
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+          REDIS_HOST: redis
+          REDIS_PORT: 6379
+          REDIS_DB: 0
+          QDRANT_HOST: qdrant
+          QDRANT_PORT: 6333
+          JWT_SECRET: test-secret-key-for-ci-at-least-32-chars-long
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+          EMBEDDING_DIM: 1024
+          CHUNK_SIZE: 512
+          RETRIEVAL_TOP_K: 10
+        run: poetry run pytest tests/ -v -m "integration" -n auto --dist=loadscope --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage.xml
+          flags: backend-integration
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-test-results
+          path: |
+            backend/coverage.xml
+            backend/pytest-results.xml
+          retention-days: 7
+
+      - name: Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Integration Test Results
+          path: backend/pytest-results.xml
+          reporter: java-junit

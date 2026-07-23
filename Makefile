@@ -1,4 +1,4 @@
-.PHONY: up down restart logs migrate init-models build clean help backend-shell
+.PHONY: up down restart logs migrate init-models build clean help backend-shell backup
 
 help:
 	@echo "RAG 知识库平台 - Makefile"
@@ -14,6 +14,7 @@ help:
 	@echo "  make init-models     拉取 Ollama 模型"
 	@echo "  make backend-shell   进入后端容器"
 	@echo "  make clean           清理所有容器和数据卷"
+	@echo "  make backup          执行数据库备份 (make backup ARGS=--dry-run 试运行)"
 
 build:
 	docker compose -f deploy/docker-compose.yml build
@@ -38,7 +39,7 @@ create-migration:
 
 init-models:
 	docker compose -f deploy/docker-compose.yml exec ollama ollama pull qwen2.5:7b
-	docker compose -f deploy/docker-compose.yml exec ollama ollama pull nomic-embed-text
+	docker compose -f deploy/docker-compose.yml exec ollama ollama pull bge-m3
 	docker compose -f deploy/docker-compose.yml exec ollama ollama pull bge-reranker-base
 
 backend-shell:
@@ -46,3 +47,8 @@ backend-shell:
 
 clean:
 	docker compose -f deploy/docker-compose.yml down -v
+
+backup:
+	@echo "运行数据库备份..."
+	@if [ -f deploy/.env ]; then set -a && . ./deploy/.env && set +a; fi; \
+	bash deploy/scripts/backup_db.sh $(ARGS)

@@ -1,4 +1,4 @@
-version: "3.8"
+name: rag-platform
 
 services:
   postgres:
@@ -6,7 +6,8 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-rag_platform}
       POSTGRES_USER: ${POSTGRES_USER:-rag}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_password}
+      # 安全：不提供默认弱密码兜底，必须在 .env 中显式设置强密码
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (use a strong random value)}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -16,6 +17,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 1g
+    cpus: "2"
     restart: unless-stopped
 
   redis:
@@ -29,6 +32,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 512m
+    cpus: "1"
     restart: unless-stopped
 
   qdrant:
@@ -45,16 +50,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 1g
+    cpus: "1"
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.3.14
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_KEEP_ALIVE=24h
+    # 资源限制（docker compose 非 swarm mode 使用 mem_limit/cpus，
+    # deploy.resources.limits 在 `docker compose up` 时会被忽略）
+    mem_limit: 4g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   backend:
@@ -77,6 +94,11 @@ services:
       - STORAGE_DIR=/app/storage
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      # Task 3: 启用 OpenTelemetry 分布式追踪，导出到 Jaeger OTLP HTTP 端点
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=rag-platform-backend
+      # LOG_JSON=true 时 loguru 输出 JSON 结构化日志（含 trace_id/span_id）
+      - LOG_JSON=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,15 +110,23 @@ services:
       - ../backend/storage:/app/storage
       - ../backend/alembic:/app/alembic
     restart: unless-stopped
+    mem_limit: 2g
+    cpus: "2"
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   celery_worker:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2 -Q queue_parsing,queue_evaluation,queue_default
     env_file:
       - .env
     environment:
@@ -111,6 +141,11 @@ services:
       - STORAGE_DIR=/app/storage
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      # Task 3: 启用 OpenTelemetry 分布式追踪，导出到 Jaeger OTLP HTTP 端点
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=rag-platform-celery
+      # LOG_JSON=true 时 loguru 输出 JSON 结构化日志（含 trace_id/span_id）
+      - LOG_JSON=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,33 +155,182 @@ services:
         condition: service_healthy
     volumes:
       - ../backend/storage:/app/storage
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    mem_limit: 2g
+    cpus: "2"
     restart: unless-stopped
 
 
-  # --- Observability (optional, uncomment to enable) ---
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   ports:
-  #     - "9090:9090"
-  #   volumes:
-  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #     - prometheus_data:/prometheus
-  #   command:
-  #     - '--config.file=/etc/prometheus/prometheus.yml'
-  #     - '--storage.tsdb.path=/prometheus'
-  #   restart: unless-stopped
-  #
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - grafana_data:/var/lib/grafana
-  #   environment:
-  #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #   depends_on:
-  #     - prometheus
-  #   restart: unless-stopped
+  # --- Observability (Task 3/6/7: Prometheus + Grafana 链路启用) ---
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
+
+  # Task 1: redis-exporter 暴露 Redis 指标供 Prometheus 抓取
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.59.0
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
+
+  # Task 1: node-exporter 暴露主机指标（CPU/内存/磁盘）供 Prometheus 抓取
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
+
+  # Task 7: 启用 Grafana 服务，挂载 provisioning 和 dashboards 目录实现自动加载
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Task 6: 自动加载数据源（Prometheus）和 dashboard JSON
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Task 6: 预置 RAG 平台 overview dashboard（14 个真实面板）
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      # 安全：admin 密码通过 .env 注入，不使用默认 admin/admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      # 启用匿名只读访问（可选，仅用于无敏感数据场景；生产建议关闭并使用 OAuth）
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # 自动加载 dashboard 提供者配置
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
+
+  # Task 87: Loki — 日志聚合后端，接收 Promtail 推送的容器日志
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: "0.5"
+
+  # Task 87: Promtail — 采集 Docker 容器日志并推送到 Loki
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./promtail.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.25"
+
+  # Task 88: Flower — Celery 任务监控，暴露 metrics 供 Prometheus 抓取
+  flower:
+    image: mher/flower:2.0
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - FLOWER_PORT=5555
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
+
+  # Jaeger：分布式追踪后端（Task 47）
+  # 通过 OTLP 接收 OpenTelemetry traces，UI 在 16686 端口
+  # backend/celery_worker 通过 OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 启用追踪
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"      # Jaeger UI
+      - "${JAEGER_OTLP_GRPC_PORT:-4317}:4317" # OTLP gRPC
+      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318" # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 256m
+    cpus: "1"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: rag-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    mem_limit: 256m
+    cpus: 0.5
+    depends_on:
+      - prometheus
+
+  # Task 5: alertmanager-webhook-receiver 接收告警并转发到钉钉/企业微信等渠道
+  alertmanager-webhook-receiver:
+    image: ghcr.io/timberio/alertmanager-webhook-receiver:latest
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+    mem_limit: 128m
+    cpus: "0.25"
 
   frontend:
     build:
@@ -156,23 +340,54 @@ services:
       - "80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 256m
+    cpus: "1"
     restart: unless-stopped
 
   nginx:
     image: nginx:alpine
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_STUB_PORT:-8080}:8080"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
       - frontend
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 128m
+    cpus: "1"
     restart: unless-stopped
+
+  # Task 88: nginx-exporter — 抓取 nginx stub_status 指标供 Prometheus
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    ports:
+      - "9113:9113"
+    command:
+      - '-nginx.scrape-uri=http://nginx:8080/stub_status'
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.25"
 
 volumes:
   pg_data:
   redis_data:
   qdrant_data:
   ollama_data:
-  # prometheus_data:
-  # grafana_data:
+  prometheus_data:
+  grafana_data:
+  # Task 87: Loki 日志聚合存储
+  loki_data:

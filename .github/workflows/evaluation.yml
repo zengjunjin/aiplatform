@@ -1,0 +1,244 @@
+name: RAGAS Evaluation
+
+on:
+  schedule:
+    # 每天凌晨 2:00 (UTC+8 = 北京时间)
+    # cron 使用 UTC 时间: 2:00 CST = 前一天 18:00 UTC
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      kb_id:
+        description: '知识库 ID'
+        required: false
+        type: string
+        default: '1'
+      num_questions:
+        description: '评估问题数量'
+        required: false
+        type: number
+        default: 50
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evaluation:
+    name: Run RAGAS Evaluation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        id: cache-poetry
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Start services with Docker Compose
+        run: |
+          docker compose -f deploy/docker-compose.yml up -d postgres redis qdrant
+          # Wait for services to be ready
+          sleep 10
+          docker compose -f deploy/docker-compose.yml ps
+
+      - name: Run database migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_evaluation_strong_pwd_2026
+          POSTGRES_DB: rag_platform
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Start backend server
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_evaluation_strong_pwd_2026
+          POSTGRES_DB: rag_platform
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: ${{ secrets.EVAL_JWT_SECRET || 'evaluation-jwt-secret-32chars-or-more-2026' }}
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+        run: |
+          poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/readyz > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run RAGAS Evaluation
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_evaluation_strong_pwd_2026
+          POSTGRES_DB: rag_platform
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          JWT_SECRET: ${{ secrets.EVAL_JWT_SECRET || 'evaluation-jwt-secret-32chars-or-more-2026' }}
+          OLLAMA_HOST: http://localhost:11434
+          LLM_MODEL: qwen2.5:7b
+          EMBEDDING_MODEL: bge-m3
+        run: |
+          ADMIN_ID=$(docker compose -f deploy/docker-compose.yml exec -T postgres psql -U rag -d rag_platform -t -c "SELECT id FROM users WHERE username='admin' LIMIT 1" | tr -d '[:space:]')
+          poetry run python -c "
+          import asyncio
+          import sys
+          sys.path.insert(0, '.')
+          from app.database import async_session
+          from app.services.evaluation_service import generate_test_dataset
+          from app.core.evaluation import run_evaluation
+          from app.db.evaluation import EvaluationRun, EvaluationResult, EvaluationStatus
+          from sqlalchemy import select
+
+          async def main():
+              kb_id = int('${{ inputs.kb_id || '1' }}')
+              num_questions = int('${{ inputs.num_questions || '50' }}')
+
+              async with async_session() as db:
+                  # Create evaluation run
+                  run = EvaluationRun(
+                      knowledge_base_id=kb_id,
+                      status=EvaluationStatus.RUNNING,
+                      total_questions=num_questions,
+                      created_by=${ADMIN_ID},  # admin user (dynamically queried)
+                  )
+                  db.add(run)
+                  await db.commit()
+                  await db.refresh(run)
+                  run_id = run.id
+
+                  # Generate dataset
+                  print(f'Generating dataset for KB {kb_id}...')
+                  dataset = await generate_test_dataset(kb_id, db, num_questions)
+
+                  if not dataset:
+                      run.status = EvaluationStatus.FAILED
+                      run.error_message = 'No chunks available'
+                      await db.commit()
+                      print('ERROR: No chunks available for evaluation')
+                      return
+
+                  run.total_questions = len(dataset)
+                  await db.commit()
+
+                  # Run evaluation
+                  print(f'Running evaluation with {len(dataset)} questions...')
+                  metrics = await run_evaluation(run_id, dataset, kb_id, db)
+
+                  print(f'Evaluation completed!')
+                  print(f'  Faithfulness: {metrics.get(\"faithfulness\", 0):.4f}')
+                  print(f'  Answer Relevancy: {metrics.get(\"answer_relevancy\", 0):.4f}')
+                  print(f'  Context Precision: {metrics.get(\"context_precision\", 0):.4f}')
+                  print(f'  Context Recall: {metrics.get(\"context_recall\", 0):.4f}')
+
+                  # Save metrics to file
+                  import json
+                  with open('evaluation_report.json', 'w') as f:
+                      json.dump({
+                          'run_id': run_id,
+                          'kb_id': kb_id,
+                          'total_questions': len(dataset),
+                          'metrics': metrics,
+                      }, f, indent=2)
+
+          asyncio.run(main())
+          " 2>&1 | tee evaluation_output.log
+
+      - name: Generate Evaluation Report
+        if: always()
+        run: |
+          echo "# RAGAS Evaluation Report" > evaluation_summary.md
+          echo "" >> evaluation_summary.md
+          echo "**Run Date:** $(date -u +'%Y-%m-%d %H:%M UTC')" >> evaluation_summary.md
+          echo "**KB ID:** ${{ inputs.kb_id || '1' }}" >> evaluation_summary.md
+          echo "**Questions:** ${{ inputs.num_questions || '50' }}" >> evaluation_summary.md
+          echo "" >> evaluation_summary.md
+
+          if [ -f evaluation_report.json ]; then
+            echo "## Metrics" >> evaluation_summary.md
+            echo '```json' >> evaluation_summary.md
+            cat evaluation_report.json >> evaluation_summary.md
+            echo '```' >> evaluation_summary.md
+            echo "" >> evaluation_summary.md
+
+            # Add metric thresholds
+            echo "## Thresholds" >> evaluation_summary.md
+            echo "" >> evaluation_summary.md
+            echo "| Metric | Score | Status |" >> evaluation_summary.md
+            echo "|--------|-------|--------|" >> evaluation_summary.md
+            python3 -c "
+            import json
+            with open('evaluation_report.json') as f:
+                d = json.load(f)
+                m = d.get('metrics', {})
+                for key, label in [('faithfulness','忠实度'),('answer_relevancy','答案相关性'),('context_precision','上下文精确度'),('context_recall','上下文召回率')]:
+                    val = m.get(key, 0)
+                    status = '✅' if val >= 0.7 else ('⚠️' if val >= 0.4 else '❌')
+                    print(f'| {label} | {val*100:.1f}% | {status} |')
+            " >> evaluation_summary.md
+          else
+            echo "❌ Evaluation failed - no report generated" >> evaluation_summary.md
+            echo "" >> evaluation_summary.md
+            if [ -f evaluation_output.log ]; then
+              echo "## Output Log" >> evaluation_summary.md
+              echo '```' >> evaluation_summary.md
+              tail -50 evaluation_output.log >> evaluation_summary.md
+              echo '```' >> evaluation_summary.md
+            fi
+          fi
+
+      - name: Upload Evaluation Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-reports
+          path: |
+            backend/evaluation_report.json
+            backend/evaluation_output.log
+            backend/evaluation_summary.md
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f deploy/docker-compose.yml down
+          docker compose -f deploy/docker-compose.yml rm -f
