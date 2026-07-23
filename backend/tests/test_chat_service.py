@@ -202,25 +202,55 @@ class TestAppendToContext:
             await chat_service.append_to_context(session_id=1, role="user", content="hi")
 
     @pytest.mark.asyncio
-    async def test_append_to_context_calls_lpush_expire_ltrim(self):
+    async def test_append_to_context_uses_pipeline_single_rtt(self):
+        """pipeline 将 lpush+expire+ltrim 合并为 1 次 RTT"""
         redis_mock = MagicMock()
-        redis_mock.lpush = AsyncMock()
-        redis_mock.expire = AsyncMock()
-        redis_mock.ltrim = AsyncMock()
+        pipe_mock = MagicMock()
+        pipe_mock.lpush = MagicMock()
+        pipe_mock.expire = MagicMock()
+        pipe_mock.ltrim = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[1, True, True])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
 
         with patch("app.services.chat_service.get_redis", return_value=redis_mock):
             await chat_service.append_to_context(session_id=1, role="user", content="hi")
 
-        redis_mock.lpush.assert_awaited_once()
-        args = redis_mock.lpush.await_args
+        # pipeline 只调用一次（transaction=True）
+        redis_mock.pipeline.assert_called_once_with(transaction=True)
+        # 三个命令都应被调用（在 pipeline 上，非 await）
+        pipe_mock.lpush.assert_called_once()
+        args = pipe_mock.lpush.call_args
         assert args[0][0] == "chat:session:1:context"
-        # 第二个参数是 JSON 字符串
         msg = json.loads(args[0][1])
         assert msg["role"] == "user"
         assert msg["content"] == "hi"
 
-        redis_mock.expire.assert_awaited_once_with("chat:session:1:context", 86400)
-        redis_mock.ltrim.assert_awaited_once_with("chat:session:1:context", 0, 19)
+        pipe_mock.expire.assert_called_once_with("chat:session:1:context", 86400)
+        pipe_mock.ltrim.assert_called_once_with("chat:session:1:context", 0, 19)
+        # execute 只 await 一次（1 次 RTT）
+        pipe_mock.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_append_to_context_does_not_call_redis_directly(self):
+        """确认不再直接调用 redis.lpush/expire/ltrim，全部走 pipeline"""
+        redis_mock = MagicMock()
+        redis_mock.lpush = AsyncMock()
+        redis_mock.expire = AsyncMock()
+        redis_mock.ltrim = AsyncMock()
+        pipe_mock = MagicMock()
+        pipe_mock.lpush = MagicMock()
+        pipe_mock.expire = MagicMock()
+        pipe_mock.ltrim = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[1, True, True])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        with patch("app.services.chat_service.get_redis", return_value=redis_mock):
+            await chat_service.append_to_context(session_id=1, role="user", content="hi")
+
+        # 直接调用应该不存在
+        redis_mock.lpush.assert_not_awaited()
+        redis_mock.expire.assert_not_awaited()
+        redis_mock.ltrim.assert_not_awaited()
 
 
 class TestSaveMessage:

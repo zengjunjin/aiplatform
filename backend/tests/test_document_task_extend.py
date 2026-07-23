@@ -92,8 +92,9 @@ class TestParseAndChunk:
         assert result[0]["filename"] == "test.md"
         assert result[0]["file_type"] == "md"
         assert result[1]["chunk_id"] == 102
-        # 应 add 2 个 DocumentChunk 并 commit
-        assert session.add.call_count == 2
+        # 应 add_all 1 次（批量插入 2 个 DocumentChunk）并 commit
+        assert session.add_all.call_count == 1
+        assert len(session.add_all.call_args[0][0]) == 2
         session.commit.assert_called_once()
         session.close.assert_called_once()
 

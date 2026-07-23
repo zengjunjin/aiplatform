@@ -18,6 +18,26 @@ from pathlib import Path
 # 确保 backend 目录在 sys.path 中
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+# 性能回归基线
+BASELINE_FILE = Path(__file__).parent / "baseline.json"
+
+
+def load_baseline() -> dict:
+    """加载性能基线阈值。"""
+    if BASELINE_FILE.exists():
+        return json.loads(BASELINE_FILE.read_text())
+    return {}
+
+
+def assert_within_baseline(metric_name: str, actual_ms: float):
+    """断言指标在基线 20% 容差范围内，否则触发回归告警。"""
+    baseline = load_baseline()
+    if metric_name in baseline:
+        threshold = baseline[metric_name] * 1.2  # 允许 20% 退化
+        assert actual_ms <= threshold, (
+            f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
+        )
+
 
 def load_dataset(dataset_path: str) -> dict:
     """加载测试数据集 JSON 文件。"""
@@ -132,6 +152,11 @@ async def run_retrieval_benchmark(kb_id: int, dataset_path: str, output: str | N
     print(f"  分位数: P50={report['latency_stats']['p50']}, "
           f"P95={report['latency_stats']['p95']}, "
           f"P99={report['latency_stats']['p99']}")
+
+    # 性能回归阈值检查
+    if latencies:
+        mean_ms = report["latency_stats"]["mean"] * 1000
+        assert_within_baseline("bm25_search_time_ms", mean_ms)
 
     if output:
         output_path = Path(output)

@@ -19,6 +19,26 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+# 性能回归基线
+BASELINE_FILE = Path(__file__).parent / "baseline.json"
+
+
+def load_baseline() -> dict:
+    """加载性能基线阈值。"""
+    if BASELINE_FILE.exists():
+        return json.loads(BASELINE_FILE.read_text())
+    return {}
+
+
+def assert_within_baseline(metric_name: str, actual_ms: float):
+    """断言指标在基线 20% 容差范围内，否则触发回归告警。"""
+    baseline = load_baseline()
+    if metric_name in baseline:
+        threshold = baseline[metric_name] * 1.2  # 允许 20% 退化
+        assert actual_ms <= threshold, (
+            f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
+        )
+
 DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "small.json"
 
 
@@ -152,6 +172,13 @@ async def run_rerank_comparison(kb_id: int, dataset_path: str, output: str | Non
     print(f"  有 Rerank: P50={report['with_rerank_stats']['p50']}s, "
           f"P95={report['with_rerank_stats']['p95']}s")
 
+    # 性能回归断言：无 Rerank 的 P95 延迟应在基线 20% 容差内
+    if without_latencies:
+        assert_within_baseline(
+            "bm25_search_time_ms",
+            report["without_rerank_stats"]["p95"] * 1000,
+        )
+
     if output:
         output_path = Path(output) if Path(output).is_absolute() else Path.cwd() / output
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -245,6 +272,12 @@ async def run_chunking_comparison(kb_id: int, dataset_path: str, output: str | N
     print("分块策略对比测试完成")
     print("注意: 不同 chunk_size 需要重启服务并分别运行，请将报告合并对比")
 
+    # 性能回归断言：当前 chunk_size 的 P95 延迟应在基线 20% 容差内
+    current_key = f"chunk_size_{current_chunk_size}"
+    current_stats = config_results.get(current_key, {}).get("stats", {})
+    if current_stats.get("p95", 0) > 0:
+        assert_within_baseline("bm25_search_time_ms", current_stats["p95"] * 1000)
+
     if output:
         output_path = Path(output) if Path(output).is_absolute() else Path.cwd() / output
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,11 +314,15 @@ def main():
             output=args.output,
         ))
     elif args.compare == "chunking":
-        asyncio.run(run_chunking_comparison(
-            kb_id=args.kb_id,
-            dataset_path=args.dataset,
-            output=args.output,
-        ))
+        raise NotImplementedError(
+            "chunking 对比需要为每个 chunk_size 重启服务，CLI 直接运行仅产生"
+            "模拟报告（使用当前配置），具有误导性。\n"
+            "请按以下步骤手动运行：\n"
+            "  1. 修改 CHUNK_SIZE 环境变量并重启服务\n"
+            "  2. 运行 benchmark_retrieval.py 记录单配置基线\n"
+            "  3. 合并多份报告进行对比\n"
+            "或直接调用 run_chunking_comparison() 函数（程序化使用）。"
+        )
 
 
 if __name__ == "__main__":

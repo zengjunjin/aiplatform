@@ -272,3 +272,65 @@ class TestBM25Incremental:
             asyncio.run(_test())
         finally:
             store._cache.pop(kb_id, None)
+
+
+# ---------- SubTask 18.1: async 路径 asyncio.Lock 并发保护 ----------
+class TestBM25AsyncLock:
+    """BM25 async 路径使用 asyncio.Lock 保护 _cache（非 threading.Lock）"""
+
+    def test_async_lock_is_lazy_initialized(self):
+        """async 路径的锁在首次使用时 lazy 初始化"""
+        store = BM25Store()
+        assert store._async_lock is None
+        lock = store._get_async_lock()
+        assert lock is not None
+        import asyncio
+        assert isinstance(lock, asyncio.Lock)
+
+    def test_sync_lock_remains_threading_lock(self):
+        """sync 路径（Celery）继续使用 threading.Lock"""
+        import threading
+        store = BM25Store()
+        assert isinstance(store._sync_lock, type(threading.Lock()))
+
+    def test_concurrent_get_or_build_safe(self):
+        """并发 get_or_build 不会破坏 _cache"""
+        import asyncio
+        store = BM25Store()
+        kb_id = 9300
+
+        async def _test():
+            # 5 个并发 get_or_build 同一 kb_id
+            results = await asyncio.gather(
+                *[store.get_or_build(kb_id, DOC_A_CHUNKS) for _ in range(5)]
+            )
+            # 所有结果应非 None
+            assert all(r is not None for r in results)
+            # _cache 中应只有一个条目
+            assert kb_id in store._cache
+
+        try:
+            asyncio.run(_test())
+        finally:
+            store._cache.pop(kb_id, None)
+
+    def test_concurrent_rebuild_and_delete_safe(self):
+        """并发 rebuild + delete 不应导致状态错误"""
+        import asyncio
+        store = BM25Store()
+        kb_id = 9301
+
+        async def _test():
+            await store.rebuild(kb_id, DOC_A_CHUNKS)
+            # 并发 delete + 再次 rebuild
+            await asyncio.gather(
+                store.delete(kb_id),
+                store.rebuild(kb_id, DOC_B_CHUNKS),
+            )
+            # 最终状态应一致：cache 中应有索引
+            assert kb_id in store._cache
+
+        try:
+            asyncio.run(_test())
+        finally:
+            store._cache.pop(kb_id, None)

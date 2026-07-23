@@ -22,7 +22,7 @@ def auth_headers(user_token):
     return {"Authorization": f"Bearer {user_token}"}
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestChatSessionCRUD:
     async def test_create_session_default_title(self, client, auth_headers):

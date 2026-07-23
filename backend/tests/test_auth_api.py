@@ -28,16 +28,6 @@ def fake_user():
     return u
 
 
-def _make_db(user=None):
-    """构造 mock AsyncSession：execute() 默认返回 user 或 None。"""
-    db = AsyncMock()
-    scalar = user if user is not None else None
-    db.execute = AsyncMock(
-        return_value=MagicMock(scalar_one_or_none=lambda: scalar)
-    )
-    return db
-
-
 class TestPasswordValidation:
     """validate_password_strength - 设计文档要求 ≥8 字符 + 大小写 + 数字 + 特殊字符。"""
 
@@ -67,9 +57,9 @@ class TestPasswordValidation:
 
 class TestRegister:
     @pytest.mark.asyncio
-    async def test_register_success(self, fake_user):
+    async def test_register_success(self, fake_user, make_auth_db):
         """注册新用户：DB 返回 None → 创建用户 → 返回 User 对象"""
-        db = _make_db(user=None)
+        db = make_auth_db(user=None)
         # 模拟 db.add 后 db.refresh 填充 id
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 99
@@ -90,9 +80,9 @@ class TestRegister:
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_register_duplicate_username_raises_conflict(self, fake_user):
+    async def test_register_duplicate_username_raises_conflict(self, fake_user, make_auth_db):
         """已存在用户名/邮箱 → ConflictError"""
-        db = _make_db(user=fake_user)  # execute 返回已存在 user
+        db = make_auth_db(user=fake_user)  # execute 返回已存在 user
         req = RegisterRequest(
             username="admin",
             email="another@example.com",
@@ -102,14 +92,14 @@ class TestRegister:
             await auth_service.register(req, db)
 
     @pytest.mark.asyncio
-    async def test_register_weak_password_raises_validation_error(self):
+    async def test_register_weak_password_raises_validation_error(self, make_auth_db):
         """弱密码 → ValidationError（service 层强度校验，在查重之前抛出）。
-        RegisterRequest 限制 password ≥6 字符，所以这里用 6 字符但缺特殊字符的弱密码。"""
-        db = _make_db(user=None)
+        RegisterRequest 限制 password ≥8 字符，所以这里用 9 字符但缺大写字母和特殊字符的弱密码。"""
+        db = make_auth_db(user=None)
         req = RegisterRequest(
             username="weakpwd",
             email="weak@example.com",
-            password="abc123",  # 6 字符但缺大写字母和特殊字符
+            password="abcdef123",  # 9 字符但缺大写字母和特殊字符
         )
         with pytest.raises(ValidationError):
             await auth_service.register(req, db)
@@ -117,9 +107,9 @@ class TestRegister:
 
 class TestLogin:
     @pytest.mark.asyncio
-    async def test_login_success_returns_tokens(self, fake_user):
+    async def test_login_success_returns_tokens(self, fake_user, make_auth_db):
         """正确密码登录 → 返回 access/refresh token + user 信息"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         req = LoginRequest(username="admin", password="Admin123!@#")
         result = await auth_service.login(req, db)
 
@@ -139,35 +129,35 @@ class TestLogin:
         assert payload["role"] == "admin"
 
     @pytest.mark.asyncio
-    async def test_login_wrong_password_raises_auth_error(self, fake_user):
+    async def test_login_wrong_password_raises_auth_error(self, fake_user, make_auth_db):
         """密码错误 → AuthError"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         req = LoginRequest(username="admin", password="WrongPassword!1")
         with pytest.raises(AuthError):
             await auth_service.login(req, db)
 
     @pytest.mark.asyncio
-    async def test_login_nonexistent_user_raises_auth_error(self):
+    async def test_login_nonexistent_user_raises_auth_error(self, make_auth_db):
         """用户不存在 → AuthError（不暴露用户是否存在）"""
-        db = _make_db(user=None)
+        db = make_auth_db(user=None)
         req = LoginRequest(username="ghost", password="Any123!@#")
         with pytest.raises(AuthError):
             await auth_service.login(req, db)
 
     @pytest.mark.asyncio
-    async def test_login_disabled_user_raises_auth_error(self, fake_user):
+    async def test_login_disabled_user_raises_auth_error(self, fake_user, make_auth_db):
         """账户被禁用 → AuthError"""
         fake_user.is_active = False
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         req = LoginRequest(username="admin", password="Admin123!@#")
         with pytest.raises(AuthError):
             await auth_service.login(req, db)
         fake_user.is_active = True  # 还原
 
     @pytest.mark.asyncio
-    async def test_login_supports_email(self, fake_user):
+    async def test_login_supports_email(self, fake_user, make_auth_db):
         """LoginRequest.username 字段同时支持 username 和 email"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         req = LoginRequest(username="admin@example.com", password="Admin123!@#")
         result = await auth_service.login(req, db)
         assert "access_token" in result
@@ -175,9 +165,9 @@ class TestLogin:
 
 class TestRefreshToken:
     @pytest.mark.asyncio
-    async def test_refresh_success(self, fake_user):
+    async def test_refresh_success(self, fake_user, make_auth_db):
         """有效 refresh token → 返回新的 access + refresh token"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         refresh = create_refresh_token(str(fake_user.id))
         req = RefreshRequest(refresh_token=refresh)
         result = await auth_service.refresh_token(req.refresh_token, db)
@@ -190,34 +180,34 @@ class TestRefreshToken:
         assert payload["sub"] == str(fake_user.id)
 
     @pytest.mark.asyncio
-    async def test_refresh_with_access_token_rejected(self, fake_user):
+    async def test_refresh_with_access_token_rejected(self, fake_user, make_auth_db):
         """用 access token 当 refresh token → AuthError"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         access = create_access_token(str(fake_user.id))
         with pytest.raises(AuthError):
             await auth_service.refresh_token(access, db)
 
     @pytest.mark.asyncio
-    async def test_refresh_invalid_token_rejected(self, fake_user):
+    async def test_refresh_invalid_token_rejected(self, fake_user, make_auth_db):
         """无效 refresh token → AuthError"""
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         with pytest.raises(AuthError):
             await auth_service.refresh_token("invalid.token.string", db)
 
     @pytest.mark.asyncio
-    async def test_refresh_disabled_user_rejected(self, fake_user):
+    async def test_refresh_disabled_user_rejected(self, fake_user, make_auth_db):
         """refresh 时用户已被禁用 → AuthError"""
         fake_user.is_active = False
-        db = _make_db(user=fake_user)
+        db = make_auth_db(user=fake_user)
         refresh = create_refresh_token(str(fake_user.id))
         with pytest.raises(AuthError):
             await auth_service.refresh_token(refresh, db)
         fake_user.is_active = True
 
     @pytest.mark.asyncio
-    async def test_refresh_nonexistent_user_rejected(self):
+    async def test_refresh_nonexistent_user_rejected(self, make_auth_db):
         """refresh 时用户已删除 → AuthError"""
-        db = _make_db(user=None)
+        db = make_auth_db(user=None)
         refresh = create_refresh_token("9999")
         with pytest.raises(AuthError):
             await auth_service.refresh_token(refresh, db)
@@ -285,7 +275,7 @@ class TestDepsBlacklistCheck:
     """get_current_user 在解码 token 后应检查黑名单 - 设计文档 A2 Step 3。"""
 
     @pytest.mark.asyncio
-    async def test_blacklisted_token_rejected(self, fake_user):
+    async def test_blacklisted_token_rejected(self, fake_user, make_auth_db):
         """token 在黑名单中 → AuthError"""
         from app.api.deps import get_current_user
         from fastapi.security import HTTPAuthorizationCredentials
@@ -294,10 +284,7 @@ class TestDepsBlacklistCheck:
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         # mock db 返回该用户
-        db = AsyncMock()
-        db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=lambda: fake_user)
-        )
+        db = make_auth_db(user=fake_user)
 
         # mock redis 命中黑名单
         redis_mock = MagicMock()

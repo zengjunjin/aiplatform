@@ -11,8 +11,7 @@ def user_creds():
     }
 
 
-@pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestRegister:
     async def test_register_success(self, client, user_creds):
@@ -30,7 +29,7 @@ class TestRegister:
         assert r.status_code == 409
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestLogin:
     async def test_login_success(self, client, user_creds):
@@ -55,7 +54,7 @@ class TestLogin:
         assert r.status_code == 401
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestRefresh:
     async def test_refresh_success(self, client, user_creds):
@@ -73,7 +72,7 @@ class TestRefresh:
         assert "refresh_token" in data
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestLogout:
     async def test_logout_success(self, client, user_creds):
@@ -96,7 +95,7 @@ class TestLogout:
         assert r2.status_code == 401
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestChangePassword:
     async def test_change_password_success(self, client, user_creds):
@@ -128,7 +127,7 @@ class TestChangePassword:
         assert r3.status_code == 401
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestMe:
     async def test_me_success(self, client, user_creds):

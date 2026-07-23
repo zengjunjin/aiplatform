@@ -28,17 +28,48 @@
     locust -f tests/performance/locustfile.py --host=http://localhost:8000 PeakLoadTest
 """
 import json
+import os
 import random
 import string
 import time
 from locust import HttpUser, task, between, tag, constant, LoadTestShape
 
 
+# 压测用户密码，可通过环境变量 PERF_TEST_PASSWORD 覆盖（CI 注入 secret）
+_TEST_PASSWORD = os.getenv("PERF_TEST_PASSWORD", "Test@123456")
+
+
 def _random_string(length=8):
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 
-class AuthenticatedUser(HttpUser):
+class _UserCleanupMixin:
+    """压测用户清理 Mixin：on_stop 时软禁用注册的测试用户。
+
+    异常被吞掉以避免影响 Locust 主流程。使用 PUT /users/{id}/status 软禁用
+    （API 无 DELETE /users/me 端点），需先 GET /auth/me 获取 user_id。
+    """
+
+    def on_stop(self):
+        headers = getattr(self, "headers", None)
+        if not headers:
+            return
+        try:
+            resp = self.client.get("/api/v1/auth/me", headers=headers)
+            if resp.status_code != 200:
+                return
+            user_id = resp.json().get("data", {}).get("id")
+            if user_id:
+                self.client.put(
+                    f"/api/v1/users/{user_id}/status",
+                    json={"is_active": False},
+                    headers=headers,
+                )
+        except Exception:
+            pass  # 清理失败不影响主流程
+
+
+class AuthenticatedUser(_UserCleanupMixin, HttpUser):
     """已认证用户的性能测试。"""
 
     wait_time = between(1, 3)
@@ -46,7 +77,7 @@ class AuthenticatedUser(HttpUser):
     def on_start(self):
         """每个虚拟用户启动时注册并登录。"""
         username = f"perf_user_{_random_string(10)}"
-        password = "Test@123456"
+        password = _TEST_PASSWORD
         email = f"{username}@example.com"
 
         self.client.post(
@@ -182,7 +213,7 @@ RETRIEVAL_QUESTIONS = [
 ]
 
 
-class RetrievalLoadTest(HttpUser):
+class RetrievalLoadTest(_UserCleanupMixin, HttpUser):
     """检索压测：模拟高频检索请求。
 
     权重 = 1，适合单独测试检索性能瓶颈。
@@ -194,7 +225,7 @@ class RetrievalLoadTest(HttpUser):
     def on_start(self):
         """初始化：注册、登录、创建知识库。"""
         username = f"retrieval_{_random_string(10)}"
-        password = "Test@123456"
+        password = _TEST_PASSWORD
         email = f"{username}@example.com"
 
         self.client.post(
@@ -271,7 +302,7 @@ CHAT_QUESTIONS = [
 ]
 
 
-class StreamingChatUser(HttpUser):
+class StreamingChatUser(_UserCleanupMixin, HttpUser):
     """流式对话压测：模拟真实用户的多轮对话。
 
     权重 = 3，是主要压测场景（用户更频繁地进行对话）。
@@ -283,7 +314,7 @@ class StreamingChatUser(HttpUser):
     def on_start(self):
         """初始化：注册、登录、创建知识库和会话。"""
         username = f"stream_chat_{_random_string(10)}"
-        password = "Test@123456"
+        password = _TEST_PASSWORD
         email = f"{username}@example.com"
 
         self.client.post(
@@ -333,15 +364,22 @@ class StreamingChatUser(HttpUser):
             stream=True,
         ) as resp:
             if resp.status_code == 200:
-                # 读取 SSE 流以模拟真实消费
+                # 读取 SSE 流以模拟真实消费，断言 [DONE] 标记出现过
+                done_seen = False
                 chunk_count = 0
                 for line in resp.iter_lines():
-                    if not line or line.startswith(b":") or line == b"data: [DONE]":
+                    if not line or line.startswith(b":"):
                         continue
+                    if line == b"data: [DONE]":
+                        done_seen = True
+                        break
                     chunk_count += 1
                     if chunk_count > 100:  # 限制最大读取 token 数
                         break
-                resp.success()
+                if done_seen:
+                    resp.success()
+                else:
+                    resp.failure("SSE stream did not end with data: [DONE]")
             else:
                 resp.failure(f"HTTP {resp.status_code}")
 
@@ -377,7 +415,7 @@ class StreamingChatUser(HttpUser):
 # ============================================================================
 
 
-class MixedLoadTest(HttpUser):
+class MixedLoadTest(_UserCleanupMixin, HttpUser):
     """混合压测：同时进行检索和对话操作，模拟真实混合负载。
 
     包含检索请求、流式对话、会话管理、知识库操作等。
@@ -389,7 +427,7 @@ class MixedLoadTest(HttpUser):
     def on_start(self):
         """初始化：注册、登录、创建知识库和会话。"""
         username = f"mixed_{_random_string(10)}"
-        password = "Test@123456"
+        password = _TEST_PASSWORD
         email = f"{username}@example.com"
 
         self.client.post(
@@ -439,14 +477,21 @@ class MixedLoadTest(HttpUser):
             stream=True,
         ) as resp:
             if resp.status_code == 200:
+                done_seen = False
                 chunk_count = 0
                 for line in resp.iter_lines():
-                    if not line or line.startswith(b":") or line == b"data: [DONE]":
+                    if not line or line.startswith(b":"):
                         continue
+                    if line == b"data: [DONE]":
+                        done_seen = True
+                        break
                     chunk_count += 1
                     if chunk_count > 100:
                         break
-                resp.success()
+                if done_seen:
+                    resp.success()
+                else:
+                    resp.failure("SSE stream did not end with data: [DONE]")
             else:
                 resp.failure(f"HTTP {resp.status_code}")
 
@@ -529,7 +574,7 @@ class PeakLoadShape(LoadTestShape):
         return None
 
 
-class PeakLoadTest(HttpUser):
+class PeakLoadTest(_UserCleanupMixin, HttpUser):
     """峰值测试用户：使用 PeakLoadShape 控制 ramp-up。
 
     配合 PeakLoadShape 使用，自动按阶段增加/减少用户。
@@ -540,7 +585,7 @@ class PeakLoadTest(HttpUser):
     def on_start(self):
         """初始化：注册、登录。"""
         username = f"peak_{_random_string(10)}"
-        password = "Test@123456"
+        password = _TEST_PASSWORD
         email = f"{username}@example.com"
 
         self.client.post(
@@ -580,14 +625,21 @@ class PeakLoadTest(HttpUser):
                 stream=True,
             ) as resp:
                 if resp.status_code == 200:
+                    done_seen = False
                     chunk_count = 0
                     for line in resp.iter_lines():
-                        if not line or line.startswith(b":") or line == b"data: [DONE]":
+                        if not line or line.startswith(b":"):
                             continue
+                        if line == b"data: [DONE]":
+                            done_seen = True
+                            break
                         chunk_count += 1
                         if chunk_count > 50:
                             break
-                    resp.success()
+                    if done_seen:
+                        resp.success()
+                    else:
+                        resp.failure("SSE stream did not end with data: [DONE]")
                 else:
                     resp.failure(f"HTTP {resp.status_code}")
 

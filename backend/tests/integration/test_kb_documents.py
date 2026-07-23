@@ -2,6 +2,7 @@
 import pytest
 import tempfile
 import os
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def auth_headers(user_token):
     return {"Authorization": f"Bearer {user_token}"}
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestKnowledgeBaseCRUD:
     async def test_create_kb_success(self, client, auth_headers):
@@ -98,7 +99,7 @@ class TestKnowledgeBaseCRUD:
         assert r.status_code == 404
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio
 @pytest.mark.integration
 class TestDocumentAPI:
     async def test_list_documents_empty(self, client, auth_headers):
@@ -189,13 +190,19 @@ class TestDocumentAPI:
             path = f.name
 
         try:
-            with open(path, "rb") as f:
-                upload_r = await client.post(
-                    "/api/v1/documents/upload",
-                    files={"file": ("del.txt", f, "text/plain")},
-                    data={"kb_id": str(kb_id)},
-                    headers=auth_headers,
-                )
+            # Mock Celery 任务派发, 防止真实 worker 在删除前将文档状态
+            # 从 "pending" 改为 "parsing" 导致 409 Conflict
+            with patch(
+                "app.tasks.document_task.parse_document_task.delay",
+                return_value=MagicMock(id="test-task-id"),
+            ):
+                with open(path, "rb") as f:
+                    upload_r = await client.post(
+                        "/api/v1/documents/upload",
+                        files={"file": ("del.txt", f, "text/plain")},
+                        data={"kb_id": str(kb_id)},
+                        headers=auth_headers,
+                    )
             doc_id = upload_r.json()["data"]["document_id"]
 
             r = await client.delete(f"/api/v1/documents/{doc_id}", headers=auth_headers)

@@ -38,35 +38,35 @@ def _make_user(user_id=2, username="u2", email="u2@example.com",
 
 class TestListUsers:
     @pytest.mark.asyncio
-    async def test_list_users_returns_paginated(self, admin, db):
+    async def test_list_users_returns_paginated(self, admin, db, request_mock):
         user_list = [_make_user(user_id=2), _make_user(user_id=3)]
         with patch("app.services.user_service.list_users", new=AsyncMock(
             return_value=(user_list, 2)
         )):
-            result = await users.list_users(page=1, page_size=20, db=db, admin=admin)
+            result = await users.list_users(request=request_mock, page=1, page_size=20, db=db, admin=admin)
         assert result["data"]["total"] == 2
         assert len(result["data"]["items"]) == 2
 
 
 class TestUpdateRole:
     @pytest.mark.asyncio
-    async def test_update_role_returns_user(self, admin, db):
+    async def test_update_role_returns_user(self, admin, db, request_mock):
         target = _make_user(user_id=2, role="admin")
         req = MagicMock()
         req.role = "admin"
         with patch("app.services.user_service.update_role", new=AsyncMock(return_value=target)) as mock_upd:
-            result = await users.update_role(user_id=2, req=req, db=db, admin=admin)
+            result = await users.update_role(user_id=2, req=req, request=request_mock, db=db, admin=admin)
         mock_upd.assert_awaited_once_with(2, "admin", db, admin.id)
         assert result["data"]["role"] == "admin"
 
 
 class TestUpdateStatus:
     @pytest.mark.asyncio
-    async def test_update_status_returns_user(self, admin, db):
+    async def test_update_status_returns_user(self, admin, db, request_mock):
         target = _make_user(user_id=2, is_active=False)
         req = MagicMock()
         req.is_active = False
         with patch("app.services.user_service.update_status", new=AsyncMock(return_value=target)) as mock_upd:
-            result = await users.update_status(user_id=2, req=req, db=db, admin=admin)
+            result = await users.update_status(user_id=2, req=req, request=request_mock, db=db, admin=admin)
         mock_upd.assert_awaited_once_with(2, False, db, admin.id)
         assert result["data"]["is_active"] is False

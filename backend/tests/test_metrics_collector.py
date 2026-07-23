@@ -10,8 +10,15 @@ class TestUpdateBusinessMetrics:
         """正常情况 → 设置 TOTAL_USERS/TOTAL_DOCUMENTS/ACTIVE_SESSIONS"""
         # mock async_session 上下文
         fake_db = AsyncMock()
-        # db.scalar 三次调用返回 5 users, 10 docs, 3 sessions
-        fake_db.scalar = AsyncMock(side_effect=[5, 10, 3])
+        # Task 35: 合并后 db.execute 第一次返回 counts 行，第二次返回 KB 分组
+        counts_result = MagicMock()
+        counts_result.one.return_value = MagicMock(
+            user_count=5, doc_count=10, session_count=3
+        )
+        # db.execute 返回按 KB 分组的文档数：KB#1=4, KB#2=6
+        kb_result = MagicMock()
+        kb_result.all.return_value = [(1, 4), (2, 6)]
+        fake_db.execute = AsyncMock(side_effect=[counts_result, kb_result])
 
         with patch("app.tasks.metrics_collector.async_session") as mock_session_cls:
             mock_session = MagicMock()
@@ -21,18 +28,32 @@ class TestUpdateBusinessMetrics:
 
             with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
                  patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS") as mock_docs, \
-                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS") as mock_sessions:
+                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS") as mock_sessions, \
+                 patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT") as mock_doc_count:
                 await metrics_collector.update_business_metrics()
 
         mock_users.set.assert_called_once_with(5)
         mock_docs.set.assert_called_once_with(10)
         mock_sessions.set.assert_called_once_with(3)
+        # RAG_DOCUMENT_COUNT 按 KB 分组设置
+        mock_doc_count.labels.assert_any_call(kb_id="1")
+        mock_doc_count.labels.assert_any_call(kb_id="2")
+        mock_doc_count.labels.return_value.set.assert_any_call(4)
+        mock_doc_count.labels.return_value.set.assert_any_call(6)
 
     @pytest.mark.asyncio
     async def test_update_business_metrics_handles_none_count(self):
         """count 返回 None → set(0)"""
         fake_db = AsyncMock()
-        fake_db.scalar = AsyncMock(return_value=None)
+        # Task 35: 合并后 db.execute 第一次返回 counts（含 None），第二次返回 KB 分组
+        counts_result = MagicMock()
+        counts_result.one.return_value = MagicMock(
+            user_count=None, doc_count=None, session_count=None
+        )
+        # KB 分组查询返回空列表（无文档）
+        kb_result = MagicMock()
+        kb_result.all.return_value = []
+        fake_db.execute = AsyncMock(side_effect=[counts_result, kb_result])
 
         with patch("app.tasks.metrics_collector.async_session") as mock_session_cls:
             mock_session = MagicMock()
@@ -42,7 +63,8 @@ class TestUpdateBusinessMetrics:
 
             with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
                  patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"), \
-                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"):
+                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"), \
+                 patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT"):
                 await metrics_collector.update_business_metrics()
         mock_users.set.assert_called_once_with(0)
 

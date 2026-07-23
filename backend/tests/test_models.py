@@ -18,14 +18,16 @@ class TestModelFactory:
         ModelFactory._reranker = None
 
     def test_create_llm_returns_ollama_provider(self):
-        with patch("app.models.factory.settings") as mock_settings:
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.LLM_PROVIDER = "ollama"
             llm = ModelFactory.create_llm()
         from app.models.ollama_provider import OllamaLLMProvider
         assert isinstance(llm, OllamaLLMProvider)
 
     def test_create_llm_caches_singleton(self):
-        with patch("app.models.factory.settings") as mock_settings:
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.LLM_PROVIDER = "ollama"
             llm1 = ModelFactory.create_llm()
             llm2 = ModelFactory.create_llm()
@@ -38,7 +40,8 @@ class TestModelFactory:
                 ModelFactory.create_llm()
 
     def test_create_embedding_with_cache_disabled(self):
-        with patch("app.models.factory.settings") as mock_settings:
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.EMBEDDING_PROVIDER = "ollama"
             mock_settings.EMBEDDING_CACHE_ENABLED = False
             emb = ModelFactory.create_embedding()
@@ -46,7 +49,8 @@ class TestModelFactory:
         assert isinstance(emb, OllamaEmbeddingProvider)
 
     def test_create_embedding_with_cache_enabled(self):
-        with patch("app.models.factory.settings") as mock_settings:
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.EMBEDDING_PROVIDER = "ollama"
             mock_settings.EMBEDDING_CACHE_ENABLED = True
             emb = ModelFactory.create_embedding()
@@ -54,7 +58,8 @@ class TestModelFactory:
         assert isinstance(emb, CachedEmbeddingProvider)
 
     def test_create_embedding_caches_singleton(self):
-        with patch("app.models.factory.settings") as mock_settings:
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.EMBEDDING_PROVIDER = "ollama"
             mock_settings.EMBEDDING_CACHE_ENABLED = False
             e1 = ModelFactory.create_embedding()
@@ -78,12 +83,32 @@ class TestModelFactory:
         r2 = ModelFactory.create_reranker()
         assert r1 is r2
 
+    @pytest.mark.asyncio
+    async def test_close_all_closes_llm_and_embedding_clients(self):
+        """close_all() → 关闭 LLM/Embedding provider 的 httpx client"""
+        mock_llm_client = AsyncMock()
+        mock_emb_client = AsyncMock()
+        with patch("app.models.factory.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient", side_effect=[mock_llm_client, mock_emb_client]):
+            mock_settings.LLM_PROVIDER = "ollama"
+            mock_settings.EMBEDDING_PROVIDER = "ollama"
+            mock_settings.EMBEDDING_CACHE_ENABLED = False
+            ModelFactory.create_llm()
+            ModelFactory.create_embedding()
+            await ModelFactory.close_all()
+        mock_llm_client.aclose.assert_awaited_once()
+        mock_emb_client.aclose.assert_awaited_once()
+        # 单例应被重置
+        assert ModelFactory._llm is None
+        assert ModelFactory._embedding is None
+
 
 # ========== OllamaLLMProvider ==========
 
 class TestOllamaLLMProvider:
     def test_init_uses_settings_defaults(self):
-        with patch("app.models.ollama_provider.settings") as mock_settings:
+        with patch("app.models.ollama_provider.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.LLM_MODEL = "llama3"
             mock_settings.OLLAMA_HOST = "http://ollama:11434"
             from app.models.ollama_provider import OllamaLLMProvider
@@ -92,36 +117,32 @@ class TestOllamaLLMProvider:
         assert p.host == "http://ollama:11434"
 
     def test_init_with_explicit_args(self):
-        from app.models.ollama_provider import OllamaLLMProvider
-        p = OllamaLLMProvider(model="custom-model", host="http://custom:11434")
+        with patch("app.models.ollama_provider.httpx.AsyncClient"):
+            from app.models.ollama_provider import OllamaLLMProvider
+            p = OllamaLLMProvider(model="custom-model", host="http://custom:11434")
         assert p.model == "custom-model"
         assert p.host == "http://custom:11434"
 
     @pytest.mark.asyncio
     async def test_chat_returns_content(self):
         """chat 非流式调用 → 返回 message.content"""
-        from app.models.ollama_provider import OllamaLLMProvider
-        p = OllamaLLMProvider(model="llama3", host="http://test:11434")
-
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"message": {"content": "Hello world"}}
         mock_resp.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
 
+        # 长生命周期 client：__init__ 调用 httpx.AsyncClient(...) 拿到 mock_client
         with patch("app.models.ollama_provider.httpx.AsyncClient", return_value=mock_client):
+            from app.models.ollama_provider import OllamaLLMProvider
+            p = OllamaLLMProvider(model="llama3", host="http://test:11434")
             result = await p.chat([{"role": "user", "content": "hi"}])
         assert result == "Hello world"
 
     @pytest.mark.asyncio
     async def test_chat_stream_yields_tokens(self):
         """chat_stream → 逐 token yield"""
-        from app.models.ollama_provider import OllamaLLMProvider
-        p = OllamaLLMProvider(model="llama3", host="http://test:11434")
-
         # 模拟流式响应行
         lines = [
             json.dumps({"message": {"content": "Hello"}, "done": False}),
@@ -144,10 +165,10 @@ class TestOllamaLLMProvider:
 
         mock_client = AsyncMock()
         mock_client.stream = MagicMock(return_value=mock_stream_ctx)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch("app.models.ollama_provider.httpx.AsyncClient", return_value=mock_client):
+            from app.models.ollama_provider import OllamaLLMProvider
+            p = OllamaLLMProvider(model="llama3", host="http://test:11434")
             tokens = []
             async for tok in p.chat_stream([{"role": "user", "content": "hi"}]):
                 tokens.append(tok)
@@ -156,9 +177,6 @@ class TestOllamaLLMProvider:
     @pytest.mark.asyncio
     async def test_chat_stream_skips_empty_lines(self):
         """空行和 JSON decode error 应被跳过"""
-        from app.models.ollama_provider import OllamaLLMProvider
-        p = OllamaLLMProvider(model="llama3", host="http://test:11434")
-
         lines = [
             "",  # 空行
             "   ",  # 空白行
@@ -180,19 +198,31 @@ class TestOllamaLLMProvider:
 
         mock_client = AsyncMock()
         mock_client.stream = MagicMock(return_value=mock_stream_ctx)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch("app.models.ollama_provider.httpx.AsyncClient", return_value=mock_client):
+            from app.models.ollama_provider import OllamaLLMProvider
+            p = OllamaLLMProvider(model="llama3", host="http://test:11434")
             tokens = []
             async for tok in p.chat_stream([{"role": "user", "content": "hi"}]):
                 tokens.append(tok)
         assert tokens == ["ok"]
 
+    @pytest.mark.asyncio
+    async def test_close_calls_aclose_on_client(self):
+        """close() → 调用底层 httpx client 的 aclose()"""
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        with patch("app.models.ollama_provider.httpx.AsyncClient", return_value=mock_client):
+            from app.models.ollama_provider import OllamaLLMProvider
+            p = OllamaLLMProvider(model="llama3", host="http://test:11434")
+            await p.close()
+        mock_client.aclose.assert_awaited_once()
+
 
 class TestOllamaEmbeddingProvider:
     def test_init_with_defaults(self):
-        with patch("app.models.ollama_provider.settings") as mock_settings:
+        with patch("app.models.ollama_provider.settings") as mock_settings, \
+             patch("app.models.ollama_provider.httpx.AsyncClient"):
             mock_settings.EMBEDDING_MODEL = "nomic-embed-text"
             mock_settings.OLLAMA_HOST = "http://ollama:11434"
             mock_settings.EMBEDDING_DIM = 1024
@@ -203,21 +233,34 @@ class TestOllamaEmbeddingProvider:
         assert p.dim == 1024
 
     def test_init_with_explicit_args(self):
-        from app.models.ollama_provider import OllamaEmbeddingProvider
-        p = OllamaEmbeddingProvider(model="custom-emb", host="http://custom:11434")
+        with patch("app.models.ollama_provider.httpx.AsyncClient"):
+            from app.models.ollama_provider import OllamaEmbeddingProvider
+            p = OllamaEmbeddingProvider(model="custom-emb", host="http://custom:11434")
         assert p.model == "custom-emb"
         assert p.host == "http://custom:11434"
 
     @pytest.mark.asyncio
     async def test_embed_returns_vectors(self):
         """embed 多个文本 → 返回向量列表"""
-        from app.models.ollama_provider import OllamaEmbeddingProvider
-        p = OllamaEmbeddingProvider(model="nomic-embed-text", host="http://test:11434")
+        with patch("app.models.ollama_provider.httpx.AsyncClient"):
+            from app.models.ollama_provider import OllamaEmbeddingProvider
+            p = OllamaEmbeddingProvider(model="nomic-embed-text", host="http://test:11434")
 
         # mock _embed_single 直接返回向量
         with patch.object(p, "_embed_single", new=AsyncMock(side_effect=[[0.1, 0.2], [0.3, 0.4]])):
             result = await p.embed(["hello", "world"])
         assert result == [[0.1, 0.2], [0.3, 0.4]]
+
+    @pytest.mark.asyncio
+    async def test_close_calls_aclose_on_client(self):
+        """close() → 调用底层 httpx client 的 aclose()"""
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        with patch("app.models.ollama_provider.httpx.AsyncClient", return_value=mock_client):
+            from app.models.ollama_provider import OllamaEmbeddingProvider
+            p = OllamaEmbeddingProvider(model="nomic-embed-text", host="http://test:11434")
+            await p.close()
+        mock_client.aclose.assert_awaited_once()
 
 
 # ========== _is_retryable_error ==========

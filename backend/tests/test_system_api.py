@@ -13,6 +13,14 @@ def admin_user():
 
 
 @pytest.fixture
+def normal_user():
+    u = MagicMock()
+    u.id = 2
+    u.role = "user"
+    return u
+
+
+@pytest.fixture
 def db_mock():
     db = AsyncMock()
     db.execute = AsyncMock()
@@ -21,7 +29,7 @@ def db_mock():
 
 class TestSystemStatus:
     @pytest.mark.asyncio
-    async def test_system_status_all_down(self, db_mock, admin_user):
+    async def test_system_status_all_down(self, db_mock, admin_user, request_mock):
         """所有组件不可用 → status 全部 'down'"""
         db_mock.execute = AsyncMock(side_effect=Exception("pg down"))
 
@@ -39,7 +47,7 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(side_effect=Exception("ollama down"))
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(db=db_mock, admin=admin_user)
+                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
 
         # PostgreSQL: down
         assert result["data"]["postgresql"] == "down"
@@ -53,7 +61,7 @@ class TestSystemStatus:
         assert result["data"]["celery"] == "no_active_workers"
 
     @pytest.mark.asyncio
-    async def test_system_status_all_up(self, db_mock, admin_user):
+    async def test_system_status_all_up(self, db_mock, admin_user, request_mock):
         """所有组件正常 → status 全部 'up'"""
         # PG 正常
         db_mock.execute = AsyncMock()
@@ -88,7 +96,7 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(return_value=ollama_response)
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(db=db_mock, admin=admin_user)
+                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
 
         assert result["data"]["postgresql"] == "up"
         assert result["data"]["redis"] == "up"
@@ -100,7 +108,7 @@ class TestSystemStatus:
         assert "worker1" in result["data"]["celery_workers"]
 
     @pytest.mark.asyncio
-    async def test_system_status_ollama_non_200(self, db_mock, admin_user):
+    async def test_system_status_ollama_non_200(self, db_mock, admin_user, request_mock):
         """Ollama 返回非 200 → status 'down: HTTP xxx'"""
         ollama_response = MagicMock()
         ollama_response.status_code = 500
@@ -119,6 +127,64 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(return_value=ollama_response)
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(db=db_mock, admin=admin_user)
+                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
         assert "down" in result["data"]["ollama"]
         assert "500" in result["data"]["ollama"]
+
+
+class TestListModels:
+    """Task 4: list_models 端点需要认证 (Depends(get_current_user))"""
+
+    @pytest.mark.asyncio
+    async def test_list_models_returns_models_for_authenticated_user(self, normal_user, request_mock):
+        """认证用户 → 返回模型列表"""
+        # 模拟 ModelRegistry.list_all 和 ModelRegistry.get
+        fake_provider_1 = MagicMock()
+        fake_provider_1.provider_name = "ollama-llama3"
+        fake_provider_1.model_name = "llama3"
+        fake_provider_1.is_healthy = True
+
+        fake_provider_2 = MagicMock()
+        fake_provider_2.provider_name = "openai-gpt-4"
+        fake_provider_2.model_name = "gpt-4"
+        fake_provider_2.is_healthy = False
+
+        with patch("app.models.factory.ModelRegistry.list_all", return_value=["ollama-llama3", "openai-gpt-4"]), \
+             patch("app.models.factory.ModelRegistry.get", side_effect=[fake_provider_1, fake_provider_2]):
+            result = await system.list_models(request=request_mock, current_user=normal_user)
+
+        assert "data" in result
+        assert "models" in result["data"]
+        assert len(result["data"]["models"]) == 2
+        assert result["data"]["models"][0]["name"] == "ollama-llama3"
+        assert result["data"]["models"][0]["source"] == "local"
+        assert result["data"]["models"][0]["status"] == "healthy"
+        assert result["data"]["models"][1]["name"] == "openai-gpt-4"
+        assert result["data"]["models"][1]["source"] == "cloud"
+        assert result["data"]["models"][1]["status"] == "unhealthy"
+        assert result["data"]["default_model"] == "ollama"
+
+    @pytest.mark.asyncio
+    async def test_list_models_endpoint_signature_requires_current_user(self):
+        """list_models 函数签名应包含 current_user: User = Depends(get_current_user) 依赖"""
+        import inspect
+        from app.api.deps import get_current_user
+        from app.db.user import User
+
+        sig = inspect.signature(system.list_models)
+        assert "current_user" in sig.parameters
+        param = sig.parameters["current_user"]
+        # FastAPI Depends 注解: 默认值应是 Depends(...) 实例
+        assert param.default is not inspect.Parameter.empty
+        assert callable(get_current_user)
+        # 类型注解应为 User 或 Union[User, ...]
+        annotation = param.annotation
+        assert annotation is User or (hasattr(annotation, "__args__") and User in annotation.__args__)
+
+    @pytest.mark.asyncio
+    async def test_list_models_returns_empty_when_no_providers(self, normal_user, request_mock):
+        """无可用 Provider → 返回空列表"""
+        with patch("app.models.factory.ModelRegistry.list_all", return_value=[]):
+            result = await system.list_models(request=request_mock, current_user=normal_user)
+        assert result["data"]["models"] == []
+        assert result["data"]["default_model"] == "ollama"

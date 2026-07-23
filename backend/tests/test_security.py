@@ -87,7 +87,7 @@ class TestJWT:
 
     def test_decode_token_expired(self):
         # 用一个已知过期的 token
-        from jose import jwt
+        import jwt
         from datetime import datetime, timedelta, timezone
         from app.config import settings
         expired_payload = {

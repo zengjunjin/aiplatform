@@ -1,6 +1,201 @@
-# conftest.py - 全局测试 fixture
-#
-# 注意：不要再重新定义 event_loop fixture。
-# pytest-asyncio 0.23+ 与 Python 3.12 下，自定义 event_loop 已弃用且会导致
-# "There is no current event loop in thread 'MainThread'" 错误。
-# asyncio_mode = auto（见 pyproject.toml）会自动管理事件循环。
+"""Shared pytest fixtures for backend tests.
+
+注意：不要再重新定义 event_loop fixture。
+pytest-asyncio 0.23+ 与 Python 3.12 下，自定义 event_loop 已弃用且会导致
+"There is no current event loop in thread 'MainThread'" 错误。
+asyncio_mode = auto（见 pyproject.toml）会自动管理事件循环。
+"""
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from starlette.requests import Request
+
+# test_auth_full_flow.py 是独立脚本（模块顶层调用 requests + sys.exit），
+# 不是 pytest 测试模块。若被 pytest 导入会导致收集阶段 ConnectionError，
+# 因此显式排除其收集。
+collect_ignore = ["test_auth_full_flow.py"]
+
+
+def pytest_configure(config):
+    """条件性启用 pytest-rerunfailures 的 --reruns 选项。
+
+    仅当 pytest-rerunfailures 已安装时才设置 reruns=2, delay=3。
+    避免未安装时 pytest 因 --reruns 未知参数报错。
+    （pyproject.toml addopts 中不直接写 --reruns，由本函数条件注入。）
+    """
+    try:
+        import pytest_rerunfailures  # noqa: F401
+    except ImportError:
+        return
+    # 插件已安装，设置默认重试参数（如命令行未显式指定）
+    if hasattr(config.option, "reruns") and not config.option.reruns:
+        config.option.reruns = 2
+    if hasattr(config.option, "reruns_delay") and not config.option.reruns_delay:
+        config.option.reruns_delay = 3
+
+
+@pytest.fixture
+def mock_db():
+    """Mock AsyncSession for database operations."""
+    session = AsyncMock()
+    session.execute = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    # 让 execute 返回一个有 scalars().all() / fetchall() 的 mock
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    result.fetchall.return_value = []
+    session.execute.return_value = result
+    return session
+
+
+@pytest.fixture
+def mock_redis():
+    """Mock Redis client."""
+    redis = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock(return_value=True)
+    redis.delete = AsyncMock(return_value=1)
+    redis.setex = AsyncMock(return_value=True)
+    redis.exists = AsyncMock(return_value=False)
+    return redis
+
+
+@pytest.fixture
+def audit_db():
+    """Mock AsyncSession for audit_service tests.
+
+    audit_service.log_audit 通过独立 async_session 写入审计日志，
+    此 fixture 模拟该 session。测试可覆盖 commit 的 side_effect
+    来验证异常吞掉逻辑。
+    """
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+@pytest.fixture
+def audit_cm(audit_db):
+    """Mock async context manager for audit_service.async_session.
+
+    用法:
+        with patch("app.services.audit_service.async_session", return_value=audit_cm):
+            await audit_service.log_audit(...)
+        audit_db.add.assert_called_once()
+
+    需要模拟异常时，在 patch 前覆盖:
+        audit_cm.__aenter__.side_effect = RuntimeError(...)
+    """
+    cm = AsyncMock()
+    cm.__aenter__.return_value = audit_db
+    cm.__aexit__.return_value = None
+    return cm
+
+
+@pytest.fixture
+def make_auth_db():
+    """Factory fixture to create mock AsyncSession for auth_service tests.
+
+    替代 test_auth_api.py 中的内联 _make_db 辅助函数。
+
+    用法:
+        db = make_auth_db(user=fake_user)  # execute 返回该 user
+        db = make_auth_db(user=None)       # execute 返回 None
+    """
+    def _make(user=None):
+        db = AsyncMock()
+        scalar = user if user is not None else None
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: scalar)
+        )
+        return db
+    return _make
+
+
+@pytest.fixture
+def make_user():
+    """Factory fixture to create test user dicts."""
+    def _make_user(
+        user_id: int = 1,
+        username: str = "testuser",
+        role: str = "user",
+        email: str = "test@example.com",
+    ):
+        return {
+            "id": user_id,
+            "username": username,
+            "role": role,
+            "email": email,
+        }
+    return _make_user
+
+
+@pytest.fixture
+def auth_headers(make_user):
+    """Request headers with a mocked JWT token."""
+    return {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture
+def request_mock():
+    """真实的 starlette Request，slowapi @limiter.limit 装饰器需要。
+
+    提供 scope 字段以支持 _rate_limit_key 中的 request.client.host 和 headers 查询。
+    """
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/test",
+        "headers": [],
+        "query_string": b"",
+        "client": ("127.0.0.1", 8000),
+    }
+    return Request(scope)
+
+
+@pytest.fixture(autouse=True)
+def _reset_limiter_storage():
+    """每个测试运行前清空 slowapi 内存存储的限流计数器。
+
+    避免同一进程内多测试累积触发限流（60/minute 默认限制下，若不重置，
+    第 61 次同 key 调用会失败）。autouse=True 自动应用于所有测试。
+    """
+    from app.core.middleware import limiter
+    storage = limiter._storage
+    # MemoryStorage.reset() 清空计数器和过期时间表
+    reset = getattr(storage, "reset", None)
+    if reset is not None:
+        try:
+            reset()
+        except Exception:
+            pass
+    yield
+
+
+@pytest.fixture
+def mock_sse_common():
+    """Mock SSE 流式响应的公共依赖（不随测试变化的 patch）。
+
+    抽取 test_chat_api.py 中 12+ 处重复的 patch，减少测试代码冗余。
+    测试仍需自行 patch get_session/retrieve/rerank/build_messages/ModelRouter.select
+    （这些依赖测试特定数据）。
+    如需覆盖某个公共 patch（如 is_cancelled=True），在测试内用 with patch(...) 覆盖。
+    """
+    from unittest.mock import patch
+    patches = [
+        patch("app.services.chat_service.save_message", new=AsyncMock(return_value=MagicMock(id=99))),
+        patch("app.services.chat_service.append_to_context", new=AsyncMock()),
+        patch("app.services.chat_service.get_history_context", new=AsyncMock(return_value=[])),
+        patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)),
+        patch("app.services.chat_service.clear_cancel", new=AsyncMock()),
+        patch("app.rag.reference_parser.parse_references", return_value=[]),
+        patch("app.utils.token_counter.count_tokens", return_value=5),
+    ]
+    for p in patches:
+        p.start()
+    yield
+    for p in patches:
+        p.stop()
+

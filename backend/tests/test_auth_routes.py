@@ -88,11 +88,11 @@ class TestLoginRoute:
 
 class TestRefreshRoute:
     @pytest.mark.asyncio
-    async def test_refresh_success(self, db):
+    async def test_refresh_success(self, db, request_mock):
         tokens = {"access_token": "at", "refresh_token": "rt"}
         req = MagicMock()
         with patch("app.services.auth_service.refresh_token", new=AsyncMock(return_value=tokens)):
-            result = await auth.refresh(req=req, db=db)
+            result = await auth.refresh(request=request_mock, req=req, db=db)
         assert result["data"]["access_token"] == "at"
 
 

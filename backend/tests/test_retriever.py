@@ -164,6 +164,118 @@ class TestRetrieveWithMocks:
         assert captured_top_k_bm25 == [10]
 
 
+# ---------- SubTask 18.2: _chunks_cache singleflight 模式 ----------
+class TestChunksCacheSingleflight:
+    """retriever._chunks_cache miss-then-load 路径 singleflight 保护"""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_misses_only_load_once(self):
+        """多个并发请求 miss 时，_load_chunks_for_bm25 只应被调用一次"""
+        import asyncio
+        r = HybridRetriever()
+        load_count = 0
+
+        async def fake_load(kb_id):
+            nonlocal load_count
+            load_count += 1
+            await asyncio.sleep(0.05)  # 模拟 DB 加载耗时
+            return [{"chunk_id": 1, "doc_id": 100, "content": "test"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            # 5 个并发请求
+            results = await asyncio.gather(
+                *[r._get_chunks_for_bm25(kb_id=999) for _ in range(5)]
+            )
+
+        # 只应加载一次（singleflight）
+        assert load_count == 1, f"Expected 1 load, got {load_count}"
+        # 所有请求都应得到相同结果
+        assert all(len(res) == 1 for res in results)
+        assert all(res[0]["content"] == "test" for res in results)
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_does_not_load(self):
+        """缓存命中时不调用 _load_chunks_for_bm25"""
+        r = HybridRetriever()
+        load_count = 0
+
+        async def fake_load(kb_id):
+            nonlocal load_count
+            load_count += 1
+            return [{"chunk_id": 1, "content": "cached"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            # 第一次：miss，加载
+            await r._get_chunks_for_bm25(kb_id=888)
+            assert load_count == 1
+            # 第二次：hit，不加载
+            await r._get_chunks_for_bm25(kb_id=888)
+            assert load_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_kb_ids_load_independently(self):
+        """不同 kb_id 的加载互不影响"""
+        import asyncio
+        r = HybridRetriever()
+        loaded_kbs = []
+
+        async def fake_load(kb_id):
+            loaded_kbs.append(kb_id)
+            await asyncio.sleep(0.01)
+            return [{"chunk_id": 1, "content": f"kb{kb_id}"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            await asyncio.gather(
+                r._get_chunks_for_bm25(kb_id=100),
+                r._get_chunks_for_bm25(kb_id=200),
+            )
+
+        assert sorted(loaded_kbs) == [100, 200]
+
+    @pytest.mark.asyncio
+    async def test_invalidate_clears_lock(self):
+        """invalidate_chunks_cache 应清理 singleflight 锁"""
+        r = HybridRetriever()
+
+        async def fake_load(kb_id):
+            return [{"chunk_id": 1, "content": "test"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            await r._get_chunks_for_bm25(kb_id=777)
+
+        assert 777 in r._chunks_locks
+        r.invalidate_chunks_cache(777)
+        assert 777 not in r._chunks_locks
+        assert 777 not in r._chunks_cache
+
+    @pytest.mark.asyncio
+    async def test_concurrent_load_and_invalidate_safe(self):
+        """并发加载 + invalidate 不应导致状态错误"""
+        import asyncio
+        r = HybridRetriever()
+        load_count = 0
+
+        async def fake_load(kb_id):
+            nonlocal load_count
+            load_count += 1
+            await asyncio.sleep(0.02)
+            return [{"chunk_id": 1, "content": "test"}]
+
+        async def invalidate():
+            await asyncio.sleep(0.01)  # 让加载先开始
+            r.invalidate_chunks_cache(666)
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            # 并发：加载 + invalidate
+            await asyncio.gather(
+                r._get_chunks_for_bm25(kb_id=666),
+                r._get_chunks_for_bm25(kb_id=666),
+                invalidate(),
+            )
+        # 不应抛出异常，最终状态应一致
+        assert load_count >= 1
+
+
 class TestVectorSearchErrorHandling:
     @pytest.mark.asyncio
     async def test_vector_search_returns_empty_on_error(self):
@@ -175,6 +287,87 @@ class TestVectorSearchErrorHandling:
         r._embedding = fake_embedding
         result = await r._vector_search("query", kb_id=1, top_k=5)
         assert result == []
+
+
+class TestVectorSearchScoreThreshold:
+    """Task 13: 检索结果 score 阈值过滤"""
+
+    @pytest.mark.asyncio
+    async def test_low_score_chunks_filtered_out(self):
+        """score < RETRIEVAL_SCORE_THRESHOLD 的 chunks 被过滤"""
+        from app.config import settings
+
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        # Mock qdrant.query_points 返回混合分数结果
+        high_score_point = MagicMock()
+        high_score_point.id = 1
+        high_score_point.score = 0.9
+        high_score_point.payload = {"chunk_id": 1, "content": "high score chunk"}
+
+        low_score_point = MagicMock()
+        low_score_point.id = 2
+        low_score_point.score = 0.1  # 低于阈值 0.3
+        low_score_point.payload = {"chunk_id": 2, "content": "low score chunk"}
+
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(return_value=MagicMock(points=[high_score_point, low_score_point]))
+        r._qdrant_client = fake_qdrant
+
+        with patch.object(r, "_ensure_collection"):
+            result = await r._vector_search("query", kb_id=1, top_k=10)
+
+        # 低分 chunk 应被过滤
+        assert len(result) == 1
+        assert result[0]["chunk_id"] == 1
+        assert result[0]["score"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_all_chunks_below_threshold_returns_empty(self):
+        """所有 chunks 都低于阈值 → 返回空列表"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        low_score_point = MagicMock()
+        low_score_point.id = 1
+        low_score_point.score = 0.05  # 远低于阈值
+        low_score_point.payload = {"chunk_id": 1, "content": "low score"}
+
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(return_value=MagicMock(points=[low_score_point]))
+        r._qdrant_client = fake_qdrant
+
+        with patch.object(r, "_ensure_collection"):
+            result = await r._vector_search("query", kb_id=1, top_k=10)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_none_score_not_filtered(self):
+        """score 为 None 的 chunk 不被过滤（保留兼容性）"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        none_score_point = MagicMock()
+        none_score_point.id = 1
+        none_score_point.score = None
+        none_score_point.payload = {"chunk_id": 1, "content": "no score"}
+
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(return_value=MagicMock(points=[none_score_point]))
+        r._qdrant_client = fake_qdrant
+
+        with patch.object(r, "_ensure_collection"):
+            result = await r._vector_search("query", kb_id=1, top_k=10)
+
+        assert len(result) == 1
 
 
 class TestDeleteByDocId:

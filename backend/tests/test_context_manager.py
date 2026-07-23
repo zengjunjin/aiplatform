@@ -6,7 +6,17 @@ from app.rag.context_manager import ContextManager
 
 @pytest.fixture
 def cm():
-    return ContextManager(max_tokens=6000, keep_recent=4)
+    return ContextManager(keep_recent=4)
+
+
+@pytest.fixture
+def cm_no_tiktoken(cm):
+    """Task 11: 禁用 tiktoken 的 ContextManager，使用 fallback 启发式（确定性计数）。
+
+    用于测试截断逻辑（依赖特定 token 计数），而非 token 计数精度。
+    """
+    with patch("app.rag.context_manager._get_tiktoken_encoder", return_value=None):
+        yield cm
 
 
 class TestTokenCounting:
@@ -14,77 +24,152 @@ class TestTokenCounting:
         assert cm._count_tokens("") == 0
         assert cm._count_tokens(None) == 0
 
-    def test_count_tokens_pure_ascii(self, cm):
-        """英文 4 字符 ≈ 1 token"""
-        # 8 个 ASCII 字符 → 2 token
-        assert cm._count_tokens("abcdefgh") == 2
+    def test_count_tokens_pure_ascii_positive(self, cm):
+        """英文文本 token 数 > 0"""
+        assert cm._count_tokens("abcdefgh") > 0
 
-    def test_count_tokens_pure_cjk(self, cm):
-        """中文 1 字符 ≈ 1 token"""
-        assert cm._count_tokens("你好世界") == 4
+    def test_count_tokens_pure_cjk_positive(self, cm):
+        """中文文本 token 数 > 0"""
+        assert cm._count_tokens("你好世界") > 0
 
-    def test_count_tokens_mixed(self, cm):
-        """中英文混合：中文按 1:1，英文按 4:1"""
-        text = "你好abc"  # 2 CJK + 3 ASCII = 2 + 0 = 2
-        assert cm._count_tokens(text) == 2  # int(2 + 3/4) = int(2.75) = 2
+    def test_count_tokens_mixed_positive(self, cm):
+        """中英文混合 token 数 > 0"""
+        text = "你好abc"
+        assert cm._count_tokens(text) > 0
+
+    def test_count_tokens_uses_tiktoken_when_available(self, cm):
+        """Task 11: tiktoken 可用时使用精确计数"""
+        fake_encoder = MagicMock()
+        fake_encoder.encode = MagicMock(return_value=[1, 2, 3, 4, 5])
+        with patch("app.rag.context_manager._get_tiktoken_encoder", return_value=fake_encoder):
+            count = cm._count_tokens("hello world")
+        assert count == 5
+        fake_encoder.encode.assert_called_once_with("hello world")
+
+    def test_count_tokens_fallback_when_tiktoken_unavailable(self, cm):
+        """Task 11: tiktoken 不可用时 fallback 到启发式估算"""
+        with patch("app.rag.context_manager._get_tiktoken_encoder", return_value=None):
+            # 8 个 ASCII 字符 → 8/4 = 2 token (fallback 估算)
+            assert cm._count_tokens("abcdefgh") == 2
+            # 4 个中文字符 → 4 token (fallback 估算)
+            assert cm._count_tokens("你好世界") == 4
+
+    def test_count_tokens_fallback_on_encode_error(self, cm):
+        """Task 11: tiktoken encode 异常时 fallback 到估算"""
+        fake_encoder = MagicMock()
+        fake_encoder.encode = MagicMock(side_effect=RuntimeError("encode failed"))
+        with patch("app.rag.context_manager._get_tiktoken_encoder", return_value=fake_encoder):
+            # fallback: 8 ASCII / 4 = 2
+            assert cm._count_tokens("abcdefgh") == 2
+
+    def test_token_count_deviation_less_than_5_percent(self, cm):
+        """Task 11 SubTask 11.5: tiktoken 精确计数验证
+
+        验证 tiktoken 对已知文本的计数符合预期（偏差 <5%）。
+        "hello" 在 cl100k_base 中应为 1 token。
+        """
+        encoder = _get_real_tiktoken()
+        if encoder is None:
+            pytest.skip("tiktoken not available")
+
+        # tiktoken 是 ground truth，验证 _count_tokens 使用 tiktoken 时结果一致
+        test_cases = [
+            "hello",  # 常见英文单词 → 1 token
+            "你好世界",  # 4 个中文字符
+            "RAG is retrieval-augmented generation.",  # 典型英文技术文本
+        ]
+        for text in test_cases:
+            expected = len(encoder.encode(text))
+            actual = cm._count_tokens(text)
+            # tiktoken 路径结果应与直接调用 tiktoken 一致（偏差 0%）
+            assert actual == expected, (
+                f"Token count mismatch for '{text[:30]}...': "
+                f"tiktoken={expected}, _count_tokens={actual}"
+            )
+
+    def test_fallback_heuristic_reasonable_for_cjk(self, cm):
+        """Task 11: fallback 启发式对纯 CJK 文本偏差在合理范围（<30%）"""
+        encoder = _get_real_tiktoken()
+        if encoder is None:
+            pytest.skip("tiktoken not available")
+        text = "知识库问答系统检索增强生成技术"
+        tiktoken_count = len(encoder.encode(text))
+        with patch("app.rag.context_manager._get_tiktoken_encoder", return_value=None):
+            fallback_count = cm._count_tokens(text)
+        # CJK 1:1 估算对纯中文文本较准（偏差 <30%）
+        if tiktoken_count > 0:
+            deviation = abs(tiktoken_count - fallback_count) / tiktoken_count
+            assert deviation < 0.30, (
+                f"CJK fallback deviation {deviation:.2%} exceeds 30% "
+                f"(tiktoken={tiktoken_count}, fallback={fallback_count})"
+            )
+
+
+def _get_real_tiktoken():
+    """获取真实 tiktoken encoder，不可用时返回 None"""
+    try:
+        import tiktoken
+        return tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        return None
 
 
 class TestTruncateToBudget:
-    def test_all_chunks_fit_within_budget(self, cm):
+    def test_all_chunks_fit_within_budget(self, cm_no_tiktoken):
         chunks = [
             {"content": "short"},
             {"content": "another"},
         ]
-        result = cm._truncate_to_budget(chunks, budget=100)
+        result = cm_no_tiktoken._truncate_to_budget(chunks, budget=100)
         assert len(result) == 2
 
-    def test_truncate_when_exceeds_budget(self, cm):
+    def test_truncate_when_exceeds_budget(self, cm_no_tiktoken):
         """超出预算时截断最后一个 chunk"""
         chunks = [
             {"content": "a" * 40},  # 10 token
             {"content": "b" * 40},  # 10 token
             {"content": "c" * 40},  # 10 token - 超出 budget=20
         ]
-        result = cm._truncate_to_budget(chunks, budget=20)
+        result = cm_no_tiktoken._truncate_to_budget(chunks, budget=20)
         # 前两个共 20 token，第三个会超 → 截断（remaining=0 不保留）
         assert len(result) == 2
 
-    def test_truncate_keeps_partial_last_chunk_when_remaining_above_50(self, cm):
+    def test_truncate_keeps_partial_last_chunk_when_remaining_above_50(self, cm_no_tiktoken):
         """remaining > 50 时保留截断的 chunk"""
         chunks = [
             {"content": "a" * 40},   # 10 token
             {"content": "b" * 240},  # 60 token - 超 budget=50
         ]
-        result = cm._truncate_to_budget(chunks, budget=50)
+        result = cm_no_tiktoken._truncate_to_budget(chunks, budget=50)
         # 第一个 10 token，剩 40 token 给第二个
         # remaining = 40 < 50 → 不保留第二个
         assert len(result) == 1
 
-    def test_truncate_keeps_partial_when_remaining_above_threshold(self, cm):
+    def test_truncate_keeps_partial_when_remaining_above_threshold(self, cm_no_tiktoken):
         """remaining > 50 时保留截断的 chunk"""
         chunks = [
             {"content": "a" * 40},    # 10 token
             {"content": "b" * 1000},  # 250 token - 超 budget=100
         ]
-        result = cm._truncate_to_budget(chunks, budget=100)
+        result = cm_no_tiktoken._truncate_to_budget(chunks, budget=100)
         # 第一个 10 token，剩 90 token > 50 → 保留截断的 chunk
         assert len(result) == 2
         # 第二个被截断
         assert len(result[1]["content"]) < 1000
 
-    def test_truncate_empty_chunks(self, cm):
-        result = cm._truncate_to_budget([], budget=100)
+    def test_truncate_empty_chunks(self, cm_no_tiktoken):
+        result = cm_no_tiktoken._truncate_to_budget([], budget=100)
         assert result == []
 
-    def test_truncate_chunk_without_content(self, cm):
+    def test_truncate_chunk_without_content(self, cm_no_tiktoken):
         """chunk 无 content → token=0，不会超预算"""
         chunks = [{"content": ""}, {"no_content": True}]
-        result = cm._truncate_to_budget(chunks, budget=100)
+        result = cm_no_tiktoken._truncate_to_budget(chunks, budget=100)
         assert len(result) == 2
 
 
 class TestTruncateHistoryToBudget:
-    def test_keep_recent_messages_first(self, cm):
+    def test_keep_recent_messages_first(self, cm_no_tiktoken):
         """从最近开始保留"""
         history = [
             {"role": "user", "content": "old"},
@@ -93,18 +178,18 @@ class TestTruncateHistoryToBudget:
             {"role": "assistant", "content": "recent reply"},
         ]
         # budget=5 → 只能保留最近 1-2 条
-        result = cm._truncate_history_to_budget(history, budget=5)
+        result = cm_no_tiktoken._truncate_history_to_budget(history, budget=5)
         # 倒序遍历，recent reply (2 token) + recent (2 token) = 4 ≤ 5
         assert len(result) == 2
         assert result[-1]["content"] == "recent reply"
 
-    def test_history_within_budget_returns_all(self, cm):
+    def test_history_within_budget_returns_all(self, cm_no_tiktoken):
         history = [{"role": "user", "content": "hi"}]
-        result = cm._truncate_history_to_budget(history, budget=100)
+        result = cm_no_tiktoken._truncate_history_to_budget(history, budget=100)
         assert len(result) == 1
 
-    def test_empty_history(self, cm):
-        assert cm._truncate_history_to_budget([], budget=100) == []
+    def test_empty_history(self, cm_no_tiktoken):
+        assert cm_no_tiktoken._truncate_history_to_budget([], budget=100) == []
 
 
 class TestBuildMessages:
@@ -166,6 +251,15 @@ class TestNeedsSummary:
         """keep_recent=4 → 边界是 8"""
         assert cm.needs_summary([{"content": "x"}] * 8) is False
         assert cm.needs_summary([{"content": "x"}] * 9) is True
+
+    def test_needs_summary_threshold_matches_chat_history_keep_recent(self):
+        """Task 12: needs_summary 阈值与 settings.CHAT_HISTORY_KEEP_RECENT 一致"""
+        from app.config import settings
+        from app.rag.context_manager import context_manager
+        # context_manager 单例使用 settings.CHAT_HISTORY_KEEP_RECENT
+        threshold = settings.CHAT_HISTORY_KEEP_RECENT * 2
+        assert context_manager.needs_summary([{"content": "x"}] * threshold) is False
+        assert context_manager.needs_summary([{"content": "x"}] * (threshold + 1)) is True
 
 
 class TestSplitHistory:

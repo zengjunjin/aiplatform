@@ -1,0 +1,7 @@
+{
+  "chat_response_time_ms": 5000,
+  "document_upload_time_ms": 10000,
+  "embedding_generation_time_ms": 2000,
+  "bm25_search_time_ms": 1000,
+  "kb_list_time_ms": 500
+}

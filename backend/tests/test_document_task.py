@@ -158,8 +158,16 @@ class TestParseDocumentTask:
         task_obj = document_task.parse_document_task
         task_obj.push_request(retries=0)
 
+        # Mock session for optimistic lock UPDATE...RETURNING
+        mock_doc = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_doc
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
+
         try:
-            with patch.object(document_task, "_update_progress") as mock_progress, \
+            with patch.object(document_task, "get_sync_session", return_value=mock_session), \
+                 patch.object(document_task, "_update_progress") as mock_progress, \
                  patch.object(document_task, "_parse_and_chunk", return_value=chunks) as mock_parse, \
                  patch.object(document_task, "_embed_and_store") as mock_embed:
                 result = task_obj.run(10)
@@ -178,9 +186,16 @@ class TestParseDocumentTask:
         """异常 → 调用 self.retry"""
         task_obj = document_task.parse_document_task
         task_obj.push_request(retries=0)
+        # Mock session for optimistic lock UPDATE...RETURNING
+        mock_doc = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_doc
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
         # mock retry 方法
         with patch.object(task_obj, "retry", side_effect=Exception("retry scheduled")) as mock_retry:
-            with patch.object(document_task, "_update_progress"), \
+            with patch.object(document_task, "get_sync_session", return_value=mock_session), \
+                 patch.object(document_task, "_update_progress"), \
                  patch.object(document_task, "_parse_and_chunk", side_effect=Exception("parse failed")):
                 with pytest.raises(Exception, match="retry scheduled"):
                     task_obj.run(10)
@@ -192,16 +207,141 @@ class TestParseDocumentTask:
         task_obj = document_task.parse_document_task
         # max_retries 默认是 3，push_request retries=3 时 >= max_retries
         task_obj.push_request(retries=3)
+        # Mock session for optimistic lock UPDATE...RETURNING
+        mock_doc = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_doc
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
         try:
             with patch.object(task_obj, "retry", side_effect=Exception("retry")) as mock_retry:
-                with patch.object(document_task, "_update_progress") as mock_progress, \
+                with patch.object(document_task, "get_sync_session", return_value=mock_session), \
+                     patch.object(document_task, "_update_progress") as mock_progress, \
                      patch.object(document_task, "_parse_and_chunk", side_effect=Exception("parse failed")):
                     with pytest.raises(Exception):
                         task_obj.run(10)
                 # 应有 failed 状态的 progress 更新
                 failed_calls = [c for c in mock_progress.call_args_list if c.args[1] == "failed"]
                 assert len(failed_calls) == 1
-                assert "parse failed" in str(failed_calls[0].kwargs.get("error", ""))
+                assert "文档解析失败" in str(failed_calls[0].kwargs.get("error", ""))
                 mock_retry.assert_called_once()
         finally:
             task_obj.pop_request()
+
+    # === Task 34: 幂等性检查测试 ===
+
+    def test_parse_document_task_skips_done(self):
+        """doc.status == 'done' → 直接返回，不执行解析"""
+        task_obj = document_task.parse_document_task
+        task_obj.push_request(retries=0)
+        try:
+            with patch.object(document_task, "_get_document_status", return_value="done") as mock_status, \
+                 patch.object(document_task, "_update_progress") as mock_progress, \
+                 patch.object(document_task, "_parse_and_chunk") as mock_parse, \
+                 patch.object(document_task, "_embed_and_store") as mock_embed:
+                result = task_obj.run(10)
+            # 直接返回 None（隐式），不进入主流程
+            assert result is None
+            mock_status.assert_called_once_with(10)
+            mock_progress.assert_not_called()
+            mock_parse.assert_not_called()
+            mock_embed.assert_not_called()
+        finally:
+            task_obj.pop_request()
+
+    def test_parse_document_task_skips_parsing(self):
+        """doc.status == 'parsing' → 跳过（其他 worker 正在处理）"""
+        task_obj = document_task.parse_document_task
+        task_obj.push_request(retries=0)
+        try:
+            with patch.object(document_task, "_get_document_status", return_value="parsing"), \
+                 patch.object(document_task, "_update_progress") as mock_progress, \
+                 patch.object(document_task, "_parse_and_chunk") as mock_parse, \
+                 patch.object(document_task, "_embed_and_store") as mock_embed:
+                result = task_obj.run(10)
+            assert result is None
+            mock_progress.assert_not_called()
+            mock_parse.assert_not_called()
+            mock_embed.assert_not_called()
+        finally:
+            task_obj.pop_request()
+
+    def test_parse_document_task_skips_missing_doc(self):
+        """doc 不存在 → 跳过（_get_document_status 返回 None）"""
+        task_obj = document_task.parse_document_task
+        task_obj.push_request(retries=0)
+        try:
+            with patch.object(document_task, "_get_document_status", return_value=None), \
+                 patch.object(document_task, "_update_progress") as mock_progress, \
+                 patch.object(document_task, "_parse_and_chunk") as mock_parse:
+                result = task_obj.run(999)
+            assert result is None
+            mock_progress.assert_not_called()
+            mock_parse.assert_not_called()
+        finally:
+            task_obj.pop_request()
+
+    def test_parse_document_task_proceeds_for_failed(self):
+        """doc.status == 'failed' → 允许重试，进入主流程"""
+        chunks = [{"chunk_id": 1, "doc_id": 10, "kb_id": 1, "content": "x"}]
+        task_obj = document_task.parse_document_task
+        task_obj.push_request(retries=0)
+        # Mock session for optimistic lock UPDATE...RETURNING
+        mock_doc = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_doc
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
+        try:
+            with patch.object(document_task, "get_sync_session", return_value=mock_session), \
+                 patch.object(document_task, "_update_progress"), \
+                 patch.object(document_task, "_parse_and_chunk", return_value=chunks) as mock_parse, \
+                 patch.object(document_task, "_embed_and_store") as mock_embed:
+                result = task_obj.run(10)
+            assert result["status"] == "done"
+            mock_parse.assert_called_once_with(10)
+            mock_embed.assert_called_once_with(10, chunks)
+        finally:
+            task_obj.pop_request()
+
+    def test_parse_document_task_proceeds_for_pending(self):
+        """doc.status == 'pending' → 正常入口，进入主流程"""
+        chunks = [{"chunk_id": 1, "doc_id": 10, "kb_id": 1, "content": "x"}]
+        task_obj = document_task.parse_document_task
+        task_obj.push_request(retries=0)
+        # Mock session for optimistic lock UPDATE...RETURNING
+        mock_doc = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_doc
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
+        try:
+            with patch.object(document_task, "get_sync_session", return_value=mock_session), \
+                 patch.object(document_task, "_update_progress"), \
+                 patch.object(document_task, "_parse_and_chunk", return_value=chunks) as mock_parse, \
+                 patch.object(document_task, "_embed_and_store"):
+                result = task_obj.run(10)
+            assert result["status"] == "done"
+            mock_parse.assert_called_once_with(10)
+        finally:
+            task_obj.pop_request()
+
+    def test_get_document_status_returns_none_for_missing(self):
+        """_get_document_status: doc 不存在 → None"""
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("app.tasks.document_task.get_sync_session", return_value=session):
+            result = document_task._get_document_status(999)
+        assert result is None
+        session.close.assert_called_once()
+
+    def test_get_document_status_returns_status(self):
+        """_get_document_status: doc 存在 → 返回 status"""
+        doc = MagicMock()
+        doc.status = "parsing"
+        session = MagicMock()
+        session.get.return_value = doc
+        with patch("app.tasks.document_task.get_sync_session", return_value=session):
+            result = document_task._get_document_status(1)
+        assert result == "parsing"
+        session.close.assert_called_once()
