@@ -1,7 +1,7 @@
 """add_kb_collaborators
 
 Revision ID: 004_kb_collaborators
-Revises: placeholder_003
+Revises: 003_feedback
 Create Date: 2026-07-11 00:00:00.000000
 
 """

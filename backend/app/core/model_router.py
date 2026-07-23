@@ -1,10 +1,13 @@
 """模型路由器 - 根据策略选择 Provider 并处理 Fallback"""
 
-from typing import AsyncIterator
+import asyncio
+from collections.abc import AsyncIterator
+
 from loguru import logger
+
+from app.config import settings
 from app.models.base import BaseLLMProvider
 from app.models.factory import ModelRegistry
-from app.config import settings
 
 
 class ModelRouter:
@@ -18,9 +21,18 @@ class ModelRouter:
     _round_robin_index: int = 0
     # 类级共享状态: provider_name -> 当前请求数（least_busy 策略）
     _request_counts: dict[str, int] = {}
+    # Task 7: asyncio.Lock 保护类级共享状态（_round_robin_index / _request_counts）
+    # Task 23: 改为懒加载，避免在事件循环外创建 Lock 导致绑定到错误的 loop
+    _lock: asyncio.Lock | None = None
 
     def __init__(self, strategy: str | None = None):
         self.strategy = strategy or settings.LLM_ROUTING_STRATEGY
+
+    def _get_lock(self) -> asyncio.Lock:
+        """懒加载获取 asyncio.Lock，确保在正确的事件循环中创建。"""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def select(self, preferred_model: str | None = None) -> BaseLLMProvider:
         """选择最佳可用 Provider
@@ -46,14 +58,16 @@ class ModelRouter:
         if not available:
             raise ValueError("No healthy LLM providers available")
 
-        # 根据策略选择
-        if self.strategy == "least_busy":
-            return self._select_least_busy(available)
-        elif self.strategy == "cost_optimized":
-            return self._select_cost_optimized(available)
-        else:
-            # round_robin (默认)
-            return self._select_round_robin(available)
+        # 根据策略选择（Task 7: 加锁保护类级共享状态）
+        # Task 23: 使用懒加载的 _get_lock() 避免事件循环绑定问题
+        async with self._get_lock():
+            if self.strategy == "least_busy":
+                return self._select_least_busy(available)
+            elif self.strategy == "cost_optimized":
+                return self._select_cost_optimized(available)
+            else:
+                # round_robin (默认)
+                return self._select_round_robin(available)
 
     def _select_round_robin(self, available: list[BaseLLMProvider]) -> BaseLLMProvider:
         """轮询策略"""
@@ -63,10 +77,22 @@ class ModelRouter:
         self._round_robin_index += 1
         return available[idx]
 
+    def _cleanup_stale_counts(self) -> None:
+        """清理计数为 0 的 provider 条目，防止 dict 无限增长。
+
+        Provider 下线/移除后，其计数条目会残留。此方法移除所有计数 <= 0 的条目。
+        _select_least_busy 会在下次选中时重新初始化为 0，故移除安全。
+        """
+        stale = [k for k, v in self._request_counts.items() if v <= 0]
+        for k in stale:
+            self._request_counts.pop(k, None)
+
     def _select_least_busy(self, available: list[BaseLLMProvider]) -> BaseLLMProvider:
         """选择当前请求数最少的 Provider"""
         if not available:
             raise ValueError("No providers available")
+        # 清理计数为 0 的残留条目，防止 Provider 下线/移除后 dict 无限增长
+        self._cleanup_stale_counts()
         # 初始化未在计数器中的 provider
         for p in available:
             if p.provider_name not in self._request_counts:
@@ -81,12 +107,15 @@ class ModelRouter:
 
     def release(self, provider_name: str) -> None:
         """请求完成后递减计数器(用于 least_busy 策略)。
-        
+
         调用方在 LLM 请求完成后必须调用此方法释放计数，
         否则 least_busy 策略将失效。
         """
         if provider_name in self._request_counts and self._request_counts[provider_name] > 0:
             self._request_counts[provider_name] -= 1
+            # 计数归零时清理残留条目，防止 Provider 下线/移除后 dict 无限增长
+            if self._request_counts[provider_name] <= 0:
+                self._cleanup_stale_counts()
 
     def _select_cost_optimized(self, available: list[BaseLLMProvider]) -> BaseLLMProvider:
         """优先选择免费 Provider"""
@@ -108,11 +137,13 @@ class ModelRouter:
     ) -> AsyncIterator[str] | str:
         """带 Fallback 的聊天请求
 
+        注意：此方法被 tests/test_model_router.py 用于验证 fallback 策略，
+        当前生产入口未直接调用，但保留以维持测试覆盖率，勿删除。
+
         Args:
             messages: 消息列表
             stream: 是否流式返回
-            preferred_model: 首选模型名称
-            **kwargs: 传递给 Provider.chat() 的额外参数
+            preferred_model: 用户指定的模型名称（Provider name），为 None 时按策略自动选择
 
         Returns:
             流式返回 AsyncIterator[str]，非流式返回 str

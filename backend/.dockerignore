@@ -1,0 +1,21 @@
+tests/
+storage/
+.git/
+.gitignore
+.env
+.env.example
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.md
+# Task 85: 排除安全扫描与覆盖率报告
+.bandit
+coverage-report.txt
+# Task 85: 排除阶段 0 验收测试脚本（仅本地 CI 用）
+test_phase0_acceptance.py
+# Task 85: 排除开发/测试辅助脚本（容器运行时不需要）
+scripts/
+# 注：init_db.py 用于初始化管理员账户，可能需要在容器中运行，不加入 .dockerignore

@@ -1,20 +1,26 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class KBCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=1000)
+    description: str | None = Field(None, max_length=1000)
 
 
 class KBUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=1000)
+    model_config = ConfigDict(extra='forbid')
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=1000)
 
 
 class CollaboratorAdd(BaseModel):
-    user_id: int
+    model_config = ConfigDict(extra='forbid')
+
+    user_id: int = Field(..., ge=1)
     permission: str = Field("read", pattern="^(read|write|admin)$")
 
 
@@ -27,11 +33,11 @@ class CollaboratorOut(BaseModel):
 class KBOut(BaseModel):
     id: int
     name: str
-    description: Optional[str]
+    description: str | None
     owner_id: int
     doc_count: int
     chunk_count: int
-    collaborators: Optional[List[dict]] = None
+    collaborators: list[dict] | None = None
     created_at: datetime
     updated_at: datetime
 

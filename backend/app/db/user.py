@@ -1,5 +1,5 @@
-﻿from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, func
+﻿from sqlalchemy import BigInteger, Boolean, Column, DateTime, String, func
+
 from app.db.base import Base
 
 

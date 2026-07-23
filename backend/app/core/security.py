@@ -1,7 +1,9 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jose import jwt, JWTError
+from datetime import UTC, datetime, timedelta
+
 import bcrypt
+from jwt import decode, encode
+from jwt.exceptions import PyJWTError
+
 from app.config import settings
 
 
@@ -20,21 +22,41 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": subject, "exp": expire, "type": "access"}
+    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": subject,
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "type": "access",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+    }
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def create_refresh_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": subject, "exp": expire, "type": "refresh"}
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    payload = {
+        "sub": subject,
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "type": "refresh",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+    }
+    return encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_token(token: str) -> Optional[dict]:
+def decode_token(token: str) -> dict | None:
     try:
-        return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-    except JWTError:
+        return decode(
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+            issuer=settings.JWT_ISSUER,
+            audience=settings.JWT_AUDIENCE,
+        )
+    except PyJWTError:
         return None

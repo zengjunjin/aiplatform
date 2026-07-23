@@ -1,18 +1,22 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
+
 from app.api.deps import get_admin_user, get_current_user
-from app.services import user_service
-from app.schemas.user import UserListResponse, UpdateRoleRequest, UpdateStatusRequest
-from app.schemas.common import ok, paginated_ok
+from app.core.middleware import limiter
+from app.database import get_db
 from app.db.user import User
+from app.schemas.common import ok, paginated_ok
+from app.schemas.user import UpdateRoleRequest, UpdateStatusRequest, UserListResponse
+from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/search")
+@limiter.limit("60/minute")
 async def search_users(
-    q: str = Query(..., min_length=1, description="用户名搜索关键词"),
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=100, description="用户名搜索关键词"),
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -23,9 +27,11 @@ async def search_users(
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def list_users(
-    page: int = 1,
-    page_size: int = 20,
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_admin_user),
 ):
@@ -35,9 +41,11 @@ async def list_users(
 
 
 @router.put("/{user_id}/role")
+@limiter.limit("60/minute")
 async def update_role(
     user_id: int,
     req: UpdateRoleRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_admin_user),
 ):
@@ -46,9 +54,11 @@ async def update_role(
 
 
 @router.put("/{user_id}/status")
+@limiter.limit("60/minute")
 async def update_status(
     user_id: int,
     req: UpdateStatusRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_admin_user),
 ):

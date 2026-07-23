@@ -1,9 +1,11 @@
 """Provider 健康检查器 - 定时检查所有注册 Provider 的健康状态"""
 
 import asyncio
+
 from loguru import logger
-from app.models.factory import ModelRegistry
+
 from app.config import settings
+from app.models.factory import ModelRegistry
 
 
 class ModelHealthChecker:
@@ -12,9 +14,13 @@ class ModelHealthChecker:
     定时对所有注册的 Provider 执行健康检查：
     - 连续失败 3 次标记为 unhealthy
     - 恢复后自动标记为 healthy
+    - 所有 Provider 并行检查，单个失败/超时不影响其他
     """
 
-    MAX_FAILURES = 3
+    # Task 40: 上限/超时迁移到 config.py，原位置引用 settings
+    MAX_FAILURES = settings.LLM_HEALTH_CHECK_MAX_FAILURES
+    # 单个 Provider 健康检查超时（秒），避免慢 provider 拖垮整体检查
+    CHECK_TIMEOUT = settings.LLM_HEALTH_CHECK_TIMEOUT
 
     def __init__(self, check_interval: int | None = None):
         self.check_interval = check_interval or settings.LLM_HEALTH_CHECK_INTERVAL
@@ -52,36 +58,64 @@ class ModelHealthChecker:
             await asyncio.sleep(self.check_interval)
 
     async def _check_all(self):
-        """检查所有注册的 Provider"""
+        """检查所有注册的 Provider（并行）
+
+        使用 asyncio.gather 并行执行所有 Provider 的健康检查：
+        - 单个 Provider 检查失败/超时不影响其他 Provider
+        - 每个 Provider 检查受 CHECK_TIMEOUT 超时约束
+        """
         provider_names = ModelRegistry.list_all()
         if not provider_names:
             return
 
-        for name in provider_names:
+        async def _check_one(name: str) -> tuple[str, bool, str | None]:
+            """检查单个 Provider，返回 (name, healthy, error_msg)"""
             try:
                 provider = ModelRegistry.get(name)
-                healthy = await provider.health_check()
-
-                if healthy:
-                    # 恢复健康：重置失败计数
-                    if self._failure_counts.get(name, 0) >= self.MAX_FAILURES:
-                        logger.info(f"Provider '{name}' recovered, marking as healthy")
-                    self._failure_counts[name] = 0
-                else:
-                    # 记录失败
-                    self._failure_counts[name] = self._failure_counts.get(name, 0) + 1
-                    failures = self._failure_counts[name]
-                    logger.warning(
-                        f"Provider '{name}' health check failed "
-                        f"({failures}/{self.MAX_FAILURES})"
-                    )
-                    if failures >= self.MAX_FAILURES:
-                        logger.error(
-                            f"Provider '{name}' marked as unhealthy after "
-                            f"{failures} consecutive failures"
-                        )
+                healthy = await asyncio.wait_for(
+                    provider.health_check(), timeout=self.CHECK_TIMEOUT
+                )
+                return name, bool(healthy), None
+            except asyncio.TimeoutError:
+                return name, False, f"timeout after {self.CHECK_TIMEOUT}s"
             except Exception as e:
-                logger.error(f"Error checking health for provider '{name}': {e}")
+                return name, False, str(e)
+
+        # 并行检查所有 Provider，return_exceptions=True 作为兜底
+        results = await asyncio.gather(
+            *[_check_one(name) for name in provider_names],
+            return_exceptions=True,
+        )
+
+        for result in results:
+            # _check_one 内部已捕获异常，这里仅作兜底防护
+            if isinstance(result, Exception):
+                logger.error(f"Unexpected error in health check: {result}")
+                continue
+
+            name, healthy, error = result
+            provider = ModelRegistry.get(name)
+            if healthy:
+                # 恢复健康：重置失败计数 + 标记 provider 为 healthy
+                if self._failure_counts.get(name, 0) >= self.MAX_FAILURES:
+                    logger.info(f"Provider '{name}' recovered, marking as healthy")
+                self._failure_counts[name] = 0
+                provider._healthy = True
+            else:
+                # 记录失败：累加计数，达到 MAX_FAILURES 才标记为 unhealthy
+                self._failure_counts[name] = self._failure_counts.get(name, 0) + 1
+                failures = self._failure_counts[name]
+                logger.warning(
+                    f"Provider '{name}' health check failed "
+                    f"({failures}/{self.MAX_FAILURES})"
+                    + (f": {error}" if error else "")
+                )
+                if failures >= self.MAX_FAILURES:
+                    provider._healthy = False
+                    logger.error(
+                        f"Provider '{name}' marked as unhealthy after "
+                        f"{failures} consecutive failures"
+                    )
 
     def is_healthy(self, provider_name: str) -> bool:
         """检查指定 Provider 是否健康

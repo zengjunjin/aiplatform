@@ -1,15 +1,17 @@
 import json
 import os
 import re
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+
 import httpx
+from loguru import logger
 from tenacity import (
     retry,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception,
 )
-from loguru import logger
+
 from app.models.base import BaseLLMProvider
 
 
@@ -53,6 +55,15 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         self._max_retries = max_retries
         self._timeout = timeout
         self._healthy = True
+        # 长生命周期 httpx client：复用连接池，避免每次请求都重新建立 TCP/TLS
+        self._client = httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+                keepalive_expiry=30,
+            ),
+            timeout=httpx.Timeout(self._timeout, connect=10.0),
+        )
 
     @property
     def provider_name(self) -> str:
@@ -71,6 +82,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
+
+    async def close(self) -> None:
+        """关闭底层 httpx 连接池，应用 shutdown 时调用。"""
+        await self._client.aclose()
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7) -> AsyncIterator[str]:
         '''流式聊天（兼容旧接口）'''
@@ -104,20 +119,17 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             **kwargs,
         }
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            if stream:
-                return self._stream_response(client, url, payload)
-            else:
-                return await self._non_stream_response(client, url, payload)
+        if stream:
+            return self._stream_response(url, payload)
+        return await self._non_stream_response(url, payload)
 
     async def _stream_response(
         self,
-        client: httpx.AsyncClient,
         url: str,
         payload: dict,
     ) -> AsyncIterator[str]:
         '''处理 SSE 流式响应，逐个 yield token'''
-        async with client.stream(
+        async with self._client.stream(
             "POST",
             url,
             json=payload,
@@ -146,12 +158,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
     async def _non_stream_response(
         self,
-        client: httpx.AsyncClient,
         url: str,
         payload: dict,
     ) -> str:
         '''处理非流式响应，返回完整文本'''
-        resp = await client.post(url, json=payload, headers=self._headers())
+        resp = await self._client.post(url, json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
         choices = data.get("choices", [])
@@ -160,29 +171,28 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         return ""
 
     async def health_check(self) -> bool:
-        '''发送最小请求验证 API 可用性'''
+        '''发送最小请求验证 API 可用性。
+
+        仅返回检查结果，不修改 self._healthy（由 ModelHealthChecker 根据连续失败计数统一管理）。
+        '''
         try:
             url = f"{self._api_base}/models"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=self._headers())
-                if resp.status_code == 200:
-                    self._healthy = True
-                    return True
-                # 部分 API 不支持 /models 端点，尝试 /chat/completions
-                url2 = f"{self._api_base}/chat/completions"
-                resp2 = await client.post(
-                    url2,
-                    json={
-                        "model": self._model,
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "max_tokens": 1,
-                        "stream": False,
-                    },
-                    headers=self._headers(),
-                )
-                self._healthy = resp2.status_code < 500
-                return self._healthy
+            resp = await self._client.get(url, headers=self._headers())
+            if resp.status_code == 200:
+                return True
+            # 部分 API 不支持 /models 端点，尝试 /chat/completions
+            url2 = f"{self._api_base}/chat/completions"
+            resp2 = await self._client.post(
+                url2,
+                json={
+                    "model": self._model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                    "stream": False,
+                },
+                headers=self._headers(),
+            )
+            return resp2.status_code < 500
         except Exception as e:
             logger.warning(f"Health check failed for {self._provider_name}: {e}")
-            self._healthy = False
             return False

@@ -1,5 +1,6 @@
-﻿from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 
 class UserOut(BaseModel):
@@ -25,8 +26,12 @@ class UserListResponse(BaseModel):
 
 
 class UpdateRoleRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     role: Literal["user", "admin"]
 
 
 class UpdateStatusRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     is_active: bool

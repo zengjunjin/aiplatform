@@ -1,4 +1,4 @@
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 REQUEST_TOTAL = Counter(
     "rag_http_requests_total",
@@ -82,6 +82,22 @@ RAG_DOCUMENT_COUNT = Gauge(
     "rag_document_count",
     "Number of documents in knowledge base",
     ["kb_id"],
+)
+
+# Task 14: Embedding 缓存命中率监控
+EMBEDDING_CACHE_HITS = Counter(
+    "embedding_cache_hits_total",
+    "Total number of embedding cache hits",
+)
+
+EMBEDDING_CACHE_MISSES = Counter(
+    "embedding_cache_misses_total",
+    "Total number of embedding cache misses",
+)
+
+EMBEDDING_CACHE_ERRORS = Counter(
+    "embedding_cache_errors_total",
+    "Total number of embedding cache errors (Redis connection/decode failures)",
 )
 
 

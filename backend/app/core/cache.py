@@ -1,6 +1,9 @@
 import json
 from typing import Any
+
 from loguru import logger
+
+from app.config import settings
 from app.redis_client import get_redis
 
 
@@ -18,7 +21,7 @@ async def cache_get(key: str) -> Any | None:
         return None
 
 
-async def cache_set(key: str, value: Any, ttl: int = 300) -> bool:
+async def cache_set(key: str, value: Any, ttl: int = settings.CACHE_DEFAULT_TTL) -> bool:
     try:
         redis = get_redis()
         if not redis:

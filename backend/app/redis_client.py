@@ -1,4 +1,5 @@
 import redis.asyncio as redis
+
 from app.config import settings
 
 redis_client: redis.Redis | None = None
@@ -21,7 +22,8 @@ def get_redis() -> redis.Redis:
 # ---------- 摘要缓存 ----------
 
 SUMMARY_KEY_PREFIX = "chat:session"
-SUMMARY_TTL = 3600  # 1 小时
+# Task 40: TTL 迁移到 config.py，原位置引用 settings
+SUMMARY_TTL = settings.CHAT_SUMMARY_TTL  # 1 小时
 
 
 def _summary_key(session_id: int) -> str:

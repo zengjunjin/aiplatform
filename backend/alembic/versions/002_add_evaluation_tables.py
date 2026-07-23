@@ -1,7 +1,7 @@
 """add_evaluation_tables
 
 Revision ID: 002_eval
-Revises: 22fb00c5239c
+Revises: 001_init
 Create Date: 2026-07-11 00:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '002_eval'
-down_revision = 'placeholder_002'
+down_revision = '001_init'
 branch_labels = None
 depends_on = None
 

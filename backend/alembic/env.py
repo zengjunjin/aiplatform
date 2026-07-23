@@ -16,6 +16,7 @@ from app.db.chat_session import ChatSession
 from app.db.chat_message import ChatMessage
 from app.db.evaluation import EvaluationRun, EvaluationResult
 from app.db.feedback import MessageFeedback
+from app.db.prompt_template import PromptTemplate  # Task 10: prompt 模板版本化
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)

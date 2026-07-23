@@ -1,13 +1,27 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from collections import Counter
+from datetime import UTC, datetime, timedelta
+
+from loguru import logger
+from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
-from app.db.feedback import MessageFeedback
+from sqlalchemy.orm import selectinload
+
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.chat_message import ChatMessage
 from app.db.chat_session import ChatSession
-from app.core.exceptions import NotFoundError, ForbiddenError
-from app.schemas.feedback import FeedbackCreate, FeedbackStats, FeedbackDetail
-from loguru import logger
+from app.db.feedback import MessageFeedback
+from app.schemas.feedback import FeedbackCreate, FeedbackDetail, FeedbackStats
+from app.services.audit_service import log_audit
+
+# 与 schemas/feedback.py 中 Literal 定义保持一致的反馈类型集合
+FEEDBACK_TYPES = (
+    "faithfulness_issue",
+    "context_insufficient",
+    "incompleteness",
+    "irrelevance",
+    "verbosity",
+)
 
 
 async def create_feedback(
@@ -17,17 +31,18 @@ async def create_feedback(
     db: AsyncSession,
 ) -> MessageFeedback:
     """创建或更新消息反馈（同一用户对同一消息只能有一条反馈）"""
-    # 验证消息存在
-    result = await db.execute(select(ChatMessage).where(ChatMessage.id == message_id))
+    # 验证消息存在，并通过 selectinload 一次性加载关联 session（合并 message+session 查询，避免 N+1）
+    result = await db.execute(
+        select(ChatMessage)
+        .options(selectinload(ChatMessage.session))
+        .where(ChatMessage.id == message_id)
+    )
     message = result.scalar_one_or_none()
     if not message:
         raise NotFoundError("Message not found")
 
     # 验证 session 存在且属于当前用户
-    session_result = await db.execute(
-        select(ChatSession).where(ChatSession.id == message.session_id)
-    )
-    session = session_result.scalar_one_or_none()
+    session = message.session
     if not session:
         raise NotFoundError("Session not found")
     if session.user_id != user_id:
@@ -43,6 +58,7 @@ async def create_feedback(
         )
     )
     feedback = existing.scalar_one_or_none()
+    is_create = feedback is None  # 标记新增或更新，用于审计日志
 
     if feedback:
         feedback.rating = req.rating
@@ -58,9 +74,47 @@ async def create_feedback(
         )
         db.add(feedback)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # TOCTOU: SELECT 与 COMMIT 之间另一请求插入了同一 (message_id, user_id)，
+        # 触发唯一约束冲突。回滚后重试为更新（select existing → update → commit），
+        # 保持最终业务语义与正常更新路径一致。
+        await db.rollback()
+        existing = await db.execute(
+            select(MessageFeedback).where(
+                and_(
+                    MessageFeedback.message_id == message_id,
+                    MessageFeedback.user_id == user_id,
+                )
+            )
+        )
+        feedback = existing.scalar_one_or_none()
+        if feedback is None:
+            # 极端竞态：冲突行又被并发删除。重新抛出以保持异常流程不变。
+            raise
+        feedback.rating = req.rating
+        feedback.comment = req.comment
+        feedback.feedback_type = req.feedback_type
+        is_create = False  # 重试为更新，审计日志记 update
+        await db.commit()
     await db.refresh(feedback)
     logger.info(f"Feedback created/updated: message_id={message_id} user={user_id} rating={req.rating}")
+
+    # 记录审计日志：区分新增与更新
+    audit_action = "chat.feedback.create" if is_create else "chat.feedback.update"
+    await log_audit(
+        action=audit_action,
+        user_id=user_id,
+        details={
+            "resource_type": "feedback",
+            "resource_id": feedback.id,
+            "message_id": message_id,
+            "rating": req.rating,
+            "feedback_type": req.feedback_type,
+        },
+    )
+
     return feedback
 
 
@@ -68,7 +122,7 @@ async def get_feedback(
     message_id: int,
     user_id: int,
     db: AsyncSession,
-) -> Optional[MessageFeedback]:
+) -> MessageFeedback | None:
     """获取某条消息当前用户的反馈"""
     result = await db.execute(
         select(MessageFeedback).where(
@@ -82,15 +136,26 @@ async def get_feedback(
 
 
 async def get_feedback_stats(
-    kb_id: Optional[int] = None,
-    db: AsyncSession = None,
+    db: AsyncSession,
+    kb_id: int | None = None,
 ) -> FeedbackStats:
     """获取反馈统计（使用 SQL 聚合，避免全表加载到内存）。"""
-    # 总数 + 正/负计数（单次 SQL 聚合）
+    # Task 33: 合并 stats_q 和 type_q 两次串行查询为单 SQL，
+    # 使用 FILTER (WHERE ...) 聚合 positive/negative 及各 feedback_type 计数。
     stats_q = select(
         func.count(MessageFeedback.id).label("total"),
-        func.sum(case((MessageFeedback.rating == 1, 1), else_=0)).label("positive"),
-        func.sum(case((MessageFeedback.rating == -1, 1), else_=0)).label("negative"),
+        func.count(MessageFeedback.id).filter(
+            MessageFeedback.rating == 1
+        ).label("positive"),
+        func.count(MessageFeedback.id).filter(
+            MessageFeedback.rating == -1
+        ).label("negative"),
+        *[
+            func.count(MessageFeedback.id)
+            .filter(MessageFeedback.feedback_type == ft)
+            .label(f"type_{ft}")
+            for ft in FEEDBACK_TYPES
+        ],
     )
     if kb_id is not None:
         stats_q = (
@@ -113,22 +178,12 @@ async def get_feedback_stats(
     positive = stats_row.positive or 0
     negative = stats_row.negative or 0
 
-    # by_type（单次 GROUP BY 聚合）
-    type_q = (
-        select(MessageFeedback.feedback_type, func.count(MessageFeedback.id))
-        .where(MessageFeedback.feedback_type.isnot(None))
-        .group_by(MessageFeedback.feedback_type)
-    )
-    if kb_id is not None:
-        type_q = (
-            type_q
-            .join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
-            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
-            .where(ChatSession.kb_id == kb_id)
-        )
-
-    by_type_rows = (await db.execute(type_q)).all()
-    by_type = {row[0]: row[1] for row in by_type_rows}
+    # 从单 SQL 结果中提取 by_type（跳过计数为 0 的类型，与原 GROUP BY 行为一致）
+    by_type = {
+        ft: count
+        for ft in FEEDBACK_TYPES
+        if (count := getattr(stats_row, f"type_{ft}") or 0)
+    }
 
     return FeedbackStats(
         total_feedback=total,
@@ -138,55 +193,17 @@ async def get_feedback_stats(
     )
 
 
-async def get_low_rated_feedbacks(
-    kb_id: Optional[int] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    feedback_type: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 20,
-    db: AsyncSession = None,
-) -> tuple[list[FeedbackDetail], int]:
-    """获取低分反馈列表（用于分析）"""
-    # 查询负反馈
-    query = (
-        select(MessageFeedback)
-        .where(MessageFeedback.rating == -1)
-    )
+async def _batch_load_message_contexts(
+    message_ids: list[int], db: AsyncSession
+) -> tuple[dict[int, ChatMessage], dict[int, ChatSession], dict[int, list[ChatMessage]]]:
+    """批量加载消息上下文（messages, sessions, 每会话用户消息列表），避免 N+1 查询。
 
-    if start_date:
-        query = query.where(MessageFeedback.created_at >= start_date)
-    if end_date:
-        query = query.where(MessageFeedback.created_at <= end_date)
-    if feedback_type:
-        query = query.where(MessageFeedback.feedback_type == feedback_type)
+    返回 (messages_map, sessions_map, user_msgs_by_session)。
+    """
+    if not message_ids:
+        return {}, {}, {}
 
-    # 按知识库过滤
-    if kb_id is not None:
-        query = (
-            query
-            .join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
-            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
-            .where(ChatSession.kb_id == kb_id)
-        )
-
-    query = query.order_by(MessageFeedback.created_at.desc())
-
-    # 计数
-    count_query = select(func.count()).select_from(query.subquery())
-    count_result = await db.execute(count_query)
-    total = count_result.scalar_one()
-
-    # 分页
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    feedbacks = result.scalars().all()
-
-    if not feedbacks:
-        return [], total
-
-    # Batch fetch messages for all feedbacks (avoid N+1)
-    message_ids = [fb.message_id for fb in feedbacks]
+    # Batch fetch messages
     msg_result = await db.execute(
         select(ChatMessage).where(ChatMessage.id.in_(message_ids))
     )
@@ -217,48 +234,108 @@ async def get_low_rated_feedbacks(
     for um in all_user_msgs:
         user_msgs_by_session.setdefault(um.session_id, []).append(um)
 
-    # 构建详情
-    details = []
-    for fb in feedbacks:
-        msg = messages_map.get(fb.message_id)
-        if not msg:
-            continue
+    return messages_map, sessions_map, user_msgs_by_session
 
-        session = sessions_map.get(msg.session_id)
 
-        # Find the latest user message before this assistant message
-        question_content = ""
-        session_user_msgs = user_msgs_by_session.get(msg.session_id, [])
-        for um in session_user_msgs:  # already sorted desc by id
-            if um.id < msg.id:
-                question_content = um.content
-                break
+def _build_feedback_detail(
+    fb: MessageFeedback,
+    msg: ChatMessage,
+    session: ChatSession | None,
+    user_msgs: list[ChatMessage],
+) -> FeedbackDetail:
+    """构建单条反馈详情。"""
+    # Find the latest user message before this assistant message
+    question_content = ""
+    for um in user_msgs:  # already sorted desc by id
+        if um.id < msg.id:
+            question_content = um.content
+            break
 
-        details.append(FeedbackDetail(
-            id=fb.id,
-            message_id=fb.message_id,
-            rating=fb.rating,
-            comment=fb.comment,
-            feedback_type=fb.feedback_type,
-            created_at=fb.created_at,
-            question=question_content,
-            answer=msg.content,
-            session_id=msg.session_id,
-            kb_id=session.kb_id if session else None,
-        ))
+    return FeedbackDetail(
+        id=fb.id,
+        message_id=fb.message_id,
+        rating=fb.rating,
+        comment=fb.comment,
+        feedback_type=fb.feedback_type,
+        created_at=fb.created_at,
+        question=question_content,
+        answer=msg.content,
+        session_id=msg.session_id,
+        kb_id=session.kb_id if session else None,
+    )
+
+
+async def get_low_rated_feedbacks(
+    db: AsyncSession,
+    kb_id: int | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+    feedback_type: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[FeedbackDetail], int]:
+    """获取低分反馈列表（用于分析）"""
+    # 查询负反馈
+    query = (
+        select(MessageFeedback)
+        .where(MessageFeedback.rating == -1)
+    )
+
+    if start_date:
+        query = query.where(MessageFeedback.created_at >= start_date)
+    if end_date:
+        query = query.where(MessageFeedback.created_at <= end_date)
+    if feedback_type:
+        query = query.where(MessageFeedback.feedback_type == feedback_type)
+
+    # 按知识库过滤
+    if kb_id is not None:
+        query = (
+            query
+            .join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
+            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+            .where(ChatSession.kb_id == kb_id)
+        )
+
+    query = query.order_by(MessageFeedback.created_at.desc())
+
+    # 计数
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar_one()
+
+    # 分页
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    feedbacks = (await db.execute(query)).scalars().all()
+
+    if not feedbacks:
+        return [], total
+
+    # Batch load contexts + build details
+    message_ids = [fb.message_id for fb in feedbacks]
+    messages_map, sessions_map, user_msgs_by_session = await _batch_load_message_contexts(message_ids, db)
+
+    details = [
+        _build_feedback_detail(
+            fb, messages_map[fb.message_id],
+            sessions_map.get(messages_map[fb.message_id].session_id),
+            user_msgs_by_session.get(messages_map[fb.message_id].session_id, []),
+        )
+        for fb in feedbacks
+        if fb.message_id in messages_map
+    ]
 
     return details, total
 
 
 async def analyze_feedback(
-    kb_id: Optional[int] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    db: AsyncSession = None,
+    db: AsyncSession,
+    kb_id: int | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
 ) -> dict:
     """分析反馈数据，识别失败模式"""
     if end_date is None:
-        end_date = datetime.now(timezone.utc)
+        end_date = datetime.now(UTC)
     if start_date is None:
         start_date = end_date - timedelta(days=7)
 
@@ -282,18 +359,11 @@ async def analyze_feedback(
         "verbosity": 0,             # 冗长/简短
     }
 
-    for fb in low_rated:
-        ft = fb.feedback_type
-        if ft == "hallucination":
-            patterns["faithfulness_issue"] += 1
-        elif ft == "incomplete":
-            patterns["incompleteness"] += 1
-        elif ft == "not_accurate":
-            patterns["context_insufficient"] += 1
-        elif ft == "irrelevant":
-            patterns["irrelevance"] += 1
-        elif ft in ("too_verbose", "too_brief"):
-            patterns["verbosity"] += 1
+    # Task 37: 用 Counter 替代 if/elif 计数，更简洁且与 FEEDBACK_TYPES 保持一致。
+    # retrieval_bias 无对应 feedback_type，保持初始值 0。
+    type_counts = Counter(fb.feedback_type for fb in low_rated)
+    for ft in FEEDBACK_TYPES:
+        patterns[ft] = type_counts.get(ft, 0)
 
     # 生成优化建议
     suggestions = []

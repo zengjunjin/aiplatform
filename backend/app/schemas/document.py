@@ -1,6 +1,6 @@
-﻿from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 
 class DocumentOut(BaseModel):
@@ -13,7 +13,7 @@ class DocumentOut(BaseModel):
     file_hash: str
     status: str
     chunk_count: int
-    error_message: Optional[str]
+    error_message: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -22,11 +22,13 @@ class DocumentOut(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
-    title: Optional[str] = None
+    model_config = ConfigDict(extra='forbid')
+
+    title: str | None = None
 
 
 class DocumentProgress(BaseModel):
     status: str
     progress: int
     chunk_count: int
-    error_message: Optional[str]
+    error_message: str | None

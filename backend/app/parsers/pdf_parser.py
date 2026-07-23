@@ -1,4 +1,3 @@
-from typing import Optional
 from app.parsers.base import BaseParser
 
 

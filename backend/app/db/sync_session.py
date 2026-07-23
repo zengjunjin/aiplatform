@@ -10,15 +10,18 @@ This module provides a synchronous SQLAlchemy session using psycopg2,
 which is safe to use inside Celery tasks.
 """
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.config import settings
 
-
+# Task 27: 连接池配置统一引用 settings，避免与 async engine (database.py) 不一致
 sync_engine = create_engine(
     settings.database_url_sync,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_pre_ping=settings.DB_POOL_PRE_PING,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
     future=True,
 )
 

@@ -1,0 +1,33 @@
+# Bandit configuration for backend Python SAST
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Exclude test directories from SAST scanning.
+# Tests legitimately use assert, subprocess mocks, eval for fixtures, etc.
+exclude_dirs:
+  - "tests"
+  - "tests/integration"
+  - "tests/e2e"
+  - "tests/performance"
+  - "alembic"
+  - "chroma_data"
+
+# Skips for known false-positives or accepted patterns
+# B101: assert_used (tests use asserts, but we exclude tests above; keep for safety)
+# B311: random (not used for crypto)
+# B404: import subprocess (legitimate use in tasks)
+# B603: subprocess_without_shell_equals_true (used in controlled contexts)
+skips: []
+
+# Assert usage in non-test code is a sign of debug leftovers
+assert_used:
+  skips: []
+
+# Hardcoded passwords/tokens often appear as defaults in config.py
+# These are overridden by env vars in production. We accept defaults for local dev.
+# But still report them as warnings (do not skip) so we can review.
+hardcoded_password_string:
+  word_list: "passw0rd"
+
+# Inline SQL is often used safely with parameterized queries in this codebase
+# B608: hardcoded_sql_expressions
+# We keep it enabled but trust SQLAlchemy parameterization

@@ -1,10 +1,13 @@
+import asyncio
+
 from loguru import logger
-from app.models.base import BaseLLMProvider, BaseEmbeddingProvider, BaseRerankerProvider
-from app.models.ollama_provider import OllamaLLMProvider, OllamaEmbeddingProvider
-from app.models.openai_compatible_provider import OpenAICompatibleProvider
-from app.models.cached_embedding import CachedEmbeddingProvider
-from app.models.reranker_provider import LocalBgeRerankerProvider
+
 from app.config import settings
+from app.models.base import BaseEmbeddingProvider, BaseLLMProvider, BaseRerankerProvider
+from app.models.cached_embedding import CachedEmbeddingProvider
+from app.models.ollama_provider import OllamaEmbeddingProvider, OllamaLLMProvider
+from app.models.openai_compatible_provider import OpenAICompatibleProvider
+from app.models.reranker_provider import LocalBgeRerankerProvider
 
 
 class ModelRegistry:
@@ -34,6 +37,21 @@ class ModelRegistry:
     def get_available(cls) -> list[BaseLLMProvider]:
         '''获取所有健康的 Provider'''
         return [p for p in cls._providers.values() if p.is_healthy]
+
+    @classmethod
+    async def close_all(cls) -> None:
+        '''关闭所有已注册 Provider 的底层连接（httpx 连接池等），应用 shutdown 时调用。'''
+        if not cls._providers:
+            return
+        results = await asyncio.gather(
+            *[p.close() for p in cls._providers.values()],
+            return_exceptions=True,
+        )
+        for name, result in zip(cls._providers.keys(), results):
+            if isinstance(result, Exception):
+                logger.warning(f"Error closing provider '{name}': {result}")
+        cls._providers.clear()
+        cls._initialized = False
 
     @classmethod
     def init_from_config(cls) -> None:
@@ -113,3 +131,31 @@ class ModelFactory:
         if ModelFactory._reranker is None:
             ModelFactory._reranker = LocalBgeRerankerProvider()
         return ModelFactory._reranker
+
+    @staticmethod
+    async def close_all() -> None:
+        '''关闭所有由 ModelFactory 持有的 Provider 单例的底层连接，应用 shutdown 时调用。'''
+        targets: list[BaseLLMProvider | BaseEmbeddingProvider | BaseRerankerProvider] = []
+        if ModelFactory._llm is not None:
+            targets.append(ModelFactory._llm)
+        if ModelFactory._embedding is not None:
+            # CachedEmbeddingProvider 包装的 inner provider 也可能持有 httpx 连接
+            inner = getattr(ModelFactory._embedding, "inner", None)
+            if inner is not None:
+                targets.append(inner)
+            targets.append(ModelFactory._embedding)
+        if ModelFactory._reranker is not None:
+            targets.append(ModelFactory._reranker)
+        if not targets:
+            return
+        # 所有基类均提供默认 no-op close()，可直接调用
+        results = await asyncio.gather(
+            *[t.close() for t in targets],
+            return_exceptions=True,
+        )
+        for target, result in zip(targets, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Error closing {type(target).__name__}: {result}")
+        ModelFactory._llm = None
+        ModelFactory._embedding = None
+        ModelFactory._reranker = None

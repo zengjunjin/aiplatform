@@ -1,12 +1,15 @@
-from pydantic import BaseModel, Field
-from typing import Optional
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FeedbackCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     rating: int = Field(..., ge=-1, le=1, description="1 点赞, -1 点踩")
-    comment: Optional[str] = Field(None, max_length=500)
-    feedback_type: Optional[str] = Field(None, max_length=30)
+    comment: str | None = Field(None, max_length=500)
+    feedback_type: Literal["faithfulness_issue", "context_insufficient", "incompleteness", "irrelevance", "verbosity"] | None = None
 
 
 class FeedbackOut(BaseModel):
@@ -14,8 +17,8 @@ class FeedbackOut(BaseModel):
     message_id: int
     user_id: int
     rating: int
-    comment: Optional[str]
-    feedback_type: Optional[str]
+    comment: str | None
+    feedback_type: str | None
     created_at: datetime
 
     class Config:
@@ -33,13 +36,13 @@ class FeedbackDetail(BaseModel):
     id: int
     message_id: int
     rating: int
-    comment: Optional[str]
-    feedback_type: Optional[str]
+    comment: str | None
+    feedback_type: str | None
     created_at: datetime
     question: str
     answer: str
     session_id: int
-    kb_id: Optional[int]
+    kb_id: int | None
 
     class Config:
         from_attributes = True

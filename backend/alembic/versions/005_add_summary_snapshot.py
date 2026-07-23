@@ -1,7 +1,7 @@
 """add_summary_snapshot
 
 Revision ID: 004_summary
-Revises: 003_feedback
+Revises: 004_kb_collaborators
 Create Date: 2026-07-11 00:00:00.000000
 
 """

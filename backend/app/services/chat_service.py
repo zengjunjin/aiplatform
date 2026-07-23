@@ -1,15 +1,15 @@
 import json
-import time
-from typing import AsyncIterator
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.db.chat_session import ChatSession
-from app.db.chat_message import ChatMessage
-from app.db.knowledge_base import KnowledgeBase
-from app.core.exceptions import NotFoundError, ForbiddenError
-from app.schemas.chat import SessionCreate, SessionUpdate, MessageCreate
-from app.redis_client import get_redis
+
 from loguru import logger
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.core.exceptions import ForbiddenError, NotFoundError
+from app.db.chat_message import ChatMessage
+from app.db.chat_session import ChatSession
+from app.redis_client import get_redis
+from app.schemas.chat import SessionCreate, SessionUpdate
 
 
 async def create_session(req: SessionCreate, user_id: int, db: AsyncSession) -> ChatSession:
@@ -21,7 +21,7 @@ async def create_session(req: SessionCreate, user_id: int, db: AsyncSession) -> 
     return session
 
 
-async def list_sessions(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20):
+async def list_sessions(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> tuple[list[ChatSession], int]:
     count_result = await db.execute(
         select(func.count()).where(ChatSession.user_id == user_id)
     )
@@ -68,7 +68,7 @@ async def delete_session(session_id: int, user_id: int, db: AsyncSession):
     logger.info(f"Session deleted: id={session_id} user={user_id}")
 
 
-async def get_messages(session_id: int, user_id: int, db: AsyncSession, page: int = 1, page_size: int = 50):
+async def get_messages(session_id: int, user_id: int, db: AsyncSession, page: int = 1, page_size: int = 50) -> tuple[list[ChatMessage], int]:
     await get_session(session_id, user_id, db)
     count_result = await db.execute(
         select(func.count()).where(ChatMessage.session_id == session_id)
@@ -84,31 +84,58 @@ async def get_messages(session_id: int, user_id: int, db: AsyncSession, page: in
     return result.scalars().all(), total
 
 
-async def get_history_context(session_id: int, limit: int = 8) -> list[dict]:
-    '''从 Redis 获取最近 N 轮历史'''
+async def get_history_context(
+    session_id: int,
+    limit: int = settings.CHAT_HISTORY_LIMIT,
+    db: AsyncSession | None = None,
+) -> list[dict]:
+    '''从 Redis 获取最近 N 轮历史，Redis 不可用 / key 不存在 / 查询异常时回退 DB'''
     redis = get_redis()
-    if not redis:
-        return []
-    raw = await redis.lrange(f"chat:session:{session_id}:context", 0, limit - 1)
-    messages = []
-    for item in reversed(raw):
+    if redis:
         try:
-            messages.append(json.loads(item))
-        except json.JSONDecodeError:
-            continue
-    return messages
+            raw = await redis.lrange(f"chat:session:{session_id}:context", 0, limit - 1)
+            if raw:
+                messages = []
+                for item in reversed(raw):
+                    try:
+                        messages.append(json.loads(item))
+                    except json.JSONDecodeError:
+                        continue
+                return messages
+        except Exception as e:
+            logger.warning("Redis history fetch failed, fallback to DB: %s", e)
+    # DB fallback: Redis 不可用 / key 不存在 / 查询异常
+    if db is not None:
+        result = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.id.desc())
+            .limit(limit)
+        )
+        msgs = result.scalars().all()
+        # 反转为时间正序（与 Redis 路径一致）
+        msgs = list(reversed(msgs))
+        return [{"role": m.role, "content": m.content} for m in msgs]
+    return []
 
 
-async def append_to_context(session_id: int, role: str, content: str):
-    '''追加消息到 Redis 上下文'''
+async def append_to_context(session_id: int, role: str, content: str) -> None:
+    '''追加消息到 Redis 上下文
+
+    使用 pipeline 将 lpush+expire+ltrim 合并为 1 次 RTT，
+    SSE 流式场景每条消息节省 2 次 RTT。
+    '''
     redis = get_redis()
     if not redis:
         return
     msg = json.dumps({"role": role, "content": content}, ensure_ascii=False)
-    await redis.lpush(f"chat:session:{session_id}:context", msg)
-    await redis.expire(f"chat:session:{session_id}:context", 86400)
-    # Keep only last 20 messages
-    await redis.ltrim(f"chat:session:{session_id}:context", 0, 19)
+    key = f"chat:session:{session_id}:context"
+    pipe = redis.pipeline(transaction=True)
+    pipe.lpush(key, msg)
+    pipe.expire(key, settings.CHAT_HISTORY_TTL_SECONDS)
+    # Keep only last N messages (Task 13: 从 config 常量读取)
+    pipe.ltrim(key, 0, settings.CHAT_HISTORY_REDIS_KEEP_RECENT - 1)
+    await pipe.execute()
 
 
 async def save_message(
@@ -121,7 +148,13 @@ async def save_message(
     token_output: int | None = None,
     latency_ms: int | None = None,
     summary_snapshot: str | None = None,
+    prompt_version: str | None = None,
 ) -> ChatMessage:
+    # Task 10: 记录使用的 prompt 模板版本号
+    # 仅 assistant 消息需要记录 prompt_version（user 消息不经过 prompt 构建）
+    if prompt_version is None and role == "assistant":
+        from app.rag.prompt_builder import get_prompt_version
+        prompt_version = get_prompt_version()
     msg = ChatMessage(
         session_id=session_id,
         role=role,
@@ -131,6 +164,7 @@ async def save_message(
         token_output=token_output,
         latency_ms=latency_ms,
         summary_snapshot=summary_snapshot,
+        prompt_version=prompt_version,
     )
     db.add(msg)
     await db.commit()
@@ -148,7 +182,7 @@ def _cancel_key(session_id: int) -> str:
     return f"{CANCEL_KEY_PREFIX}:session:{session_id}:current"
 
 
-async def request_cancel(session_id: int, ttl: int = 300) -> None:
+async def request_cancel(session_id: int, ttl: int = settings.CHAT_CANCEL_TTL) -> None:
     """设置取消标志，流式生成循环在下一次检查时会停止。TTL=5min 自动清理。"""
     redis = get_redis()
     if not redis:

@@ -1,4 +1,17 @@
-from sqlalchemy import Column, BigInteger, Integer, DateTime, ForeignKey, Text, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+
 from app.db.base import Base
 
 
@@ -14,5 +27,9 @@ class MessageFeedback(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
+        CheckConstraint("rating IN (-1, 1)", name="ck_message_feedbacks_rating"),
         UniqueConstraint("message_id", "user_id", name="uq_message_user_feedback"),
+        Index("ix_message_feedbacks_rating", "rating"),
+        Index("ix_message_feedbacks_feedback_type", "feedback_type"),
+        Index("ix_message_feedbacks_created_at", "created_at"),
     )

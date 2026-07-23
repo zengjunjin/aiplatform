@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 
 class BaseLLMProvider(ABC):
@@ -37,6 +37,10 @@ class BaseLLMProvider(ABC):
         '''是否健康（默认 True）'''
         return True
 
+    async def close(self) -> None:
+        '''关闭底层资源（如 httpx 连接池）。默认 no-op，由具体 Provider 按需覆盖。'''
+        return None
+
 
 class BaseEmbeddingProvider(ABC):
     '''Embedding 提供方抽象基类'''
@@ -52,6 +56,10 @@ class BaseEmbeddingProvider(ABC):
         '''向量维度'''
         ...
 
+    async def close(self) -> None:
+        '''关闭底层资源（如 httpx 连接池）。默认 no-op，由具体 Provider 按需覆盖。'''
+        return None
+
 
 class BaseRerankerProvider(ABC):
     '''Reranker 提供方抽象基类'''
@@ -60,3 +68,7 @@ class BaseRerankerProvider(ABC):
     async def rerank(self, query: str, documents: list[str], top_k: int = 5) -> list[tuple[int, float]]:
         '''返回 (原文索引, 分数) 列表,按相关度降序'''
         ...
+
+    async def close(self) -> None:
+        '''关闭底层资源（如 httpx 连接池）。默认 no-op，由具体 Provider 按需覆盖。'''
+        return None

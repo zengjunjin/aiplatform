@@ -21,10 +21,10 @@ psycopg2-binary = "^2.9.0"
 pydantic = "^2.7.0"
 pydantic-settings = "^2.3.0"
 
-python-jose = { version = "^3.3.0", extras = ["cryptography"] }
+PyJWT = "^2.8.0"
 passlib = { version = "^1.7.0", extras = ["bcrypt"] }
 
-python-multipart = "^0.0.9"
+python-multipart = ">=0.0.12"
 
 redis = "^5.0.0"
 
@@ -32,9 +32,10 @@ celery = "^5.4.0"
 
 qdrant-client = "^1.10.1"
 
-httpx = "^0.27.0"
+httpx = ">=0.28.0"
 
 rank-bm25 = "^0.2.0"
+jieba = "^0.42.1"
 
 sentence-transformers = "^3.0.0"
 
@@ -56,11 +57,27 @@ ragas = ">=0.2.0"
 datasets = ">=2.14"
 pandas = ">=2.0"
 
+# OpenTelemetry 分布式追踪（Task 47：导出到 Jaeger via OTLP）
+# 通过 OTEL_EXPORTER_OTLP_ENDPOINT 环境变量控制启用；未配置时 OTel 不采集
+opentelemetry-api = "^1.27.0"
+opentelemetry-sdk = "^1.27.0"
+opentelemetry-exporter-otlp = "^1.27.0"
+opentelemetry-instrumentation-fastapi = "^0.48b0"
+opentelemetry-instrumentation-celery = "^0.48b0"
+opentelemetry-instrumentation-sqlalchemy = "^0.48b0"
+opentelemetry-instrumentation-httpx = "^0.48b0"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = "^0.23.0"
 pytest-cov = "^5.0.0"
-httpx = "^0.27.0"
+pytest-xdist = "^3.5"
+pytest-rerunfailures = "^14.0"
+pytest-timeout = "^2.3"
+httpx = ">=0.28.0"
+ruff = "^0.6.0"
+websocket-client = "^1.7.0"
+mutmut = "^3.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -70,6 +87,9 @@ build-backend = "poetry.core.masonry.api"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# --reruns=2 --reruns-delay=3 由 tests/conftest.py:pytest_configure 条件注入
+# （仅在 pytest-rerunfailures 已安装时生效，避免未安装时 pytest 因未知参数报错）
+timeout = 60  # 全局超时 60s（需要 pytest-timeout 插件）；E2E 单独放宽到 180s
 markers = [
     "integration: integration tests requiring real services (PG, Redis, etc.)",
     "real_rag: RAG pipeline tests with real Ollama + Qdrant",
@@ -84,3 +104,27 @@ omit = ["app/main.py", "*/__init__.py"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+fail_under = 70
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function call in argument defaults (FastAPI Depends)
+    "SIM117", # nested with (sometimes needed for async sessions)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # assert False in tests is fine

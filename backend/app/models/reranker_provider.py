@@ -4,12 +4,13 @@ Sets HF_ENDPOINT to the Chinese mirror (hf-mirror.com) so the model
 can be downloaded without accessing huggingface.co directly (which is
 often unreachable from mainland China).
 """
-import os
 import asyncio
-from typing import Optional
-from app.models.base import BaseRerankerProvider
-from app.config import settings
+import os
+
 from loguru import logger
+
+from app.config import settings
+from app.models.base import BaseRerankerProvider
 
 # Use HuggingFace mirror to bypass network issues in mainland China.
 # This must be set BEFORE importing sentence_transformers / transformers.
@@ -77,7 +78,7 @@ class LocalBgeRerankerProvider(BaseRerankerProvider):
         model = self._model
         if model is None:
             logger.warning("Reranker model not loaded, skipping rerank")
-            return list(enumerate(range(len(documents))))[:top_k]
+            return [(i, 0.0) for i in range(min(top_k, len(documents)))]
         pairs = [(query, doc) for doc in documents]
         scores = model.predict(pairs)
         ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)

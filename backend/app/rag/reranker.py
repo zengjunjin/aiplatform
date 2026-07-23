@@ -1,5 +1,4 @@
 """Reranker wrapper using bge-reranker-base."""
-from typing import Optional
 from app.models.factory import ModelFactory
 
 

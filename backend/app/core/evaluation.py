@@ -5,13 +5,88 @@ runs RAG pipeline for each question, computes four metrics,
 and persists results to the database.
 """
 import asyncio
-from typing import Any
+
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.db.evaluation import EvaluationRun, EvaluationResult, EvaluationStatus
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.services.evaluation_service import get_rag_answer
-from app.core.exceptions import NotFoundError
+
+
+# Task 1.7: 问题生成公共常量与函数（消除 evaluation_task / evaluation_service 重复）
+_QUESTION_PREFIXES = ["问题：", "Question:", "Q:", "问："]
+
+
+def build_question_prompt(content: str) -> str:
+    """构建从文本生成问题的 LLM prompt（公共函数，消除复制粘贴）。"""
+    return (
+        "你是一个问答数据集生成助手。请根据以下文本内容，生成一个可以用该文本回答的问题。\n\n"
+        "规则：\n"
+        "1. 问题应该具体、明确，答案可以直接从文本中找到\n"
+        "2. 只返回问题本身，不要添加任何其他内容\n"
+        "3. 问题应该用中文\n\n"
+        f"文本内容：\n{content[:1500]}\n\n"
+        "问题："
+    )
+
+
+def sanitize_question(q: str) -> str | None:
+    """清理 LLM 生成的问题：去除常见前缀，过短返回 None。"""
+    question = (q or "").strip()
+    for prefix in _QUESTION_PREFIXES:
+        if question.startswith(prefix):
+            question = question[len(prefix):].strip()
+    if len(question) < 5:
+        return None
+    return question
+
+
+async def _eval_single_question(
+    item: dict,
+    kb_id: int,
+    semaphore: asyncio.Semaphore,
+) -> dict:
+    """评估单个问题：RAG 检索 + metrics 计算（不含 db 操作）。
+
+    单题失败隔离：异常被捕获，返回 success=False 的结果，不阻断整体。
+    返回 dict:
+      - question / ground_truth / answer / contexts
+      - metrics: dict (成功时) / {} (失败时)
+      - success: bool
+    """
+    question = item["question"]
+    ground_truth = item["ground_truth"]
+    reference_contexts = item.get("contexts", [])
+
+    async with semaphore:
+        try:
+            answer, retrieved_contexts = await get_rag_answer(question, kb_id)
+            metrics = await _compute_ragas_metrics(
+                question=question,
+                answer=answer,
+                contexts=retrieved_contexts,
+                ground_truth=ground_truth,
+            )
+            return {
+                "question": question,
+                "ground_truth": ground_truth,
+                "answer": answer,
+                "contexts": retrieved_contexts,
+                "metrics": metrics,
+                "success": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to evaluate question '{question[:50]}': {e}")
+            return {
+                "question": question,
+                "ground_truth": ground_truth,
+                "answer": f"ERROR: {str(e)}",
+                "contexts": reference_contexts,
+                "metrics": {},
+                "success": False,
+            }
 
 
 async def run_evaluation(
@@ -21,6 +96,13 @@ async def run_evaluation(
     db: AsyncSession,
 ) -> dict:
     """Execute the full RAGAS evaluation pipeline.
+
+    Task 15: 改用 asyncio.gather + Semaphore(8) 并发评估，单题失败隔离。
+
+    注意（Task 38）：此函数目前仅被 tests/test_evaluation_concurrency.py 调用，
+    生产环境的评估流程走 app.tasks.evaluation_task._run_evaluation_async
+    （使用同步 session + Celery worker）。保留此函数用于并发评估逻辑的
+    单元测试覆盖，勿在生产代码中直接调用。
 
     Args:
         run_id: The EvaluationRun ID
@@ -32,65 +114,46 @@ async def run_evaluation(
         dict with aggregated metrics: {faithfulness, answer_relevancy,
         context_precision, context_recall}
     """
-    results = []
+    semaphore = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
 
-    for idx, item in enumerate(dataset):
-        question = item["question"]
-        ground_truth = item["ground_truth"]
-        reference_contexts = item.get("contexts", [])
+    # 并发评估所有问题（RAG + metrics 计算），单题失败隔离
+    eval_results = await asyncio.gather(
+        *[_eval_single_question(item, kb_id, semaphore) for item in dataset]
+    )
 
-        try:
-            # Run RAG pipeline to get answer and contexts
-            answer, retrieved_contexts = await get_rag_answer(question, kb_id)
+    # 串行写入 DB（db 操作不能并发），保留增量提交
+    successful_metrics: list[dict] = []
+    for idx, r in enumerate(eval_results):
+        metrics = r["metrics"]
+        result = EvaluationResult(
+            run_id=run_id,
+            question=r["question"],
+            ground_truth=r["ground_truth"],
+            generated_answer=r["answer"],
+            contexts=r["contexts"],
+            faithfulness=metrics.get("faithfulness"),
+            answer_relevancy=metrics.get("answer_relevancy"),
+            context_precision=metrics.get("context_precision"),
+            context_recall=metrics.get("context_recall"),
+        )
+        db.add(result)
+        if r["success"]:
+            successful_metrics.append(metrics)
 
-            # Compute individual metrics using RAGAS
-            metrics = await _compute_ragas_metrics(
-                question=question,
-                answer=answer,
-                contexts=retrieved_contexts,
-                ground_truth=ground_truth,
-            )
+        logger.info(f"Evaluated question {idx + 1}/{len(dataset)}: "
+                    f"success={r['success']}, "
+                    f"faithfulness={metrics.get('faithfulness')}, "
+                    f"answer_relevancy={metrics.get('answer_relevancy')}")
 
-            # Save individual result
-            result = EvaluationResult(
-                run_id=run_id,
-                question=question,
-                ground_truth=ground_truth,
-                generated_answer=answer,
-                contexts=retrieved_contexts,
-                faithfulness=metrics.get("faithfulness"),
-                answer_relevancy=metrics.get("answer_relevancy"),
-                context_precision=metrics.get("context_precision"),
-                context_recall=metrics.get("context_recall"),
-            )
-            db.add(result)
-            results.append(metrics)
-
-            logger.info(f"Evaluated question {idx + 1}/{len(dataset)}: "
-                        f"faithfulness={metrics.get('faithfulness')}, "
-                        f"answer_relevancy={metrics.get('answer_relevancy')}")
-
-        except Exception as e:
-            logger.error(f"Failed to evaluate question {idx + 1}: {e}")
-            # Save failed result with null metrics
-            result = EvaluationResult(
-                run_id=run_id,
-                question=question,
-                ground_truth=ground_truth,
-                generated_answer=f"ERROR: {str(e)}",
-                contexts=reference_contexts,
-            )
-            db.add(result)
-
-        # 增量提交: 每 10 个问题提交一次, 避免全部结果丢失
-        if (idx + 1) % 10 == 0:
+        # 增量提交: 每 EVAL_INCREMENTAL_COMMIT_BATCH 个问题提交一次, 避免全部结果丢失
+        if (idx + 1) % settings.EVAL_INCREMENTAL_COMMIT_BATCH == 0:
             await db.commit()
 
     # 提交剩余结果
     await db.commit()
 
-    # Aggregate metrics
-    aggregated = _aggregate_metrics(results)
+    # Aggregate metrics（仅成功题目的 metrics 参与聚合）
+    aggregated = aggregate_metrics(successful_metrics)
 
     # Update the run with aggregated metrics
     run_result = await db.execute(select(EvaluationRun).where(EvaluationRun.id == run_id))
@@ -120,14 +183,14 @@ async def _compute_ragas_metrics(
     heuristic-based scoring.
     """
     try:
+        from datasets import Dataset
         from ragas import evaluate
         from ragas.metrics import (
-            faithfulness,
             answer_relevancy,
             context_precision,
             context_recall,
+            faithfulness,
         )
-        from datasets import Dataset
 
         # Build a single-row dataset
         ds = Dataset.from_dict({
@@ -204,8 +267,12 @@ def _heuristic_metrics(
     }
 
 
-def _aggregate_metrics(results: list[dict]) -> dict[str, float]:
-    """Aggregate individual metrics into averages."""
+def aggregate_metrics(results: list[dict]) -> dict[str, float]:
+    """Aggregate individual metrics into averages.
+
+    Shared by both the async :func:`run_evaluation` pipeline and the
+    synchronous Celery task :mod:`app.tasks.evaluation_task`.
+    """
     keys = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
     aggregated = {}
 

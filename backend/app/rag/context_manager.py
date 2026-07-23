@@ -1,5 +1,34 @@
+from loguru import logger
+
+from app.config import settings
 from app.models.factory import ModelFactory
-from app.rag.prompt_builder import SYSTEM_PROMPT, build_rag_prompt, build_context_messages
+from app.rag.prompt_builder import build_context_messages, build_rag_prompt, get_system_prompt
+
+
+# tiktoken 精确 token 计数（延迟初始化，import 失败时 fallback 到估算方法）
+_tiktoken_encoder = None
+_tiktoken_available: bool | None = None
+
+
+def _get_tiktoken_encoder():
+    """延迟初始化 tiktoken encoder（cl100k_base 编码，gpt-3.5/4 通用）。
+
+    失败时返回 None，调用方 fallback 到估算方法。
+    """
+    global _tiktoken_encoder, _tiktoken_available
+    if _tiktoken_available is False:
+        return None
+    if _tiktoken_encoder is not None:
+        return _tiktoken_encoder
+    try:
+        import tiktoken
+        _tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+        _tiktoken_available = True
+        return _tiktoken_encoder
+    except Exception as e:
+        logger.debug(f"tiktoken not available, falling back to heuristic token counting: {e}")
+        _tiktoken_available = False
+        return None
 
 
 class ContextManager:
@@ -8,21 +37,37 @@ class ContextManager:
     策略:
     - 始终保留最近 N 轮原文 (默认 4 轮 = 8 条消息)
     - 更早的历史: 调用 LLM 生成摘要替代
-    - token 预算: 历史 6000 + 检索 4000 + 当前问题 + 输出
+    - token 预算: 历史 + 检索 + 当前问题 + 输出（值来自 settings）
+    - token 计数: 优先使用 tiktoken 精确计数，fallback 到 CJK/ASCII 估算
     """
 
-    HISTORY_TOKEN_BUDGET = 6000
-    RETRIEVAL_TOKEN_BUDGET = 4000
-
-    def __init__(self, max_tokens: int = 6000, keep_recent: int = 4):
-        self.max_tokens = max_tokens
+    def __init__(self, keep_recent: int = 4):
+        # Task 11: 移除未使用的 max_tokens 参数，token 预算统一从 settings 读取
         self.keep_recent = keep_recent
 
+    @property
+    def HISTORY_TOKEN_BUDGET(self) -> int:
+        return settings.HISTORY_TOKEN_BUDGET
+
+    @property
+    def RETRIEVAL_TOKEN_BUDGET(self) -> int:
+        return settings.RETRIEVAL_TOKEN_BUDGET
+
     def _count_tokens(self, text: str) -> int:
-        """估算 token 数量 (近似: 1 token ≈ 4 字符英文 / 1 字符中文)."""
+        """计算 token 数量。
+
+        优先使用 tiktoken 精确计数（cl100k_base 编码）；
+        tiktoken 不可用时 fallback 到启发式估算（CJK 1:1, ASCII 4:1）。
+        """
         if not text:
             return 0
-        # 简单估算: 中文字符约 1:1, 英文约 4:1
+        encoder = _get_tiktoken_encoder()
+        if encoder is not None:
+            try:
+                return len(encoder.encode(text))
+            except Exception:
+                pass
+        # Fallback: 中文字符约 1:1, 英文约 4:1
         cjk_count = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         ascii_count = len(text) - cjk_count
         return int(cjk_count + ascii_count / 4)
@@ -103,7 +148,7 @@ class ContextManager:
 
         rag_context = build_rag_prompt(current_query, truncated_chunks)
         return build_context_messages(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=get_system_prompt(),
             rag_context=rag_context,
             history=truncated_history,
             current_query=current_query,
@@ -155,4 +200,4 @@ class ContextManager:
         return messages, new_summary
 
 
-context_manager = ContextManager()
+context_manager = ContextManager(keep_recent=settings.CHAT_HISTORY_KEEP_RECENT)

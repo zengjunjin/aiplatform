@@ -16,12 +16,15 @@ so they work inside Celery's sync worker without an event loop.
 
 安全：使用 JSON 序列化 tokenized 语料替代 pickle，避免反序列化 RCE 风险。
 """
+import asyncio
+from collections import OrderedDict
 import json
 import threading
-from typing import Optional
-from rank_bm25 import BM25Okapi
+
 import redis as redis_sync_lib
 import redis.asyncio as redis_async_lib
+from rank_bm25 import BM25Okapi
+
 from app.config import settings
 
 
@@ -29,11 +32,23 @@ class BM25Store:
     """BM25 index manager, cached per knowledge base."""
 
     def __init__(self):
-        self._cache = {}  # in-memory cache
-        self._sync_redis: Optional[redis_sync_lib.Redis] = None
-        self._async_redis: Optional[redis_async_lib.Redis] = None
-        self._sync_lock = threading.Lock()
-        self._async_lock = threading.Lock()
+        # in-memory cache: OrderedDict 实现 LRU，避免多租户长期运行 OOM
+        self._cache: OrderedDict[int, BM25Okapi] = OrderedDict()
+        self._cache_max = 16  # LRU 上限，与项目其他缓存上限一致
+        self._sync_redis: redis_sync_lib.Redis | None = None
+        self._async_redis: redis_async_lib.Redis | None = None
+        self._sync_lock = threading.Lock()  # sync API (Celery) 使用 threading.Lock
+        self._async_lock: asyncio.Lock | None = None  # async API 使用 asyncio.Lock（lazy init）
+
+    def _get_async_lock(self) -> asyncio.Lock:
+        """获取 async 路径的并发锁（lazy init，避免跨事件循环绑定问题）。
+
+        sync API (Celery tasks) 继续使用 _sync_lock (threading.Lock)，
+        async wrappers (get_or_build/search/rebuild) 使用此 asyncio.Lock。
+        """
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        return self._async_lock
 
     def _key(self, kb_id: int) -> str:
         """BM25 索引（JSON 序列化的 tokenized 语料）的 Redis key。"""
@@ -44,7 +59,7 @@ class BM25Store:
         return f"bm25:kb:{kb_id}:chunks"
 
     # ---------- sync Redis accessor ----------
-    def _get_sync_redis(self) -> Optional[redis_sync_lib.Redis]:
+    def _get_sync_redis(self) -> redis_sync_lib.Redis | None:
         if self._sync_redis is not None:
             return self._sync_redis
         with self._sync_lock:
@@ -91,7 +106,7 @@ class BM25Store:
         tokenized = [self._tokenize(c["content"]) for c in chunks]
         return json.dumps(tokenized, ensure_ascii=False)
 
-    def _deserialize_index(self, raw: str | None) -> Optional[BM25Okapi]:
+    def _deserialize_index(self, raw: str | None) -> BM25Okapi | None:
         """从 JSON 反序列化并重建 BM25Okapi 索引。"""
         if not raw:
             return None
@@ -126,25 +141,70 @@ class BM25Store:
         except (json.JSONDecodeError, TypeError):
             return []
 
+    # ---------- shared CPU core (打分 + 排序 + 结果构建) ----------
+    def _search_core(
+        self,
+        bm25: BM25Okapi,
+        chunks: list[dict] | None,
+        query: str,
+        top_k: int,
+    ) -> list[dict]:
+        """纯 CPU 函数：tokenize + BM25 打分 + 排序 + 结果回填。
+
+        sync/async 路径共用，调用方负责 IO 层（Redis 读取 / cache 检查）
+        与锁（sync=threading.Lock / async=asyncio.Lock）。
+        """
+        tokens = self._tokenize(query)
+        scores = bm25.get_scores(tokens)
+        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
+        results = []
+        for idx, score in ranked:
+            if chunks and idx < len(chunks):
+                chunk = dict(chunks[idx])
+                chunk["score"] = float(score)
+                chunk["source"] = "bm25"
+                results.append(chunk)
+            else:
+                results.append({
+                    "chunk_id": idx,
+                    "score": float(score),
+                    "content": "",
+                    "source": "bm25",
+                })
+        return results
+
     # ---------- async API (FastAPI handlers) ----------
-    async def get_or_build(self, kb_id: int, chunks: list[dict] | None = None) -> Optional[BM25Okapi]:
-        if kb_id in self._cache:
-            return self._cache[kb_id]
+    async def get_or_build(self, kb_id: int, chunks: list[dict] | None = None) -> BM25Okapi | None:
+        # cache 命中检查受锁保护，避免与并发 rebuild/delete 竞争
+        async with self._get_async_lock():
+            if kb_id in self._cache:
+                self._cache.move_to_end(kb_id)  # LRU: 更新访问顺序
+                return self._cache[kb_id]
 
         redis = await self._get_async_redis()
         if redis:
             raw = await redis.get(self._key(kb_id))
             if raw:
-                bm25 = self._deserialize_index(raw)
+                # CPU: BM25Okapi 重建，offload 到线程池避免阻塞事件循环
+                bm25 = await asyncio.to_thread(self._deserialize_index, raw)
                 if bm25:
-                    self._cache[kb_id] = bm25
+                    async with self._get_async_lock():
+                        self._cache[kb_id] = bm25
+                        if len(self._cache) > self._cache_max:
+                            self._cache.popitem(last=False)
                     return bm25
 
         if chunks:
-            bm25 = self._build(chunks)
-            self._cache[kb_id] = bm25
+            # CPU: jieba 分词 + BM25Okapi 构建
+            bm25 = await asyncio.to_thread(self._build, chunks)
+            async with self._get_async_lock():
+                self._cache[kb_id] = bm25
+                if len(self._cache) > self._cache_max:
+                    self._cache.popitem(last=False)
             if redis:
-                await redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
+                # CPU: jieba 分词 + JSON 序列化
+                serialized = await asyncio.to_thread(self._serialize_index, chunks)
+                await redis.set(self._key(kb_id), serialized, ex=settings.BM25_INDEX_TTL)
             return bm25
         return None
 
@@ -157,7 +217,11 @@ class BM25Store:
         若 in-memory cache 已命中 BM25 索引，则直接使用（避免重建索引）。
         """
         # 优先使用 in-memory cache 命中的 BM25 索引
-        bm25 = self._cache.get(kb_id)
+        if kb_id in self._cache:
+            bm25 = self._cache[kb_id]
+            self._cache.move_to_end(kb_id)  # LRU: 更新访问顺序
+        else:
+            bm25 = None
         if bm25 is None:
             # cache 未命中，尝试从 Redis 加载 chunks 元数据以构建索引
             if chunks is None:
@@ -176,34 +240,23 @@ class BM25Store:
                     chunks = self._deserialize_chunks(await redis.get(self._chunks_key(kb_id)))
             except Exception:
                 chunks = None
-        tokens = self._tokenize(query)
-        scores = bm25.get_scores(tokens)
-        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
-        # Return dicts with chunk_id mapped from the original chunks list
-        results = []
-        for idx, score in ranked:
-            if chunks and idx < len(chunks):
-                chunk = dict(chunks[idx])
-                chunk["score"] = float(score)
-                chunk["source"] = "bm25"
-                results.append(chunk)
-            else:
-                results.append({
-                    "chunk_id": idx,
-                    "score": float(score),
-                    "content": "",
-                    "source": "bm25",
-                })
-        return results
+        # CPU: jieba 分词 + BM25 打分 + 排序 + 结果回填，offload 到线程池避免阻塞事件循环
+        return await asyncio.to_thread(self._search_core, bm25, chunks, query, top_k)
 
     async def rebuild(self, kb_id: int, chunks: list[dict]):
         """全量重建 BM25 索引，并缓存 chunks 元数据。"""
-        bm25 = self._build(chunks)
-        self._cache[kb_id] = bm25
+        # CPU: jieba 分词 + BM25Okapi 构建，offload 到线程池避免阻塞事件循环
+        bm25 = await asyncio.to_thread(self._build, chunks)
+        async with self._get_async_lock():
+            self._cache[kb_id] = bm25
+            if len(self._cache) > self._cache_max:
+                self._cache.popitem(last=False)
         redis = await self._get_async_redis()
         if redis:
-            await redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
-            await redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=86400)
+            # CPU: jieba 分词 + JSON 序列化
+            serialized_index = await asyncio.to_thread(self._serialize_index, chunks)
+            await redis.set(self._key(kb_id), serialized_index, ex=settings.BM25_INDEX_TTL)
+            await redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=settings.BM25_INDEX_TTL)
 
     async def add_documents(self, kb_id: int, new_chunks: list[dict]):
         """增量追加新文档 chunks，重建 BM25 索引。
@@ -231,7 +284,8 @@ class BM25Store:
 
     async def delete(self, kb_id: int):
         """清空整个 kb 的 BM25 索引和 chunks 元数据。"""
-        self._cache.pop(kb_id, None)
+        async with self._get_async_lock():
+            self._cache.pop(kb_id, None)
         redis = await self._get_async_redis()
         if redis:
             await redis.delete(self._key(kb_id), self._chunks_key(kb_id))
@@ -241,10 +295,12 @@ class BM25Store:
         """全量重建 BM25 索引，并缓存 chunks 元数据（sync 版本）。"""
         bm25 = self._build(chunks)
         self._cache[kb_id] = bm25
+        if len(self._cache) > self._cache_max:
+            self._cache.popitem(last=False)
         redis = self._get_sync_redis()
         if redis:
-            redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
-            redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=86400)
+            redis.set(self._key(kb_id), self._serialize_index(chunks), ex=settings.BM25_INDEX_TTL)
+            redis.set(self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=settings.BM25_INDEX_TTL)
 
     def add_documents_sync(self, kb_id: int, new_chunks: list[dict]):
         """增量追加新文档 chunks，重建 BM25 索引（sync 版本）。
@@ -286,6 +342,7 @@ class BM25Store:
 
         if kb_id in self._cache:
             bm25 = self._cache[kb_id]
+            self._cache.move_to_end(kb_id)  # LRU: 更新访问顺序
         else:
             redis = self._get_sync_redis()
             bm25 = None
@@ -295,31 +352,18 @@ class BM25Store:
                     bm25 = self._deserialize_index(raw)
                     if bm25:
                         self._cache[kb_id] = bm25
+                        if len(self._cache) > self._cache_max:
+                            self._cache.popitem(last=False)
             if bm25 is None and chunks:
                 bm25 = self._build(chunks)
                 self._cache[kb_id] = bm25
+                if len(self._cache) > self._cache_max:
+                    self._cache.popitem(last=False)
                 if redis:
-                    redis.set(self._key(kb_id), self._serialize_index(chunks), ex=86400)
+                    redis.set(self._key(kb_id), self._serialize_index(chunks), ex=settings.BM25_INDEX_TTL)
         if not bm25:
             return []
-        tokens = self._tokenize(query)
-        scores = bm25.get_scores(tokens)
-        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
-        results = []
-        for idx, score in ranked:
-            if chunks and idx < len(chunks):
-                chunk = dict(chunks[idx])
-                chunk["score"] = float(score)
-                chunk["source"] = "bm25"
-                results.append(chunk)
-            else:
-                results.append({
-                    "chunk_id": idx,
-                    "score": float(score),
-                    "content": "",
-                    "source": "bm25",
-                })
-        return results
+        return self._search_core(bm25, chunks, query, top_k)
 
 
 bm25_store = BM25Store()

@@ -1,7 +1,28 @@
-from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, Text, Integer, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
+
 from app.db.base import Base
+
+
+# Task 2.3: 文档状态到进度百分比的映射（统一魔法数字，消除 documents.py 内联 status_map）
+STATUS_PROGRESS: dict[str, int] = {
+    "pending": 0,
+    "parsing": 10,
+    "chunking": 30,
+    "embedding": 60,
+    "done": 100,
+    "failed": 100,
+}
 
 
 class Document(Base):

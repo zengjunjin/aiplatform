@@ -1,10 +1,11 @@
+import os
+
 from app.parsers.base import BaseParser
-from app.parsers.text_parser import TextParser
+from app.parsers.chunker import TextChunker, chunker
+from app.parsers.docx_parser import DocxParser
 from app.parsers.markdown_parser import MarkdownParser
 from app.parsers.pdf_parser import PDFParser
-from app.parsers.docx_parser import DocxParser
-from app.parsers.chunker import TextChunker, chunker
-import os
+from app.parsers.text_parser import TextParser
 
 
 def get_parser(file_path: str) -> BaseParser | None:

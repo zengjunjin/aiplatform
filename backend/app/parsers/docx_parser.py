@@ -1,5 +1,4 @@
-﻿from typing import Optional
-from app.parsers.base import BaseParser
+﻿from app.parsers.base import BaseParser
 
 
 class DocxParser(BaseParser):
