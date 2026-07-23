@@ -64,3 +64,12 @@ cdp_helper.ps1
 verify_step*.ps1
 query
 test.txt
+
+# CDP testing temp files
+.tauri_cdp_pid
+.test_token
+step*.js
+test-*.png
+
+# Frontend coverage
+frontend/coverage/
