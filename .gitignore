@@ -71,5 +71,18 @@ test.txt
 step*.js
 test-*.png
 
+# Diagnostic scripts (one-off debugging tools, not for production)
+backend/tests/e2e/_debug_*.py
+backend/tests/e2e/diag_*.py
+backend/tests/e2e/check_*.py
+backend/tests/e2e/clear_rl*.py
+backend/tests/e2e/clear_rl*.txt
+backend/tests/e2e/diag_*.txt
+backend/tests/e2e/diag_output.txt
+backend/tests/e2e/kb_list.txt
+
+# Test result XMLs
+backend/test_results*.xml
+
 # Frontend coverage
 frontend/coverage/
