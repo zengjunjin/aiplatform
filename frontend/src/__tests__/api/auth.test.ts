@@ -91,7 +91,15 @@ describe('authApi', () => {
 
       await authApi.logout();
 
-      expect(mockPost).toHaveBeenCalledWith('/auth/logout');
+      expect(mockPost).toHaveBeenCalledWith('/auth/logout', undefined);
+    });
+
+    it('should pass refresh_token when provided', async () => {
+      mockPost.mockResolvedValue({ data: {} });
+
+      await authApi.logout('rt-token-123');
+
+      expect(mockPost).toHaveBeenCalledWith('/auth/logout', { refresh_token: 'rt-token-123' });
     });
   });
 

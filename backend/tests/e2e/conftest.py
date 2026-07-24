@@ -180,6 +180,9 @@ def kb_with_doc(base_url, admin_headers, test_kb):
 
     使用 /documents/upload 端点（form: file + kb_id）。
     上传返回 {document_id, status, task_id}，详情查询返回完整 doc 对象（含 id）。
+
+    如果上传触发 429 限流（10/hour 耗尽），回退到查询已有 KB 中 status=done 的文档，
+    避免因限流阻塞所有下游测试。
     """
     token = admin_headers["Authorization"].split(" ")[1]
     headers = {"Authorization": f"Bearer {token}"}
@@ -191,6 +194,29 @@ def kb_with_doc(base_url, admin_headers, test_kb):
             f"{base_url}/documents/upload",
             files=files, data=data, headers=headers, timeout=60,
         )
+
+    if r2.status_code == 429:
+        # 限流回退：查询已有 KB 中 status=done 的文档
+        r_kbs = requests.get(
+            f"{base_url}/knowledge-bases", params={"page": 1, "page_size": 50},
+            headers=headers, timeout=10,
+        )
+        existing_kbs = extract_data(r_kbs).get("items", [])
+        for ekb in existing_kbs:
+            r_docs = requests.get(
+                f"{base_url}/documents",
+                params={"kb_id": ekb["id"], "page": 1, "page_size": 50},
+                headers=headers, timeout=10,
+            )
+            docs = extract_data(r_docs).get("items", [])
+            done_doc = next((d for d in docs if d.get("status") == "done"), None)
+            if done_doc:
+                yield {"kb": ekb, "doc": done_doc}
+                return
+        raise AssertionError(
+            "Upload rate-limited (429) and no existing KB with done document found"
+        )
+
     assert r2.status_code == 200, f"Upload doc failed: {r2.text}"
     upload_resp = extract_data(r2)
     doc_id = upload_resp["document_id"]

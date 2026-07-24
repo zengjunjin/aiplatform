@@ -47,7 +47,7 @@ export default function HeaderActions({
         onClick={onToggleTheme}
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       />
-      <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+      <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click', 'hover']}>
         <div
           style={{
             cursor: 'pointer',

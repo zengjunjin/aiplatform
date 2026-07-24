@@ -27,7 +27,7 @@ async def list_users(db: AsyncSession, page: int = 1, page_size: int = 20) -> tu
     total = count_result.scalar_one()
 
     result = await db.execute(
-        select(User).offset((page - 1) * page_size).limit(page_size).order_by(User.id.asc())
+        select(User).offset((page - 1) * page_size).limit(page_size).order_by(User.id.desc())
     )
     items = result.scalars().all()
     return items, total

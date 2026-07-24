@@ -34,21 +34,33 @@ async def create_kb(req: KBCreate, user_id: int, db: AsyncSession) -> KnowledgeB
 
 
 async def list_kbs(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> tuple[list[KnowledgeBase], int]:
-    from sqlalchemy import cast, or_
-    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy import text
 
+    # 协作者过滤：collaborators JSONB 数组中包含 {"user_id": <user_id>} 的 KB
+    # 诊断发现 SQLAlchemy ORM 形式（cast/literal + op('@>')）在 asyncpg 下参数绑定
+    # 后 JSONB @> 比较不工作（SQL 不报错但条件不匹配，返回 0 行）。
+    # 改用 text() where 子句 + bindparam 显式 cast，确保 @> 操作符正确执行，
+    # 同时保留 ORM select 加载（避免手动构造对象丢失 instance state）。
     filter_value = json.dumps([{"user_id": user_id}])
-    collab_filter = cast(KnowledgeBase.collaborators, JSONB).op('@>')(cast(filter_value, JSONB))
-
-    count_query = select(func.count()).select_from(KnowledgeBase).where(
-        or_(KnowledgeBase.owner_id == user_id, collab_filter)
+    where_clause = text(
+        "owner_id = :uid OR collaborators @> CAST(:filter AS JSONB)"
     )
-    total = await db.scalar(count_query)
 
-    data_query = select(KnowledgeBase).where(
-        or_(KnowledgeBase.owner_id == user_id, collab_filter)
-    ).order_by(KnowledgeBase.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(data_query)
+    count_query = select(func.count(KnowledgeBase.id)).where(where_clause)
+    total = await db.scalar(
+        count_query, params={"uid": user_id, "filter": filter_value}
+    )
+
+    data_query = (
+        select(KnowledgeBase)
+        .where(where_clause)
+        .order_by(KnowledgeBase.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(
+        data_query, params={"uid": user_id, "filter": filter_value}
+    )
     kbs = result.scalars().all()
     return kbs, total or 0
 
@@ -131,7 +143,10 @@ async def update_kb(kb_id: int, req: KBUpdate, user_id: int, db: AsyncSession) -
 async def delete_kb(kb_id: int, user_id: int, db: AsyncSession) -> None:
     """Delete knowledge base with full cascade cleanup.
 
-    仅 owner 或 admin 权限协作者可删除 (通过 get_kb_for_admin 校验)。
+    仅 owner 可删除知识库 (spec: cdp-full-coverage-v2-2026-07-24 §admin 权限边界)。
+    admin 协作者可管理协作者和内容，但不可删 KB 本身（删除是不可恢复的破坏性操作，
+    保留给资源归属的最终责任人 owner）。此前实现调用 get_kb_for_admin 允许 admin
+    协作者删除，违反 spec 设计，此处修正为 owner-only 校验。
 
     Order of operations:
     1. 统计待删除资源数量 (用于事件 payload 和审计日志)
@@ -140,7 +155,13 @@ async def delete_kb(kb_id: int, user_id: int, db: AsyncSession) -> None:
     6. 发布 KB_DELETED 事件，外部资源清理由 document_service 订阅者
        通过 EventBus 处理 (解耦 kb_service ↔ document_service 循环依赖)
     """
-    kb = await get_kb_for_admin(kb_id, user_id, db)
+    # owner-only 校验：不使用 get_kb_for_admin（会允许 admin 协作者删除）
+    result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
+    kb = result.scalar_one_or_none()
+    if not kb:
+        raise NotFoundError("Knowledge base not found")
+    if kb.owner_id != user_id:
+        raise ForbiddenError("Only owner can delete the knowledge base")
 
     # 1. 统计待删除资源数量 (在删除前查询，提交后记录已不存在)
     doc_count = await db.scalar(

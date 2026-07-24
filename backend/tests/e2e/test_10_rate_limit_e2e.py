@@ -11,11 +11,23 @@ API 限流配置：
 - /chat/sessions/{id}/messages POST: 20/minute
 
 注意：限流 key 优先使用 JWT sub（user_id），未认证时使用 IP
+
+RATE_LIMIT_ENABLED=false 时所有限流测试跳过（测试环境禁用限流以避免
+CDP 测试频繁创建用户触发 5/minute 限流，本文件测试需限流开启才有意义）。
 """
+import os
+
 import pytest
 import requests
 
+from app.config import settings
 from tests.e2e.conftest import extract_data
+
+# 模块级 skip：RATE_LIMIT_ENABLED=false 时所有限流测试无意义
+pytestmark = pytest.mark.skipif(
+    not settings.RATE_LIMIT_ENABLED,
+    reason="RATE_LIMIT_ENABLED=false（测试环境禁用限流）",
+)
 
 
 def test_auth_login_rate_limit(base_url):

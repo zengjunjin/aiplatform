@@ -23,7 +23,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(100);
   const [total, setTotal] = useState(0);
   const currentUser = useAuthStore((s) => s.user);
   const { message } = AntdApp.useApp();

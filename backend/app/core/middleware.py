@@ -154,7 +154,13 @@ def _rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_rate_limit_key)
+# RATE_LIMIT_ENABLED 开关：测试环境可设 false 全局禁用限流。
+# slowapi 0.1.9+ 的 Limiter 支持 enabled 参数，为 False 时所有 @limiter.limit
+# 装饰器变为 no-op，不执行限流计数和 429 响应。
+limiter = Limiter(
+    key_func=_rate_limit_key,
+    enabled=settings.RATE_LIMIT_ENABLED,
+)
 
 
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:

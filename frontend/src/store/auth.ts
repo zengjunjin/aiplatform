@@ -56,7 +56,7 @@ export const useAuthStore = create<AuthState>()(
         const { token, refreshToken } = get();
         if (token || refreshToken) {
           try {
-            await authApi.logout();
+            await authApi.logout(refreshToken);
           } catch {
             // 即使 blacklist 失败也继续清理本地状态
           }
@@ -145,20 +145,57 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         themeMode: state.themeMode,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        const { refreshToken, refreshTokenExpiresAt } = state;
-        // refreshToken 不存在或本地已过期：清空用户态（token 本就不持久化）
-        if (!refreshToken || (refreshTokenExpiresAt && Date.now() > refreshTokenExpiresAt)) {
-          useAuthStore.setState({
-            refreshToken: null,
-            refreshTokenExpiresAt: null,
-            user: null,
-          });
-          return;
+      onRehydrateStorage: () => (state, error) => {
+        // 注意：onRehydrateStorage 回调在模块加载期间同步执行
+        // （localStorage 是同步的，zustand toThenable 会同步调用 .then），
+        // 此时 useAuthStore 处于 TDZ（Temporal Dead Zone），直接引用会抛 ReferenceError。
+        // 因此：1) 诊断信息只使用 state/error 参数；2) 对 useAuthStore 的引用延迟到 setTimeout。
+        if (typeof window !== 'undefined') {
+          (window as unknown as { __rehydrateDebug?: unknown }).__rehydrateDebug = {
+            called: true,
+            stateType: typeof state,
+            stateNull: !state,
+            stateKeys: state && typeof state === 'object' ? Object.keys(state) : null,
+            error: error ? String(error) : null,
+            argRefreshToken: state?.refreshToken ? 'present' : 'null',
+            argRefreshTokenExpiresAt: state?.refreshTokenExpiresAt,
+            now: Date.now(),
+            argExpired: state?.refreshTokenExpiresAt
+              ? Date.now() > state.refreshTokenExpiresAt
+              : 'n/a',
+          };
         }
-        // 未过期：异步刷新 access_token；失败时 refreshAccessToken 内部会 logout
-        void useAuthStore.getState().refreshAccessToken();
+        // 无论 state 参数是否有效，都延迟到下一个事件循环从 store 获取真实状态
+        // （setTimeout 0 确保 useAuthStore 已完成赋值，避免 TDZ）
+        setTimeout(() => {
+          const current = useAuthStore.getState();
+          const { token, refreshToken, refreshTokenExpiresAt } = current;
+          if (typeof window !== 'undefined') {
+            (window as unknown as { __rehydrateDebug?: unknown }).__rehydrateDebug = {
+              ...(window as unknown as { __rehydrateDebug?: Record<string, unknown> }).__rehydrateDebug,
+              storeToken: token ? 'present' : 'null',
+              storeRefreshToken: refreshToken ? 'present' : 'null',
+              storeRefreshTokenExpiresAt: refreshTokenExpiresAt,
+              storeExpired: refreshTokenExpiresAt ? Date.now() > refreshTokenExpiresAt : 'n/a',
+            };
+          }
+          // refreshToken 不存在或本地已过期：清空用户态（token 本就不持久化）
+          if (!refreshToken || (refreshTokenExpiresAt && Date.now() > refreshTokenExpiresAt)) {
+            useAuthStore.setState({
+              token: null,
+              refreshToken: null,
+              refreshTokenExpiresAt: null,
+              user: null,
+            });
+            return;
+          }
+          // 已有 access_token：无需刷新（测试注入或上一次 refresh 残留），直接保持登录态
+          if (token) {
+            return;
+          }
+          // 无 access_token 但 refreshToken 有效：异步刷新；失败时 refreshAccessToken 内部会 logout
+          void useAuthStore.getState().refreshAccessToken();
+        }, 0);
       },
     }
   )

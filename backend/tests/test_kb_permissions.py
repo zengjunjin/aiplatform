@@ -177,17 +177,30 @@ class TestDeleteKbPermission:
             await kb_service.delete_kb(1, 20, db)
         assert exc.value.status_code == 403
         # 确保未执行任何删除操作 (权限校验在 DB 操作之前)
-        # get_kb_for_admin 内部已调用 db.execute 查询 KB, 但不应有 delete 调用
         assert db.delete.await_count == 0
 
     @pytest.mark.asyncio
     async def test_write_collaborator_cannot_delete(self):
-        """write 协作者也不能删除知识库 (仅 owner/admin)。"""
+        """write 协作者不能删除知识库 (仅 owner 可删)。"""
         kb = _make_kb(owner_id=10, collaborators=[{"user_id": 20, "permission": "write"}])
         db = _make_db(kb)
         with pytest.raises(ForbiddenError) as exc:
             await kb_service.delete_kb(1, 20, db)
         assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_admin_collaborator_cannot_delete(self):
+        """admin 协作者也不能删除知识库 (仅 owner 可删, spec cdp-full-coverage-v2-2026-07-24)。
+
+        此前实现调用 get_kb_for_admin 允许 admin 协作者删除，违反 spec 设计，
+        已修正为 owner-only 校验。本用例防止回归。
+        """
+        kb = _make_kb(owner_id=10, collaborators=[{"user_id": 20, "permission": "admin"}])
+        db = _make_db(kb)
+        with pytest.raises(ForbiddenError) as exc:
+            await kb_service.delete_kb(1, 20, db)
+        assert exc.value.status_code == 403
+        assert db.delete.await_count == 0
 
     @pytest.mark.asyncio
     async def test_non_collaborator_cannot_delete(self):
@@ -196,6 +209,15 @@ class TestDeleteKbPermission:
         with pytest.raises(ForbiddenError) as exc:
             await kb_service.delete_kb(1, 999, db)
         assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_owner_can_delete(self):
+        """owner 可以删除自己的知识库。"""
+        kb = _make_kb(owner_id=10, collaborators=[])
+        db = _make_db(kb)
+        # owner 调用 delete_kb 不应抛异常
+        await kb_service.delete_kb(1, 10, db)
+        assert db.delete.await_count == 1
 
 
 class TestUpdateKbPermission:

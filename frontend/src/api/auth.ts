@@ -36,9 +36,13 @@ export const authApi = {
     return extractData<User>(res);
   },
 
-  /** 登出 */
-  async logout(): Promise<void> {
-    await client.post('/auth/logout');
+  /** 登出
+   *
+   * 传 refresh_token 让后端拉黑，修复"登出后 refresh_token 仍有效 7 天"的安全漏洞。
+   * 后端 logout 端点对 refresh_token 可选兼容（不传也返回 200），但前端应主动传。
+   */
+  async logout(refreshToken?: string | null): Promise<void> {
+    await client.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
   },
 
   /** 刷新 token */

@@ -130,7 +130,14 @@ export default function SessionsPage() {
                     okText={t('session.delete')}
                     cancelText={t('session.cancel')}
                   >
-                    <Button type="text" danger size="small" icon={<Trash2 size={14} />} aria-label={t('session.delete')} />
+                    <Button
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<Trash2 size={14} />}
+                      aria-label={t('session.delete')}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </Popconfirm>,
                 ]}
               >
