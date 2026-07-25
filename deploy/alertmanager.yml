@@ -25,12 +25,12 @@ receivers:
   - name: 'default'
     # Task 4.1: webhook 转发到 webhook-receiver 服务
     webhook_configs:
-      - url: 'http://alertmanager-webhook-receiver:5001/'
+      - url: 'http://alertmanager-webhook-receiver:5001/webhook'
         send_resolved: true
 
   - name: 'critical-webhook'
     webhook_configs:
-      - url: 'http://alertmanager-webhook-receiver:5001/'
+      - url: 'http://alertmanager-webhook-receiver:5001/webhook'
         send_resolved: true
     email_configs:
       - to: '${ALERT_EMAIL_TO:ops@your-domain.com}'
