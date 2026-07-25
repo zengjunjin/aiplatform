@@ -91,9 +91,11 @@ jobs:
       - name: Build Tauri bundle
         working-directory: frontend
         # 未配置 TAURI_SIGNING_PRIVATE_KEY 时跳过 updater 签名，仍可生成 NSIS 安装包
+        # NODE_OPTIONS: 增加 Node.js 堆内存至 4GB，避免 beforeBuildCommand (npm run build) 时 OOM
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NODE_OPTIONS: --max_old_space_size=4096
         run: npm run tauri:build
 
       - name: Upload Tauri bundle artifact
