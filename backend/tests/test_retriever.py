@@ -286,6 +286,107 @@ class TestChunksCacheSingleflight:
         assert load_count >= 1
 
 
+# ---------- 阶段 5: _chunks_locks LRU 淘汰行为 ----------
+class TestChunksLocksLRU:
+    """retriever._chunks_locks OrderedDict LRU 淘汰策略覆盖。
+
+    覆盖 spec 阶段 5 验收点：
+      - KB 数量超过 RETRIEVER_LOCKS_MAX_SIZE 时最久未用的锁被淘汰
+      - 正被持有的锁跳过淘汰（保留 singleflight 语义）
+      - 命中时通过 move_to_end 更新访问顺序
+    """
+
+    def test_locks_evict_oldest_when_exceed_max_size(self, monkeypatch):
+        """KB 数量超过 max_size 时最久未访问的锁被淘汰。"""
+        monkeypatch.setattr("app.rag.retriever.settings.RETRIEVER_LOCKS_MAX_SIZE", 3)
+        r = HybridRetriever()
+
+        # 顺序插入 4 个 KB 的锁（max_size=3 → 第 4 个触发淘汰）
+        r._get_chunks_lock(1)
+        r._get_chunks_lock(2)
+        r._get_chunks_lock(3)
+        r._get_chunks_lock(4)  # 触发淘汰 kb_id=1
+
+        assert len(r._chunks_locks) == 3
+        # 最久未用的 kb_id=1 应被淘汰
+        assert 1 not in r._chunks_locks
+        # 最近访问的 kb_id=2,3,4 应保留
+        assert 2 in r._chunks_locks
+        assert 3 in r._chunks_locks
+        assert 4 in r._chunks_locks
+
+    def test_access_updates_lru_order(self, monkeypatch):
+        """命中已存在的 kb_id 时通过 move_to_end 更新访问顺序，避免被错误淘汰。"""
+        monkeypatch.setattr("app.rag.retriever.settings.RETRIEVER_LOCKS_MAX_SIZE", 3)
+        r = HybridRetriever()
+
+        r._get_chunks_lock(1)
+        r._get_chunks_lock(2)
+        r._get_chunks_lock(3)
+        # 重新访问 kb_id=1，使其成为最近访问
+        r._get_chunks_lock(1)
+        # 插入第 4 个，应淘汰最久未用的 kb_id=2（而非 kb_id=1）
+        r._get_chunks_lock(4)
+
+        assert len(r._chunks_locks) == 3
+        assert 2 not in r._chunks_locks  # 最久未用的被淘汰
+        assert 1 in r._chunks_locks  # 最近访问的保留
+        assert 3 in r._chunks_locks
+        assert 4 in r._chunks_locks
+
+    def test_held_lock_not_evicted(self, monkeypatch):
+        """正被持有的锁跳过淘汰，避免破坏 singleflight 语义。
+
+        极端情况下字典可能短暂超限，待锁释放后自然回落。
+        """
+        monkeypatch.setattr("app.rag.retriever.settings.RETRIEVER_LOCKS_MAX_SIZE", 3)
+        r = HybridRetriever()
+
+        r._get_chunks_lock(1)
+        r._get_chunks_lock(2)
+        r._get_chunks_lock(3)
+        # 持有 kb_id=1 的锁（模拟 singleflight 加载中）
+        r._chunks_locks[1] = MagicMock()
+        r._chunks_locks[1].locked.return_value = True
+
+        # 插入第 4 个，因 kb_id=1 被持有无法淘汰，字典短暂超限到 4
+        r._get_chunks_lock(4)
+
+        # kb_id=1 被持有未淘汰，字典短暂超限
+        assert 1 in r._chunks_locks
+        assert 4 in r._chunks_locks
+        # 字典大小为 4（短暂超限，待锁释放后自然回落）
+        assert len(r._chunks_locks) == 4
+
+    def test_released_lock_evicted_on_next_access(self, monkeypatch):
+        """锁释放后，下一次新插入会淘汰该被释放的最久未用锁。
+
+        spec: 极端情况下字典可能短暂超限，待锁释放后"自然回落"。
+        产品代码每次插入新锁时只淘汰 1 个最久未用的锁（不循环淘汰），
+        因此字典大小不会立即回到 max_size，但被持有的锁一旦释放，
+        下次插入会优先淘汰它。
+        """
+        monkeypatch.setattr("app.rag.retriever.settings.RETRIEVER_LOCKS_MAX_SIZE", 3)
+        r = HybridRetriever()
+
+        r._get_chunks_lock(1)
+        r._get_chunks_lock(2)
+        r._get_chunks_lock(3)
+
+        # 持有 kb_id=1 → 插入 4 时不淘汰 1
+        held_lock = MagicMock()
+        held_lock.locked.return_value = True
+        r._chunks_locks[1] = held_lock
+        r._get_chunks_lock(4)
+        assert 1 in r._chunks_locks  # 被持有未淘汰
+
+        # 释放 kb_id=1 → 下一次新插入会淘汰 kb_id=1
+        held_lock.locked.return_value = False
+        r._get_chunks_lock(5)
+        assert 1 not in r._chunks_locks  # 释放后被淘汰
+        assert 5 in r._chunks_locks
+
+
 class TestVectorSearchErrorHandling:
     @pytest.mark.asyncio
     async def test_vector_search_returns_empty_on_error(self):
