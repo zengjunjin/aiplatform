@@ -148,7 +148,8 @@ async def lifespan(app: FastAPI):
     # OpenTelemetry 追踪初始化（仅当 OTEL_EXPORTER_OTLP_ENDPOINT 配置时启用）
     _setup_opentelemetry()
     # FastAPI 仪器化需在 app 创建后执行；lifespan 在 app 创建后才被调用，安全
-    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    # 使用 settings.OTEL_EXPORTER_OTLP_ENDPOINT 与 _setup_opentelemetry() 保持一致
+    if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
         try:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
