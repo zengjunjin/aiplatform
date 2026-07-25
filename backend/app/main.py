@@ -39,15 +39,19 @@ _active_sse_requests: set[asyncio.Task] = set()
 def _setup_opentelemetry() -> None:
     """初始化 OpenTelemetry 追踪（导出到 OTLP/Jaeger）。
 
-    通过环境变量 ``OTEL_EXPORTER_OTLP_ENDPOINT`` 控制启用：
-    - 未配置时直接跳过，不影响应用启动；
-    - 配置后会对 SQLAlchemy / Celery / httpx 进行自动埋点，
+    通过 ``settings.OTEL_EXPORTER_OTLP_ENDPOINT`` 控制启用：
+    - 未配置（空字符串）时直接跳过，不影响应用启动；
+    - 配置后会对 SQLAlchemy / Celery / httpx / Redis 进行自动埋点，
       FastAPI 仪器化由 lifespan 在 app 创建后调用 ``FastAPIInstrumentor.instrument_app``。
+
+    采样策略 ``ParentBased(TraceIdRatioBased(ratio))``：
+    - 根 span 按 ``settings.OTEL_TRACES_SAMPLER_ARG`` 概率采样（基于 trace_id 哈希）
+    - 子 span 跟随父 span 决策，保证 trace 完整性
+    - 默认 0.1（10%），开发可设 1.0（全采样）
 
     Service name 默认 ``rag-platform-backend``，可通过 ``OTEL_SERVICE_NAME`` 覆盖。
     """
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if not endpoint:
+    if not settings.OTEL_EXPORTER_OTLP_ENDPOINT:
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set, OpenTelemetry disabled")
         return
 
@@ -58,25 +62,45 @@ def _setup_opentelemetry() -> None:
         )
         from opentelemetry.instrumentation.celery import CeleryInstrumentor
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+        from opentelemetry.instrumentation.redis import RedisInstrumentor
         from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.trace.sampling import (
+            ParentBased,
+            TraceIdRatioBased,
+        )
 
-        service_name = os.getenv("OTEL_SERVICE_NAME", "rag-platform-backend")
-        resource = Resource.create({"service.name": service_name})
-        provider = TracerProvider(resource=resource)
-        exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
+        # 采样器：ParentBased 包装 TraceIdRatioBased
+        # - 根 span 按 ratio 采样（确定性，基于 trace_id 哈希）
+        # - 子 span 跟随父 span 决策，保证 trace 完整性
+        ratio = settings.OTEL_TRACES_SAMPLER_ARG
+        sampler = ParentBased(TraceIdRatioBased(ratio))
+
+        resource = Resource.create({"service.name": settings.OTEL_SERVICE_NAME})
+        provider = TracerProvider(resource=resource, sampler=sampler)
+        exporter = OTLPSpanExporter(
+            endpoint=f"{settings.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces"
+        )
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
 
-        # SQLAlchemy / httpx / Celery 全局仪器化（FastAPI 在 lifespan 中单独 instrument_app）
+        # SQLAlchemy / httpx / Celery / Redis 全局仪器化
+        # （FastAPI 在 lifespan 中单独 instrument_app）
         # 注意：项目使用 async engine（create_async_engine），SQLAlchemyInstrumentor
         # 默认全局仪器化即可覆盖；显式传 sync_engine 在纯异步项目里容易触发 ImportError。
         SQLAlchemyInstrumentor().instrument(enable_commenter=True, commenter_options={})
         HTTPXClientInstrumentor().instrument()
         CeleryInstrumentor().instrument()
-        logger.info(f"OpenTelemetry initialized, exporting to {endpoint}/v1/traces")
+        # Redis instrumentor 一次性覆盖同步和异步客户端（redis.Redis / redis.asyncio.Redis）
+        RedisInstrumentor().instrument()
+        logger.info(
+            f"OpenTelemetry initialized, exporting to "
+            f"{settings.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces "
+            f"(service={settings.OTEL_SERVICE_NAME}, "
+            f"sampler=ParentBased(TraceIdRatioBased({ratio})))"
+        )
     except Exception as exc:  # pragma: no cover - OTel 初始化失败不应阻断启动
         logger.warning(f"OpenTelemetry initialization failed: {exc}")
 
