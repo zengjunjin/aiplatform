@@ -1,0 +1,75 @@
+name: Observability CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'deploy/prometheus/**'
+      - 'deploy/alertmanager.yml'
+      - 'deploy/grafana/**'
+      - 'deploy/docker-compose.yml'
+      - 'deploy/prometheus.yml'
+      - 'deploy/promtail.yml'
+      - '.github/workflows/observability-ci.yml'
+  pull_request:
+    paths:
+      - 'deploy/prometheus/**'
+      - 'deploy/alertmanager.yml'
+      - 'deploy/grafana/**'
+      - 'deploy/docker-compose.yml'
+      - 'deploy/prometheus.yml'
+      - 'deploy/promtail.yml'
+      - '.github/workflows/observability-ci.yml'
+
+jobs:
+  prometheus-rules:
+    name: Prometheus Rules Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y prometheus
+      - name: Check Prometheus rules
+        run: promtool check rules deploy/prometheus/alerts.yml
+      - name: Check Prometheus config
+        run: promtool check config deploy/prometheus.yml
+
+  alertmanager-config:
+    name: Alertmanager Config Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install amtool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y prometheus-alertmanager
+      - name: Check Alertmanager config
+        run: amtool check-config deploy/alertmanager.yml
+
+  grafana-dashboards:
+    name: Grafana Dashboard JSON Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: JSON syntax check
+        run: |
+          for f in deploy/grafana/dashboards/*.json; do
+            echo "JSON syntax check: $f"
+            python -c "import json; json.load(open('$f'))" || exit 1
+          done
+
+  docker-compose-lint:
+    name: Docker Compose Config Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docker-compose config
+        run: |
+          cd deploy
+          docker compose -f docker-compose.yml config -q

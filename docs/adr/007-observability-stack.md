@@ -100,3 +100,31 @@ Service name 通过 `OTEL_SERVICE_NAME` 环境变量覆盖，默认 `rag-platfor
   - `backend/app/main.py` 的 `_setup_opentelemetry()` 与 `lifespan`
   - `deploy/docker-compose.yml` 的 `jaeger` 服务
   - `backend/pyproject.toml` 的 opentelemetry-* 依赖
+
+---
+
+## 更新记录
+
+### 2026-07-25：加入采样器与 Redis instrumentation
+
+**变更内容**：
+
+1. **采样器**：`TracerProvider` 加入 `ParentBased(TraceIdRatioBased(ratio))` 采样器
+   - `ratio` 通过 `OTEL_TRACES_SAMPLER_ARG` 环境变量配置（默认 0.1）
+   - `ParentBased` 保证子 span 跟随父 span 决策，trace 完整不断裂
+   - 解决原 ADR 中标注的"全部上报，生产高 QPS 下 span 爆炸"问题
+
+2. **Redis instrumentation**：引入 `opentelemetry-instrumentation-redis` 0.48b0
+   - 一次性覆盖 `redis.Redis` 和 `redis.asyncio.Redis`（异步从 0.39b0 起支持）
+   - 补全原 4 个 instrumentor（FastAPI/SQLAlchemy/HTTPX/Celery）的链路缺口
+   - 项目共 6 个文件使用 Redis（5 个 async + 2 个 sync），均自动被覆盖
+
+3. **配置统一**：`OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME` / `OTEL_TRACES_SAMPLER_ARG` 移入 Pydantic `Settings` 类
+   - 替代原 `os.getenv()` 读取方式
+   - 向后兼容：Pydantic `BaseSettings` 默认从环境变量读取，旧环境变量名不变
+
+**未变更**：
+
+- Jaeger all-in-one 单容器部署保持不变（单机场景 ~300MB 可接受）
+- 4 个原 instrumentor（FastAPI/SQLAlchemy/HTTPX/Celery）保持不变
+- OTLP/HTTP 导出协议保持不变
