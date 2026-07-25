@@ -47,16 +47,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Check Alertmanager config
-        # 使用与 docker-compose 中相同版本的官方 Docker 镜像运行 amtool，
-        # 避免系统 apt 包版本过旧导致语法不兼容
-        # --config.expand-env: 展开 ${VAR:default} 语法（alertmanager v0.22+ 支持）
-        #   alertmanager.yml 中使用 ${SMTP_SMARTHOST:smtp.your-domain.com:587} 等
-        #   带默认值的 env var 引用，不展开会被 amtool 当作无效 host:port 拒绝
+        # alertmanager.yml 使用 ${VAR:default} 语法引用环境变量
+        # amtool check-config 不支持 --config.expand-env（仅 alertmanager 二进制支持）
+        # CI 中用 sed 将 ${VAR:default} 替换为 default 值，${VAR} 替换为 placeholder
+        # 再用 amtool 验证展开后的配置文件
         run: |
+          sed -E 's/\$\{[A-Z_]+:([^}]+)\}/\1/g; s/\$\{[A-Z_]+\}/placeholder/g' \
+            deploy/alertmanager.yml > /tmp/alertmanager-ci.yml
+          echo "=== Expanded config for CI validation ==="
+          cat /tmp/alertmanager-ci.yml
+          echo "=== Running amtool check-config ==="
           docker run --rm \
-            -v "${PWD}/deploy/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            -v "/tmp/alertmanager-ci.yml:/etc/alertmanager/alertmanager.yml:ro" \
             prom/alertmanager:v0.27.0 \
-            amtool check-config --config.expand-env /etc/alertmanager/alertmanager.yml
+            amtool check-config /etc/alertmanager/alertmanager.yml
 
   grafana-dashboards:
     name: Grafana Dashboard JSON Validation
