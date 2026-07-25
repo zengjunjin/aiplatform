@@ -66,6 +66,7 @@ opentelemetry-instrumentation-fastapi = "^0.48b0"
 opentelemetry-instrumentation-celery = "^0.48b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.48b0"
 opentelemetry-instrumentation-httpx = "^0.48b0"
+opentelemetry-instrumentation-redis = "^0.48b0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
