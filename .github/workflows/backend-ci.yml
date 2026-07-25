@@ -375,6 +375,17 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Initialize database schema (Alembic migrations)
+        # 集成测试需要完整的数据库表结构。CI 的 PostgreSQL 服务容器只创建了空数据库，
+        # 必须执行 Alembic 迁移建表，否则 TRUNCATE/SELECT 会因表不存在而失败。
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        run: poetry run alembic upgrade head
+
       - name: Run integration tests
         env:
           # GitHub Actions 服务容器端口映射到 localhost（无 container: 配置时）

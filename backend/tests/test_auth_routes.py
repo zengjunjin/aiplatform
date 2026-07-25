@@ -116,8 +116,19 @@ class TestLogoutRoute:
     @pytest.mark.asyncio
     async def test_logout_with_bearer_token(self, user, db):
         """Authorization: Bearer xxx → 加入黑名单"""
-        request_mock = MagicMock()
-        request_mock.headers.get.return_value = "Bearer xxx.token.yyy"
+        # 使用真实 starlette Request，slowapi @limiter.limit 装饰器要求
+        # request 参数必须是 starlette.requests.Request 的实例，MagicMock 会报错
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/logout",
+            "headers": [(b"authorization", b"Bearer xxx.token.yyy")],
+            "query_string": b"",
+            "client": ("127.0.0.1", 8000),
+        }
+        request_mock = Request(scope)
+        # 预设 body，避免 logout 中 await request.json() 从 ASGI receive 挂起
+        request_mock._body = b"{}"
         with patch("app.services.auth_service.add_to_blacklist", new=AsyncMock()) as mock_bl:
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
                 result = (await auth.logout(user=user, request=request_mock, db=db)).model_dump()
@@ -127,8 +138,16 @@ class TestLogoutRoute:
     @pytest.mark.asyncio
     async def test_logout_without_bearer_token(self, user, db):
         """无 Authorization 头 → 不加入黑名单"""
-        request_mock = MagicMock()
-        request_mock.headers.get.return_value = ""
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/logout",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 8000),
+        }
+        request_mock = Request(scope)
+        request_mock._body = b"{}"
         with patch("app.services.auth_service.add_to_blacklist", new=AsyncMock()) as mock_bl:
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
                 result = (await auth.logout(user=user, request=request_mock, db=db)).model_dump()
@@ -138,8 +157,9 @@ class TestLogoutRoute:
 
 class TestChangePasswordRoute:
     @pytest.mark.asyncio
-    async def test_change_password_success(self, user, db):
-        request_mock = MagicMock()
+    async def test_change_password_success(self, user, db, request_mock):
+        # 使用 conftest.py 的 request_mock fixture（真实 starlette Request）
+        # slowapi @limiter.limit 装饰器要求 request 参数是 Request 实例
         req = MagicMock()
         req.old_password = "Old123!@#"
         req.new_password = "New123!@#"

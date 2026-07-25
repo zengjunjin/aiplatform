@@ -68,6 +68,28 @@ jobs:
         continue-on-error: true
         run: cd frontend/src-tauri && cargo audit --deny warnings
 
+      - name: Set up Node.js 22
+        # cargo check 会调用 tauri::generate_context!() 宏，该宏读取 tauri.conf.json
+        # 中的 frontendDist 路径（../dist）。必须先 build frontend 生成 dist/ 目录，
+        # 否则宏会 panic: "frontendDist is set to ../dist but this path doesn't exist"
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (generate dist/ for Tauri context)
+        # tauri::generate_context!() 宏在编译时读取 frontendDist 目录
+        # 必须在 cargo check 之前生成 dist/
+        working-directory: frontend
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+        run: npm run build
+
       - name: Build check
         run: cd frontend/src-tauri && cargo check
 
