@@ -28,10 +28,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 20
+        # 使用 Node 20 LTS，与 frontend/Dockerfile 的 node:20-alpine 保持一致
+        # Dockerfile 在 Linux + Node 20 下 npm run build 能成功，CI 应与生产环境一致
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -52,10 +54,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 20
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -76,10 +78,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 20
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -127,10 +129,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 20
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -174,7 +176,14 @@ jobs:
           NODE_OPTIONS: --max_old_space_size=4096
         run: |
           set +e
-          npx vite build
+          # 打印工具链版本，便于排查 Node/esbuild 兼容性问题
+          echo "=== Toolchain versions ==="
+          node --version
+          npx esbuild --version
+          npx vite --version
+          echo "=========================="
+          # --logLevel=info 输出详细构建日志，失败时便于定位具体模块
+          npx vite build --logLevel=info
           VITE_EXIT=$?
           echo "vite build exit code: $VITE_EXIT"
           if [ $VITE_EXIT -ne 0 ]; then
@@ -184,6 +193,8 @@ jobs:
             ls -la dist/ 2>/dev/null || echo "dist/ not found"
             echo "=== dist/assets directory ==="
             ls -la dist/assets/ 2>/dev/null || echo "dist/assets/ not found"
+            echo "=== node_modules size ==="
+            du -sh node_modules 2>/dev/null || true
             exit 1
           fi
 

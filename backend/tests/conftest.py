@@ -248,6 +248,55 @@ def _reset_limiter_storage():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_model_factory_singletons():
+    """每个测试前重置 ModelFactory 单例缓存。
+
+    防止测试间状态泄漏：测试 A 创建了 OllamaLLMProvider 实例并缓存，
+    测试 B 拿到的是 A 的实例而非新建。重置确保每个测试从干净的
+    ModelFactory._llm/_embedding/_reranker = None 开始。
+
+    test_models.py::TestModelFactory.setup_method 已自行重置，
+    本 fixture 与之兼容（幂等操作）。
+    """
+    from app.models.factory import ModelFactory
+
+    ModelFactory._llm = None
+    ModelFactory._embedding = None
+    ModelFactory._reranker = None
+    yield
+    # 测试结束后也重置，避免后续测试受影响
+    ModelFactory._llm = None
+    ModelFactory._embedding = None
+    ModelFactory._reranker = None
+
+
+@pytest.fixture(autouse=True)
+def _mock_reranker_model_download():
+    """全局 mock sentence_transformers.CrossEncoder，避免 CI 触发 HuggingFace 1.1GB 下载。
+
+    LocalBgeRerankerProvider._load_model_sync 内部 `from sentence_transformers
+    import CrossEncoder` 会触发 HuggingFace 下载 bge-reranker-base（~1.1GB），
+    CI 环境下会超时或失败。通过 sys.modules 注入 mock 模块，让 import 拿到
+    MagicMock 而非真实 CrossEncoder。
+
+    test_models.py::TestLocalBgeRerankerProvider 的测试用 patch.dict(sys.modules)
+    显式替换 sentence_transformers，会覆盖本 fixture 的注入，因此不受影响。
+    """
+    fake_module = _MagicMock()
+    fake_module.CrossEncoder = _MagicMock(return_value=_MagicMock())
+
+    original = _sys.modules.get("sentence_transformers")
+    _sys.modules["sentence_transformers"] = fake_module
+    try:
+        yield
+    finally:
+        if original is not None:
+            _sys.modules["sentence_transformers"] = original
+        else:
+            _sys.modules.pop("sentence_transformers", None)
+
+
 @pytest.fixture
 def mock_sse_common():
     """Mock SSE 流式响应的公共依赖（不随测试变化的 patch）。
