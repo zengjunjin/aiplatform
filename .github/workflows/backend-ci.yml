@@ -206,6 +206,16 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Check service connectivity
+        # 在运行测试前验证服务容器是否真的可用，避免因服务未就绪导致的测试失败
+        run: |
+          echo "=== Checking PostgreSQL ==="
+          python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('localhost', 5432)); print('PostgreSQL: OK'); s.close()" || (echo "PostgreSQL: FAILED" && exit 1)
+          echo "=== Checking Redis ==="
+          python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('localhost', 6379)); print('Redis: OK'); s.close()" || (echo "Redis: FAILED" && exit 1)
+          echo "=== Checking Qdrant ==="
+          python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:6333/healthz', timeout=3); print(f'Qdrant: OK ({r.status})')" || (echo "Qdrant: FAILED" && exit 1)
+
       - name: Run unit tests (exclude integration/e2e/real_rag)
         env:
           POSTGRES_HOST: localhost
@@ -225,7 +235,36 @@ jobs:
           EMBEDDING_DIM: 1024
           CHUNK_SIZE: 512
           RETRIEVAL_TOP_K: 10
-        run: poetry run pytest tests/ -v -m "not integration and not e2e and not real_rag" -n auto --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+        # --tb=long 输出完整堆栈，便于定位失败原因
+        # 失败时额外输出失败的测试名称摘要
+        run: poetry run pytest tests/ -v -m "not integration and not e2e and not real_rag" -n auto --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml --tb=long
+
+      - name: Print failed tests summary
+        # 测试失败时从 pytest-results.xml 提取失败的测试名称，便于快速定位
+        if: failure()
+        working-directory: backend
+        run: |
+          echo "=== Failed Tests Summary ==="
+          if [ -f pytest-results.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('pytest-results.xml')
+          root = tree.getroot()
+          failures = []
+          for tc in root.iter('testcase'):
+              for child in tc:
+                  if child.tag in ('failure', 'error'):
+                      failures.append(f\"  [{child.tag}] {tc.get('classname')}::{tc.get('name')}\")
+          if failures:
+              print(f'Total failures/errors: {len(failures)}')
+              for f in failures:
+                  print(f)
+          else:
+              print('No failures found in XML')
+          "
+          else
+            echo "pytest-results.xml not found"
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -358,6 +397,33 @@ jobs:
           CHUNK_SIZE: 512
           RETRIEVAL_TOP_K: 10
         run: poetry run pytest tests/ -v -m "integration" -n auto --dist=loadscope --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+
+      - name: Print failed tests summary
+        # 测试失败时从 pytest-results.xml 提取失败的测试名称，便于快速定位
+        if: failure()
+        working-directory: backend
+        run: |
+          echo "=== Failed Tests Summary ==="
+          if [ -f pytest-results.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('pytest-results.xml')
+          root = tree.getroot()
+          failures = []
+          for tc in root.iter('testcase'):
+              for child in tc:
+                  if child.tag in ('failure', 'error'):
+                      failures.append(f\"  [{child.tag}] {tc.get('classname')}::{tc.get('name')}\")
+          if failures:
+              print(f'Total failures/errors: {len(failures)}')
+              for f in failures:
+                  print(f)
+          else:
+              print('No failures found in XML')
+          "
+          else
+            echo "pytest-results.xml not found"
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
