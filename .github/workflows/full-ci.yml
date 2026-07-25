@@ -148,7 +148,14 @@ jobs:
         run: npm run test -- --coverage
 
       - name: Build production bundle
-        run: npm run build
+        # 增加 Node.js 堆内存至 4GB，避免 vite/esbuild 打包大型依赖时 OOM
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+        run: |
+          echo "=== Running tsc -b ==="
+          npx tsc -b
+          echo "=== Running vite build ==="
+          npx vite build
 
   deploy-staging:
     name: Deploy to Staging (ghcr :main)

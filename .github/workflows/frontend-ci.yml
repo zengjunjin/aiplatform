@@ -164,9 +164,18 @@ jobs:
       - name: Build production bundle
         # 增加 Node.js 堆内存至 4GB，避免大型 React 项目构建时 OOM
         # CI runner 默认堆内存约 1.5GB，vite/esbuild 在打包大型依赖时会触发 JavaScript heap out of memory
+        # 拆分 tsc -b 和 vite build，便于定位是类型检查失败还是打包失败
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: npm run build
+        run: |
+          echo "=== Environment ==="
+          node --version
+          npm --version
+          free -h || true
+          echo "=== Running tsc -b ==="
+          npx tsc -b
+          echo "=== Running vite build ==="
+          npx vite build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v5
