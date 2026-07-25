@@ -133,7 +133,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend Docker image (staging)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: true
@@ -148,7 +148,7 @@ jobs:
             environment=staging
 
       - name: Build and push frontend Docker image (staging)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: true
@@ -283,7 +283,7 @@ jobs:
 
       - name: Build and push backend Docker image
         id: build-backend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: true
@@ -304,7 +304,7 @@ jobs:
 
       - name: Build and push frontend Docker image
         id: build-frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: true
