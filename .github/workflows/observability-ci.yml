@@ -26,7 +26,7 @@ jobs:
     name: Prometheus Rules Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install promtool
         run: |
           sudo apt-get update
@@ -34,25 +34,32 @@ jobs:
       - name: Check Prometheus rules
         run: promtool check rules deploy/prometheus/alerts.yml
       - name: Check Prometheus config
-        run: promtool check config deploy/prometheus.yml
+        # prometheus.yml 中 rule_files 使用容器内路径 /etc/prometheus/alerts.yml
+        # CI 环境中需要创建该路径的软链接，使 promtool 能找到规则文件
+        run: |
+          sudo mkdir -p /etc/prometheus
+          sudo cp deploy/prometheus/alerts.yml /etc/prometheus/alerts.yml
+          promtool check config deploy/prometheus.yml
 
   alertmanager-config:
     name: Alertmanager Config Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install amtool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y prometheus-alertmanager
+      - uses: actions/checkout@v5
       - name: Check Alertmanager config
-        run: amtool check-config deploy/alertmanager.yml
+        # 使用与 docker-compose 中相同版本的官方 Docker 镜像运行 amtool，
+        # 避免系统 apt 包版本过旧导致语法不兼容
+        run: |
+          docker run --rm \
+            -v "${PWD}/deploy/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            prom/alertmanager:v0.27.0 \
+            amtool check-config /etc/alertmanager/alertmanager.yml
 
   grafana-dashboards:
     name: Grafana Dashboard JSON Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -68,8 +75,12 @@ jobs:
     name: Docker Compose Config Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check docker-compose config
+        # docker-compose.yml 中使用 ${VAR:?...} 语法强制要求环境变量
+        # CI 环境中提供测试值以通过配置校验
         run: |
           cd deploy
+          GRAFANA_ADMIN_PASSWORD=ci-test-password \
+          POSTGRES_PASSWORD=ci-test-password \
           docker compose -f docker-compose.yml config -q
