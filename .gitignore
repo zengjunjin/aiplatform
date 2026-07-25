@@ -36,6 +36,10 @@ frontend/dist/
 frontend/src-tauri/dist/
 frontend/src-tauri/target/
 release/
+# TypeScript 增量构建缓存（不应跟踪）
+*.tsbuildinfo
+# tsc -b 自动生成的声明文件（不应跟踪）
+frontend/vite.config.d.ts
 
 # Large data directories
 storage/

@@ -240,7 +240,9 @@ class TestReadyzCheckTimeout:
             patch("app.main._check_qdrant", new=AsyncMock(return_value=(True, "ok"))),
         ):
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", timeout=10) as client:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", timeout=10
+            ) as client:
                 start = time.monotonic()
                 resp = await client.get("/readyz")
                 elapsed = time.monotonic() - start

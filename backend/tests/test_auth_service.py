@@ -174,9 +174,7 @@ class TestRegister:
     @pytest.mark.asyncio
     async def test_register_success(self):
         """注册成功返回新用户。"""
-        req = RegisterRequest(
-            username="newuser", email="new@example.com", password="StrongPwd123!"
-        )
+        req = RegisterRequest(username="newuser", email="new@example.com", password="StrongPwd123!")
         db = AsyncMock()
         # execute 返回 None（无冲突）
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
@@ -220,9 +218,7 @@ class TestRegister:
     async def test_register_email_duplicate_raises_conflict(self, make_user):
         """邮箱已存在 → ConflictError。"""
         existing = make_user(user_id=1, username="other", email="dup@example.com")
-        req = RegisterRequest(
-            username="newuser", email="dup@example.com", password="StrongPwd123!"
-        )
+        req = RegisterRequest(username="newuser", email="dup@example.com", password="StrongPwd123!")
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: existing))
 
@@ -232,9 +228,7 @@ class TestRegister:
     @pytest.mark.asyncio
     async def test_register_integrity_error_triggers_rollback(self):
         """commit 抛 IntegrityError → rollback + ConflictError（事务回滚）。"""
-        req = RegisterRequest(
-            username="newuser", email="new@example.com", password="StrongPwd123!"
-        )
+        req = RegisterRequest(username="newuser", email="new@example.com", password="StrongPwd123!")
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
         db.commit = AsyncMock(side_effect=IntegrityError("stmt", "params", "orig"))
@@ -251,9 +245,7 @@ class TestRegister:
     async def test_register_weak_password_raises_validation_error(self):
         """密码强度不足 → ValidationError（在 hash 前校验）。"""
         # "aaaaaaaa" 通过 Pydantic min_length=8，但不符合强度策略（无大写/数字/特殊字符）
-        req = RegisterRequest(
-            username="newuser", email="new@example.com", password="aaaaaaaa"
-        )
+        req = RegisterRequest(username="newuser", email="new@example.com", password="aaaaaaaa")
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
 
@@ -338,9 +330,7 @@ class TestRefreshToken:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: user))
 
-        with patch(
-            "app.services.auth_service.add_to_blacklist", new=AsyncMock()
-        ) as mock_blacklist:
+        with patch("app.services.auth_service.add_to_blacklist", new=AsyncMock()) as mock_blacklist:
             result = await auth_service.refresh_token(old_refresh, db)
 
         assert "access_token" in result
@@ -374,9 +364,7 @@ class TestRefreshToken:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: user))
 
-        with patch(
-            "app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=True)
-        ):
+        with patch("app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=True)):
             with pytest.raises(AuthError) as exc:
                 await auth_service.refresh_token(old_refresh, db)
         assert "revoked" in str(exc.value.message).lower()
@@ -397,9 +385,7 @@ class TestRefreshToken:
         token = encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
         db = AsyncMock()
 
-        with patch(
-            "app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)
-        ):
+        with patch("app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)):
             with pytest.raises(AuthError):
                 await auth_service.refresh_token(token, db)
 
@@ -410,9 +396,7 @@ class TestRefreshToken:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
 
-        with patch(
-            "app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)
-        ):
+        with patch("app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)):
             with pytest.raises(AuthError):
                 await auth_service.refresh_token(old_refresh, db)
 
@@ -424,9 +408,7 @@ class TestRefreshToken:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: user))
 
-        with patch(
-            "app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)
-        ):
+        with patch("app.services.auth_service.is_blacklisted", new=AsyncMock(return_value=False)):
             with pytest.raises(AuthError):
                 await auth_service.refresh_token(old_refresh, db)
 
@@ -557,9 +539,7 @@ class TestMemoryBlacklistHelpers:
 
     def test_memory_blacklist_add_and_contains(self):
         """加入后能查到。"""
-        auth_service._memory_blacklist_add(
-            "access", "tok1", datetime.now(UTC).timestamp() + 100
-        )
+        auth_service._memory_blacklist_add("access", "tok1", datetime.now(UTC).timestamp() + 100)
         assert auth_service._memory_blacklist_contains("access", "tok1") is True
 
     def test_memory_blacklist_not_contains(self):
@@ -569,7 +549,9 @@ class TestMemoryBlacklistHelpers:
     def test_memory_blacklist_expired_cleaned(self):
         """过期条目在 contains 检查时被清理。"""
         auth_service._memory_blacklist_add(
-            "access", "tok1", datetime.now(UTC).timestamp() - 10  # 已过期
+            "access",
+            "tok1",
+            datetime.now(UTC).timestamp() - 10,  # 已过期
         )
         assert auth_service._memory_blacklist_contains("access", "tok1") is False
         # 过期条目应被清理

@@ -21,9 +21,7 @@ _RESOURCE = "opentelemetry.sdk.resources.Resource"
 _BATCH_PROCESSOR = "opentelemetry.sdk.trace.export.BatchSpanProcessor"
 _PARENT_BASED = "opentelemetry.sdk.trace.sampling.ParentBased"
 _RATIO_BASED = "opentelemetry.sdk.trace.sampling.TraceIdRatioBased"
-_OTLP_EXPORTER = (
-    "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-)
+_OTLP_EXPORTER = "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
 _SQLALCHEMY = "opentelemetry.instrumentation.sqlalchemy.SQLAlchemyInstrumentor"
 _HTTPX = "opentelemetry.instrumentation.httpx.HTTPXClientInstrumentor"
 _CELERY = "opentelemetry.instrumentation.celery.CeleryInstrumentor"
@@ -51,17 +49,19 @@ def test_otel_sampler_ratio_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
     monkeypatch.setattr(settings, "OTEL_TRACES_SAMPLER_ARG", 0.5)
 
-    with patch(f"{_TRACE}.set_tracer_provider"), \
-         patch(_OTLP_EXPORTER), \
-         patch(_BATCH_PROCESSOR), \
-         patch(_TRACE_PROVIDER) as mock_provider_cls, \
-         patch(_RESOURCE), \
-         patch(_PARENT_BASED) as mock_parent_based, \
-         patch(_RATIO_BASED) as mock_ratio_based, \
-         patch(_SQLALCHEMY), \
-         patch(_HTTPX), \
-         patch(_CELERY), \
-         patch(_REDIS):
+    with (
+        patch(f"{_TRACE}.set_tracer_provider"),
+        patch(_OTLP_EXPORTER),
+        patch(_BATCH_PROCESSOR),
+        patch(_TRACE_PROVIDER) as mock_provider_cls,
+        patch(_RESOURCE),
+        patch(_PARENT_BASED) as mock_parent_based,
+        patch(_RATIO_BASED) as mock_ratio_based,
+        patch(_SQLALCHEMY),
+        patch(_HTTPX),
+        patch(_CELERY),
+        patch(_REDIS),
+    ):
         _setup_opentelemetry()
         # TraceIdRatioBased 应使用 0.5
         mock_ratio_based.assert_called_once_with(0.5)
@@ -80,17 +80,19 @@ def test_otel_redis_instrumentor_registered(monkeypatch):
 
     monkeypatch.setattr(settings, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
 
-    with patch(f"{_TRACE}.set_tracer_provider"), \
-         patch(_OTLP_EXPORTER), \
-         patch(_BATCH_PROCESSOR), \
-         patch(_TRACE_PROVIDER), \
-         patch(_RESOURCE), \
-         patch(_PARENT_BASED), \
-         patch(_RATIO_BASED), \
-         patch(_SQLALCHEMY), \
-         patch(_HTTPX), \
-         patch(_CELERY), \
-         patch(_REDIS) as mock_redis_instr:
+    with (
+        patch(f"{_TRACE}.set_tracer_provider"),
+        patch(_OTLP_EXPORTER),
+        patch(_BATCH_PROCESSOR),
+        patch(_TRACE_PROVIDER),
+        patch(_RESOURCE),
+        patch(_PARENT_BASED),
+        patch(_RATIO_BASED),
+        patch(_SQLALCHEMY),
+        patch(_HTTPX),
+        patch(_CELERY),
+        patch(_REDIS) as mock_redis_instr,
+    ):
         _setup_opentelemetry()
         mock_redis_instr.return_value.instrument.assert_called_once()
 
@@ -103,17 +105,19 @@ def test_otel_service_name_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
     monkeypatch.setattr(settings, "OTEL_SERVICE_NAME", "my-custom-service")
 
-    with patch(f"{_TRACE}.set_tracer_provider"), \
-         patch(_OTLP_EXPORTER), \
-         patch(_BATCH_PROCESSOR), \
-         patch(_TRACE_PROVIDER), \
-         patch(_RESOURCE) as mock_resource, \
-         patch(_PARENT_BASED), \
-         patch(_RATIO_BASED), \
-         patch(_SQLALCHEMY), \
-         patch(_HTTPX), \
-         patch(_CELERY), \
-         patch(_REDIS):
+    with (
+        patch(f"{_TRACE}.set_tracer_provider"),
+        patch(_OTLP_EXPORTER),
+        patch(_BATCH_PROCESSOR),
+        patch(_TRACE_PROVIDER),
+        patch(_RESOURCE) as mock_resource,
+        patch(_PARENT_BASED),
+        patch(_RATIO_BASED),
+        patch(_SQLALCHEMY),
+        patch(_HTTPX),
+        patch(_CELERY),
+        patch(_REDIS),
+    ):
         _setup_opentelemetry()
         # Resource.create 应被调用，参数包含 service.name
         mock_resource.create.assert_called_once()

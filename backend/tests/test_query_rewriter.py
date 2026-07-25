@@ -235,9 +235,7 @@ class TestExpandQuery:
         """变体含重复项时去重（保序），与原 query 重复也去除。"""
         query = "什么是 RAG？"
         mock_llm = MagicMock()
-        mock_llm.chat = AsyncMock(
-            return_value="RAG 是什么\n什么是 RAG？\nRAG 是什么\n解释 RAG"
-        )
+        mock_llm.chat = AsyncMock(return_value="RAG 是什么\n什么是 RAG？\nRAG 是什么\n解释 RAG")
 
         with patch("app.models.factory.ModelFactory.create_llm", return_value=mock_llm):
             result = await query_rewriter.expand_query(query)

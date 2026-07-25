@@ -79,9 +79,7 @@ def _setup_opentelemetry() -> None:
 
         resource = Resource.create({"service.name": settings.OTEL_SERVICE_NAME})
         provider = TracerProvider(resource=resource, sampler=sampler)
-        exporter = OTLPSpanExporter(
-            endpoint=f"{settings.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces"
-        )
+        exporter = OTLPSpanExporter(endpoint=f"{settings.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces")
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
 
