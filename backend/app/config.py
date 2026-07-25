@@ -215,6 +215,14 @@ class Settings(BaseSettings):
     FEEDBACK_REPORT_KEEP_COUNT: int = 12
     # 业务指标采集循环间隔（秒）
     METRICS_COLLECTOR_INTERVAL: int = 60
+
+    # OpenTelemetry 配置（统一管理，替代原 os.getenv 调用）
+    # 空字符串表示禁用 OTel（不初始化 tracer provider）
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "rag-platform-backend"
+    # 采样率：1.0=全采样，0.1=10%采样（ParentBased(TraceIdRatioBased(ratio))）
+    # 单机低 QPS 场景可调到 1.0，生产高 QPS 调到 0.1 或更低
+    OTEL_TRACES_SAMPLER_ARG: float = 0.1
     # 文件存储根目录（空字符串表示自动使用 backend/ 目录）
     STORAGE_DIR: str = ""
 
