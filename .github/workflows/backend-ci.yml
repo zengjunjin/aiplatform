@@ -119,7 +119,9 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.12', '3.13']
+        # 3.13 暂未加入：sentence-transformers / torch / pyarrow 等依赖链尚不完整支持 3.13
+        # 待依赖生态成熟后再启用
+        python-version: ['3.12']
 
     steps:
       - name: Checkout code

@@ -15,7 +15,6 @@ import pytest
 
 from app.rag import query_rewriter
 
-
 # ---------- rewrite_query ----------
 
 

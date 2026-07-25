@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.tasks import scheduled_evaluation
 from app.tasks.scheduled_evaluation import scheduled_evaluation_task
 
-
 # ---------- 辅助函数 ----------
 
 
