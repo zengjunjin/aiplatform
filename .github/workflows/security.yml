@@ -103,14 +103,21 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Run Trivy filesystem scan
-        # v0.36.0 (2026-04-22): 最新稳定版，支持 Node.js 24 runtime
-        # 旧版 0.28.0 已从 GitHub releases 中移除，导致 CI 失败
-        # 使用 .github/trivy.yaml 配置文件排除 target/node_modules/.venv/release 等构建产物
+        # v0.36.0 (2026-04-22): 最新稳定版
+        # 注意：v0.36.0 移除了 `config` 输入参数，改用 `trivy-config` 或 inline 参数
+        # 这里改用 inline 参数避免配置文件解析问题
+        # skip-dirs 排除构建产物/第三方依赖/数据目录，避免误报与超时
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          config: .github/trivy.yaml
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: 'frontend/src-tauri/target,frontend/node_modules,backend/.venv,backend/.cache,release,.git,.trae,.trae-cn,storage,qdrant_data,qdrant_storage'
+          skip-files: 'trivy-results.sarif,trivy-sbom.json,backend/bandit-results.sarif'
 
       - name: Upload Trivy SARIF results
         if: always()
