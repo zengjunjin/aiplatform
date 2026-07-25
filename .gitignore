@@ -10,6 +10,15 @@ backend/**/.pytest_cache/
 backend/.venv/
 backend/venv/
 
+# Python virtual environments (any subproject)
+.venv/
+venv/
+
+# Python bytecode caches and pytest caches (any subproject)
+__pycache__/
+*.pyc
+.pytest_cache/
+
 # IDE / Agent temp files
 .trae-cn/
 .trae/
