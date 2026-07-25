@@ -5,6 +5,7 @@ import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -178,8 +179,6 @@ def _calculate_retry_after(exc: RateLimitExceeded) -> int:
     reset_time = getattr(exc, "reset_time", None)
     if reset_time is not None:
         try:
-            from datetime import datetime
-
             if isinstance(reset_time, datetime):
                 remaining = (reset_time - datetime.now()).total_seconds()
             else:
