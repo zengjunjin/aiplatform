@@ -169,9 +169,23 @@ jobs:
 
       - name: Build production bundle (vite build)
         # 增加 Node.js 堆内存至 4GB，避免 vite/esbuild 打包大型依赖时 OOM
+        # 失败时打印 dist 目录内容和内存状态，便于诊断
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: npx vite build
+        run: |
+          set +e
+          npx vite build
+          VITE_EXIT=$?
+          echo "vite build exit code: $VITE_EXIT"
+          if [ $VITE_EXIT -ne 0 ]; then
+            echo "=== Memory status ==="
+            free -h || true
+            echo "=== dist directory ==="
+            ls -la dist/ 2>/dev/null || echo "dist/ not found"
+            echo "=== dist/assets directory ==="
+            ls -la dist/assets/ 2>/dev/null || echo "dist/assets/ not found"
+            exit 1
+          fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v5
