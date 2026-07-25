@@ -11,6 +11,15 @@ export default [
     ignores: ['dist', 'node_modules', 'src-tauri'],
   },
   js.configs.recommended,
+  // 配置文件（tailwind.config.js / vite.config.ts 等）需要 Node.js globals
+  {
+    files: ['*.config.js', '*.config.ts', '*.config.mjs', '*.config.cjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
