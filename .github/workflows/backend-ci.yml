@@ -1,4 +1,4 @@
-name: Backend CI
+﻿name: Backend CI
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -43,7 +43,7 @@ jobs:
         run: poetry self add poetry-plugin-export
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-poetry
         with:
           path: |
@@ -54,7 +54,7 @@ jobs:
             ${{ runner.os }}-poetry-
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('backend/poetry.lock') }}
@@ -105,7 +105,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: backend-sbom
           path: backend/sbom-backend.json
@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -185,7 +185,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-poetry
         with:
           path: |
@@ -196,7 +196,7 @@ jobs:
             ${{ runner.os }}-poetry-${{ matrix.python-version }}-
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('backend/poetry.lock') }}
@@ -228,7 +228,7 @@ jobs:
         run: poetry run pytest tests/ -v -m "not integration and not e2e and not real_rag" -n auto --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./backend/coverage.xml
@@ -237,7 +237,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: backend-unit-test-results-${{ matrix.python-version }}
           path: |
@@ -302,7 +302,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -315,7 +315,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-poetry
         with:
           path: |
@@ -326,7 +326,7 @@ jobs:
             ${{ runner.os }}-poetry-
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('backend/poetry.lock') }}
@@ -338,15 +338,17 @@ jobs:
 
       - name: Run integration tests
         env:
-          POSTGRES_HOST: postgres
+          # GitHub Actions 服务容器端口映射到 localhost（无 container: 配置时）
+          # 不能使用服务容器名称（如 postgres/redis/qdrant），那需要 container: 配置
+          POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: test
-          REDIS_HOST: redis
+          REDIS_HOST: localhost
           REDIS_PORT: 6379
           REDIS_DB: 0
-          QDRANT_HOST: qdrant
+          QDRANT_HOST: localhost
           QDRANT_PORT: 6333
           JWT_SECRET: test-secret-key-for-ci-at-least-32-chars-long
           OLLAMA_HOST: http://localhost:11434
@@ -358,7 +360,7 @@ jobs:
         run: poetry run pytest tests/ -v -m "integration" -n auto --dist=loadscope --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./backend/coverage.xml
@@ -367,7 +369,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: backend-integration-test-results
           path: |

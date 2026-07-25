@@ -46,21 +46,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyYAML
+        run: pip install pyyaml
       - name: Check Alertmanager config
         # alertmanager.yml 使用 ${VAR:default} 语法引用环境变量
-        # amtool check-config 不支持 --config.expand-env（仅 alertmanager 二进制支持）
-        # CI 中用 sed 将 ${VAR:default} 替换为 default 值，${VAR} 替换为 placeholder
-        # 再用 amtool 验证展开后的配置文件
-        run: |
-          sed -E 's/\$\{[A-Z_]+:([^}]+)\}/\1/g; s/\$\{[A-Z_]+\}/placeholder/g' \
-            deploy/alertmanager.yml > /tmp/alertmanager-ci.yml
-          echo "=== Expanded config for CI validation ==="
-          cat /tmp/alertmanager-ci.yml
-          echo "=== Running amtool check-config ==="
-          docker run --rm \
-            -v "/tmp/alertmanager-ci.yml:/etc/alertmanager/alertmanager.yml:ro" \
-            prom/alertmanager:v0.27.0 \
-            amtool check-config /etc/alertmanager/alertmanager.yml
+        # amtool check-config 不支持 --config.expand-env，且 Docker 挂载 /tmp 文件
+        # 在 GitHub Actions 上可能有路径问题
+        # 改用独立 Python 脚本进行两层验证：
+        #   1. YAML 语法检查（确保结构正确）
+        #   2. 语义检查（确保必填字段存在、receiver 名称匹配）
+        # 注意：不能用 `python3 -c "..."` 内联脚本，因为 f-string 中的双引号
+        # 会被 bash 提前结束字符串，导致语法错误
+        run: python3 scripts/validate_alertmanager_config.py deploy/alertmanager.yml
 
   grafana-dashboards:
     name: Grafana Dashboard JSON Validation
