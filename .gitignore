@@ -27,6 +27,9 @@ backend/pytest-results.xml
 backend/coverage.xml
 frontend/junit.xml
 ci-*-results.log
+backend/bandit-results.sarif
+trivy-results.sarif
+trivy-sbom.json
 
 # Build outputs
 frontend/dist/

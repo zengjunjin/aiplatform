@@ -28,9 +28,10 @@ describe('MetricCard', () => {
   });
 
   it('should format value as percentage with one decimal place', () => {
-    render(<MetricCard label="L" value={0.823} prevValue={null} />);
+    const { container } = render(<MetricCard label="L" value={0.823} prevValue={null} />);
+    // antd Statistic 将数值拆分为整数与小数两个 span，需读取整体 textContent
     // 0.823 * 100 = 82.3
-    expect(screen.getByText('82.3')).toBeDefined();
+    expect(container.querySelector('.ant-statistic-content-value')?.textContent).toBe('82.3');
   });
 
   it('should append % suffix when value is present', () => {
@@ -49,8 +50,9 @@ describe('MetricCard', () => {
   });
 
   it('should format value 0 as 0.0', () => {
-    render(<MetricCard label="L" value={0} prevValue={null} />);
-    expect(screen.getByText('0.0')).toBeDefined();
+    const { container } = render(<MetricCard label="L" value={0} prevValue={null} />);
+    // antd Statistic 将数值拆分为整数与小数两个 span，需读取整体 textContent
+    expect(container.querySelector('.ant-statistic-content-value')?.textContent).toBe('0.0');
   });
 
   it('should apply success color when value >= 0.7', () => {

@@ -224,7 +224,8 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+          --health-start-period 10s
 
       redis:
         image: redis:7-alpine
@@ -234,17 +235,20 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+          --health-start-period 5s
 
       qdrant:
-        image: qdrant/qdrant:latest
+        # 固定版本避免 latest 漂移
+        image: qdrant/qdrant:v1.10.1
         ports:
           - 6333:6333
         options: >-
-          --health-cmd "wget --spider -q http://localhost:6333/healthz"
+          --health-cmd "curl -fsS http://localhost:6333/healthz || exit 1"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 15
+          --health-start-period 15s
 
     steps:
       - name: Checkout code

@@ -1,0 +1,59 @@
+# Trivy 配置：文件系统扫描行为控制
+# 用于 security.yml workflow 中的 Trivy FS Scan 步骤
+# 目的：避免扫描构建产物（target/node_modules/.venv/release）造成的误报与超时
+
+# 扫描器配置
+scan:
+  scanners:
+    - vuln
+    - misconfig
+    - secret
+    - license
+
+# 跳过目录：这些目录包含构建产物或第三方依赖，由各自的 lock 文件单独扫描
+skip-dirs:
+  - frontend/src-tauri/target   # Rust 构建产物（含大量 .d/.dll/.exe 二进制）
+  - frontend/node_modules        # npm 依赖（通过 package-lock.json 扫描）
+  - backend/.venv                # Poetry 虚拟环境
+  - backend/.cache               # pip/poetry 缓存
+  - release                      # 历史发布产物（23G 占用主要来源）
+  - .git                         # Git 元数据
+  - .trae                        # IDE/Agent 临时文件
+  - .trae-cn                     # IDE/Agent 临时文件
+  - storage                      # 运行时数据
+  - qdrant_data                  # Qdrant 数据
+  - qdrant_storage               # Qdrant 存储
+
+# 跳过文件：临时 CI 产物
+skip-files:
+  - trivy-results.sarif
+  - trivy-sbom.json
+  - backend/bandit-results.sarif
+
+# 漏洞扫描配置
+vulnerability:
+  # 仅报告有修复方案的漏洞（与 ignore-unfixed: true 一致）
+  ignore-unfixed: true
+  # 仅在 CRITICAL 级别失败
+  severity: CRITICAL
+
+# 密钥扫描配置
+secret:
+  # 排除测试 fixtures 中的假密钥
+  exclude-paths:
+    - "backend/tests/**"
+    - "**/*.test.*"
+    - "**/*.spec.*"
+    - "**/fixtures/**"
+
+# 输出格式
+format: sarif
+output: trivy-results.sarif
+
+# 退出码：发现 CRITICAL 漏洞时返回 1
+exit-code: 1
+
+# 数据库配置
+db:
+  # 不跳过数据库更新（确保使用最新漏洞数据库）
+  skip-update: false
