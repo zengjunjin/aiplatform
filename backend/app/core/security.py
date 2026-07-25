@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import bcrypt
 from jwt import decode, encode
@@ -22,11 +23,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
-    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    now = datetime.now(UTC)
+    expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": subject,
         "exp": expire,
-        "iat": datetime.now(UTC),
+        "iat": now,
+        "jti": uuid4().hex,  # 唯一 ID，确保同一秒内签发的 token 不重复
         "type": "access",
         "iss": settings.JWT_ISSUER,
         "aud": settings.JWT_AUDIENCE,
@@ -37,11 +40,13 @@ def create_access_token(subject: str, extra: dict | None = None) -> str:
 
 
 def create_refresh_token(subject: str) -> str:
-    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    now = datetime.now(UTC)
+    expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": subject,
         "exp": expire,
-        "iat": datetime.now(UTC),
+        "iat": now,
+        "jti": uuid4().hex,  # 唯一 ID，确保同一秒内签发的 token 不重复（轮换必需）
         "type": "refresh",
         "iss": settings.JWT_ISSUER,
         "aud": settings.JWT_AUDIENCE,

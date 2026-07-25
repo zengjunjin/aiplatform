@@ -81,9 +81,19 @@ async def expand_query(query: str) -> list[str]:
         if not response:
             return [query]
 
-        # 按行分割，过滤空行，最多取 3 个
+        # 按行分割，过滤空行
         variants = [line.strip() for line in response.splitlines()]
-        variants = [v for v in variants if v][:3]
+        variants = [v for v in variants if v]
+
+        # 先去重（保序），再取前 3 个
+        # 避免重复项占用 [:3] 名额导致有效变体被截断
+        seen: set[str] = set()
+        unique_variants: list[str] = []
+        for v in variants:
+            if v not in seen:
+                seen.add(v)
+                unique_variants.append(v)
+        variants = unique_variants[:3]
 
         # 包含原 query，去重（保序）
         result = [query]
@@ -124,7 +134,11 @@ async def retrieve_with_expansion(query: str, kb_id: int, top_k: int = 10, **kwa
             # 优先用 rrf_score（融合分数），回退 score
             score = chunk.get("rrf_score")
             if score is None:
-                score = chunk.get("score", 0)
+                # 注意：dict.get("score", 0) 当 key 存在但值为 None 时返回 None
+                # 需要额外处理 None → 0 的转换
+                score = chunk.get("score")
+                if score is None:
+                    score = 0
             if cid not in best or score > best[cid][0]:
                 best[cid] = (score, chunk)
 

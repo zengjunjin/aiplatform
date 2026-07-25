@@ -423,10 +423,10 @@ class TestRetrieveWithExpansion:
             result = await query_rewriter.retrieve_with_expansion("query", kb_id=1, top_k=3)
 
         assert len(result) == 3
-        # 按分数降序
-        assert result[0]["score"] == 0.5
-        assert result[1]["score"] == 0.4
-        assert result[2]["score"] == 0.3
+        # 按分数降序（浮点数用 approx 避免精度问题：0.1*3 = 0.30000000000000004）
+        assert result[0]["score"] == pytest.approx(0.5)
+        assert result[1]["score"] == pytest.approx(0.4)
+        assert result[2]["score"] == pytest.approx(0.3)
 
     @pytest.mark.asyncio
     async def test_retrieve_with_expansion_single_query_degradation(self):

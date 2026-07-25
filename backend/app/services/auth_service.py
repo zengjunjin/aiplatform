@@ -140,8 +140,10 @@ def _memory_blacklist_add(token_type: str, token: str, exp: float) -> None:
     key = f"{token_type}:{token}"
     _memory_blacklist[key] = exp
     if len(_memory_blacklist) > _memory_blacklist_max:
-        # dict 保持插入顺序，弹出最旧条目
-        _memory_blacklist.popitem(last=False)
+        # dict 保持插入顺序（Python 3.7+），弹出最旧条目
+        # 注意：dict.popitem() 不接受 last 参数（那是 OrderedDict 的接口）
+        oldest_key = next(iter(_memory_blacklist))
+        del _memory_blacklist[oldest_key]
 
 
 def _memory_blacklist_contains(token_type: str, token: str) -> bool:
