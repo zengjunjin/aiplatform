@@ -19,8 +19,7 @@ from app.services.audit_service import log_audit
 async def create_kb(req: KBCreate, user_id: int, db: AsyncSession) -> KnowledgeBase:
     existing = await db.execute(
         select(KnowledgeBase).where(
-            KnowledgeBase.owner_id == user_id,
-            KnowledgeBase.name == req.name
+            KnowledgeBase.owner_id == user_id, KnowledgeBase.name == req.name
         )
     )
     if existing.scalar_one_or_none():
@@ -33,7 +32,9 @@ async def create_kb(req: KBCreate, user_id: int, db: AsyncSession) -> KnowledgeB
     return kb
 
 
-async def list_kbs(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> tuple[list[KnowledgeBase], int]:
+async def list_kbs(
+    user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20
+) -> tuple[list[KnowledgeBase], int]:
     from sqlalchemy import text
 
     # 协作者过滤：collaborators JSONB 数组中包含 {"user_id": <user_id>} 的 KB
@@ -42,14 +43,10 @@ async def list_kbs(user_id: int, db: AsyncSession, page: int = 1, page_size: int
     # 改用 text() where 子句 + bindparam 显式 cast，确保 @> 操作符正确执行，
     # 同时保留 ORM select 加载（避免手动构造对象丢失 instance state）。
     filter_value = json.dumps([{"user_id": user_id}])
-    where_clause = text(
-        "owner_id = :uid OR collaborators @> CAST(:filter AS JSONB)"
-    )
+    where_clause = text("owner_id = :uid OR collaborators @> CAST(:filter AS JSONB)")
 
     count_query = select(func.count(KnowledgeBase.id)).where(where_clause)
-    total = await db.scalar(
-        count_query, params={"uid": user_id, "filter": filter_value}
-    )
+    total = await db.scalar(count_query, params={"uid": user_id, "filter": filter_value})
 
     data_query = (
         select(KnowledgeBase)
@@ -58,9 +55,7 @@ async def list_kbs(user_id: int, db: AsyncSession, page: int = 1, page_size: int
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    result = await db.execute(
-        data_query, params={"uid": user_id, "filter": filter_value}
-    )
+    result = await db.execute(data_query, params={"uid": user_id, "filter": filter_value})
     kbs = result.scalars().all()
     return kbs, total or 0
 
@@ -94,9 +89,7 @@ async def _get_kb_with_perm(
             collab_perm = collab.get("permission", "read")
             if _has_permission(collab_perm, required):
                 return kb
-            raise ForbiddenError(
-                f"Access denied: insufficient permission (requires {required})"
-            )
+            raise ForbiddenError(f"Access denied: insufficient permission (requires {required})")
     raise ForbiddenError("Access denied")
 
 
@@ -164,23 +157,21 @@ async def delete_kb(kb_id: int, user_id: int, db: AsyncSession) -> None:
         raise ForbiddenError("Only owner can delete the knowledge base")
 
     # 1. 统计待删除资源数量 (在删除前查询，提交后记录已不存在)
-    doc_count = await db.scalar(
-        select(func.count()).select_from(Document).where(Document.kb_id == kb_id)
-    ) or 0
-    chunk_count = await db.scalar(
-        select(func.count()).select_from(DocumentChunk).where(DocumentChunk.kb_id == kb_id)
-    ) or 0
+    doc_count = (
+        await db.scalar(select(func.count()).select_from(Document).where(Document.kb_id == kb_id))
+        or 0
+    )
+    chunk_count = (
+        await db.scalar(
+            select(func.count()).select_from(DocumentChunk).where(DocumentChunk.kb_id == kb_id)
+        )
+        or 0
+    )
 
     # 2-5. DB operations first — 先保证数据一致性
-    await db.execute(
-        delete(ChatSession).where(ChatSession.kb_id == kb_id)
-    )
-    await db.execute(
-        delete(DocumentChunk).where(DocumentChunk.kb_id == kb_id)
-    )
-    await db.execute(
-        delete(Document).where(Document.kb_id == kb_id)
-    )
+    await db.execute(delete(ChatSession).where(ChatSession.kb_id == kb_id))
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.kb_id == kb_id))
+    await db.execute(delete(Document).where(Document.kb_id == kb_id))
     await db.delete(kb)
     await db.commit()
 
@@ -188,11 +179,14 @@ async def delete_kb(kb_id: int, user_id: int, db: AsyncSession) -> None:
     #    storage dir) 由 document_service 订阅者通过 EventBus 处理。
     #    通过事件总线解耦，避免 kb_service 直接依赖 document_service。
     try:
-        await EventBus.publish(EventBus.KB_DELETED, {
-            "kb_id": kb_id,
-            "doc_count": doc_count,
-            "chunk_count": chunk_count,
-        })
+        await EventBus.publish(
+            EventBus.KB_DELETED,
+            {
+                "kb_id": kb_id,
+                "doc_count": doc_count,
+                "chunk_count": chunk_count,
+            },
+        )
     except Exception as e:
         # Task 30: EventBus.publish 失败时，将 kb_id 写入 Redis 补偿队列，
         # 由定时任务（kb cleanup worker）消费该队列重试外部资源清理
@@ -203,9 +197,7 @@ async def delete_kb(kb_id: int, user_id: int, db: AsyncSession) -> None:
             if redis is not None:
                 await redis.lpush("kb:cleanup:pending", str(kb_id))
         except Exception as redis_err:
-            logger.error(
-                f"Failed to enqueue kb_id={kb_id} to kb:cleanup:pending: {redis_err}"
-            )
+            logger.error(f"Failed to enqueue kb_id={kb_id} to kb:cleanup:pending: {redis_err}")
 
     # 7. 审计日志（记录删除的文档数、chunk 数）
     await log_audit(
@@ -248,7 +240,9 @@ async def get_kb_stats(kb_id: int, user_id: int, db: AsyncSession) -> dict:
     }
 
 
-async def add_collaborator(kb_id: int, user_id: int, target_user_id: int, permission: str, db: AsyncSession) -> dict:
+async def add_collaborator(
+    kb_id: int, user_id: int, target_user_id: int, permission: str, db: AsyncSession
+) -> dict:
     """Add a collaborator to a knowledge base. Owner or admin collaborator can add."""
     kb = await get_kb_for_admin(kb_id, user_id, db)
 
@@ -314,9 +308,11 @@ async def get_collaborators(kb_id: int, user_id: int, db: AsyncSession) -> list[
         uid = c.get("user_id")
         if uid:
             u = users_map.get(uid)
-            enriched.append({
-                "user_id": uid,
-                "username": u.username if u else f"User#{uid}",
-                "permission": c.get("permission", "read"),
-            })
+            enriched.append(
+                {
+                    "user_id": uid,
+                    "username": u.username if u else f"User#{uid}",
+                    "permission": c.get("permission", "read"),
+                }
+            )
     return enriched

@@ -5,8 +5,8 @@ Revises: 007_document_deleted_at
 Create Date: 2026-07-20
 
 """
-from alembic import op
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "008_deleted_at_index"

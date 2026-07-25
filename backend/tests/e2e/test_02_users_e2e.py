@@ -8,8 +8,7 @@ API:
 - 注意：API 没有 POST /users、DELETE /users/{id}、GET /users/{id}、GET /users/me
         用户创建走 /auth/register，用户信息走 /auth/me
 """
-import uuid
-import pytest
+
 import requests
 
 from tests.e2e.conftest import extract_data
@@ -17,9 +16,9 @@ from tests.e2e.conftest import extract_data
 
 def test_admin_can_list_users(base_url, admin_headers):
     """admin 列出用户"""
-    r = requests.get(f"{base_url}/users",
-                     params={"page": 1, "page_size": 10},
-                     headers=admin_headers, timeout=10)
+    r = requests.get(
+        f"{base_url}/users", params={"page": 1, "page_size": 10}, headers=admin_headers, timeout=10
+    )
     assert r.status_code == 200, f"List users failed: {r.text}"
     data = extract_data(r)
     # 分页结构
@@ -41,9 +40,9 @@ def test_normal_user_cannot_list_users(base_url, test_user_headers):
 
 def test_search_users(base_url, admin_headers):
     """搜索用户"""
-    r = requests.get(f"{base_url}/users/search",
-                     params={"q": "admin"},
-                     headers=admin_headers, timeout=10)
+    r = requests.get(
+        f"{base_url}/users/search", params={"q": "admin"}, headers=admin_headers, timeout=10
+    )
     assert r.status_code == 200, f"Search users failed: {r.text}"
     data = extract_data(r)
     assert isinstance(data, list)
@@ -55,7 +54,8 @@ def test_admin_can_update_role(base_url, admin_headers, test_user):
     r = requests.put(
         f"{base_url}/users/{test_user['user']['id']}/role",
         json={"role": "admin"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Update role failed: {r.text}"
     updated = extract_data(r)
@@ -65,7 +65,8 @@ def test_admin_can_update_role(base_url, admin_headers, test_user):
     requests.put(
         f"{base_url}/users/{test_user['user']['id']}/role",
         json={"role": "user"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
 
 
@@ -74,7 +75,8 @@ def test_admin_can_disable_user(base_url, admin_headers, test_user):
     r = requests.put(
         f"{base_url}/users/{test_user['user']['id']}/status",
         json={"is_active": False},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Disable user failed: {r.text}"
     updated = extract_data(r)
@@ -86,13 +88,16 @@ def test_admin_can_enable_user(base_url, admin_headers, test_user):
     # 先禁用
     requests.put(
         f"{base_url}/users/{test_user['user']['id']}/status",
-        json={"is_active": False}, headers=admin_headers, timeout=10,
+        json={"is_active": False},
+        headers=admin_headers,
+        timeout=10,
     )
     # 再启用
     r = requests.put(
         f"{base_url}/users/{test_user['user']['id']}/status",
         json={"is_active": True},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Enable user failed: {r.text}"
     updated = extract_data(r)
@@ -108,6 +113,7 @@ def test_normal_user_cannot_update_role(base_url, test_user_headers):
     r = requests.put(
         f"{base_url}/users/999999/role",
         json={"role": "user"},
-        headers=test_user_headers, timeout=10,
+        headers=test_user_headers,
+        timeout=10,
     )
     assert r.status_code == 403, f"Expected 403, got {r.status_code}: {r.text}"

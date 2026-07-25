@@ -20,6 +20,7 @@
   的目标用户。通过 module fixture 注册独立目标用户，避免与 session 级
   test_user 状态冲突。
 """
+
 import json
 import os
 import time
@@ -28,36 +29,18 @@ import uuid
 import pytest
 import requests
 
+from tests.e2e.conftest import extract_data
+from tests.e2e.helpers.cdp_auth import login_cdp_session
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
-from tests.e2e.conftest import BASE_URL, extract_data
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-
-
-def _inject_auth_token(cdp, admin_token):
-    """注入 admin_token 到前端 localStorage，避免 WebView 填表登录触发 /auth/login 限流。
-
-    前端 auth store 使用 zustand persist，localStorage key 为 'rag-auth'，
-    存储格式为 {state: {token, refreshToken, refreshTokenExpiresAt, user, themeMode}, version: 0}。
-    """
-    auth_data = {
-        "state": {
-            "token": admin_token["access_token"],
-            "refreshToken": admin_token["refresh_token"],
-            "refreshTokenExpiresAt": int(time.time() * 1000) + 7 * 24 * 3600 * 1000,
-            "user": admin_token["user"],
-            "themeMode": "light",
-        },
-        "version": 0,
-    }
-    cdp.evaluate(f"""
-        try {{
-            const authData = {json.dumps(auth_data)};
-            localStorage.setItem('rag-auth', JSON.stringify(authData));
-        }} catch(e) {{}}
-    """)
 
 
 @pytest.fixture(scope="module")
@@ -70,16 +53,24 @@ def target_user(base_url, admin_headers):
     username = f"cdpuser_{uuid.uuid4().hex[:8]}"
     email = f"{username}@test.com"
     password = "Test@123456"
-    r = requests.post(f"{base_url}/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password,
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/register",
+        json={
+            "username": username,
+            "email": email,
+            "password": password,
+        },
+        timeout=10,
+    )
     assert r.status_code == 200, f"Register target user failed: {r.text}"
     user_data = extract_data(r)
     # 确保目标用户初始为启用 + 普通用户角色，保证后续操作可重复
-    requests.put(f"{base_url}/users/{user_data['id']}/status",
-                 json={"is_active": True}, headers=admin_headers, timeout=5)
+    requests.put(
+        f"{base_url}/users/{user_data['id']}/status",
+        json={"is_active": True},
+        headers=admin_headers,
+        timeout=5,
+    )
     return user_data
 
 
@@ -95,11 +86,7 @@ def logged_in_cdp(admin_token):
         client.connect(timeout=30)
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
-    client.navigate(TAURI_HOME)
-    time.sleep(1)
-    _inject_auth_token(client, admin_token)
-    client.send("Page.reload")
-    time.sleep(3)
+    login_cdp_session(client, admin_token, "#/users")
     yield client
     client.close()
 
@@ -107,9 +94,10 @@ def logged_in_cdp(admin_token):
 def _navigate_to_users(cdp):
     """导航到用户管理页并等待表格渲染"""
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate("window.location.hash = '#/users'")
-    time.sleep(2.5)
+    wait_for_url_change(cdp, "#/users", timeout=10)
+    wait_for_element(cdp, ".ant-table", timeout=15)
 
 
 def _click_popconfirm_ok(cdp, timeout=8):
@@ -135,7 +123,7 @@ def _click_popconfirm_ok(cdp, timeout=8):
         """)
         if clicked:
             return True
-        time.sleep(0.5)
+        time.sleep(0.5)  # 轮询间隔
     return False
 
 
@@ -198,19 +186,17 @@ def test_create_user_button(logged_in_cdp, target_user):
     wait_for_element(cdp, ".ant-table", timeout=15)
     # 验证 target_user 出现在列表中
     username = target_user["username"]
-    found = False
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        found = cdp.evaluate(f"""
+    wait_for(
+        lambda: cdp.evaluate(f"""
             (function() {{
                 return Array.from(document.querySelectorAll('.ant-table-tbody tr.ant-table-row'))
                     .some(tr => tr.textContent.includes({json.dumps(username)}));
             }})();
-        """)
-        if found:
-            break
-        time.sleep(1)
-    assert found, f"Target user '{username}' not found in user list"
+        """),
+        timeout=15,
+        interval=1,
+        message=f"Target user '{username}' not found in user list",
+    )
 
 
 def test_edit_user_role(logged_in_cdp, target_user, base_url, admin_headers):
@@ -223,11 +209,10 @@ def test_edit_user_role(logged_in_cdp, target_user, base_url, admin_headers):
     username = target_user["username"]
     user_id = target_user["id"]
     # 先通过 API 确保目标用户为普通角色，保证按钮文本为"设为管理员"
-    requests.put(f"{base_url}/users/{user_id}/role",
-                 json={"role": "user"}, headers=admin_headers, timeout=5)
+    requests.put(
+        f"{base_url}/users/{user_id}/role", json={"role": "user"}, headers=admin_headers, timeout=5
+    )
     _navigate_to_users(cdp)
-    wait_for_element(cdp, ".ant-table", timeout=15)
-    time.sleep(1)
     # 点击目标用户行的"设为管理员"按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -241,18 +226,26 @@ def test_edit_user_role(logged_in_cdp, target_user, base_url, admin_headers):
         }})();
     """)
     assert clicked, f"设为管理员 button not found for user '{username}'"
-    time.sleep(1)
     # 轮询等待 Popconfirm 弹出并点击"确定"按钮
     assert _click_popconfirm_ok(cdp), "Popconfirm confirm button not found"
-    time.sleep(2.5)
-    # 验证角色已更新为管理员（通过 API 确认或 UI 标签）
-    r = requests.get(f"{base_url}/users?page=1&page_size=100",
-                     headers=admin_headers, timeout=10)
-    users = extract_data(r).get("items", [])
-    target = next((u for u in users if u["id"] == user_id), None)
-    assert target, f"Target user {user_id} not found in API list"
-    assert target["role"] == "admin", \
-        f"User role not updated to admin: {target['role']}"
+
+    # 验证角色已更新为管理员（通过 API 轮询确认）
+    def _role_is_admin():
+        r = requests.get(
+            f"{base_url}/users?page=1&page_size=100", headers=admin_headers, timeout=10
+        )
+        if r.status_code != 200:
+            return False
+        users = extract_data(r).get("items", [])
+        target = next((u for u in users if u["id"] == user_id), None)
+        return bool(target and target.get("role") == "admin")
+
+    wait_for(
+        _role_is_admin,
+        timeout=10,
+        interval=1,
+        message=f"User role not updated to admin for {user_id}",
+    )
 
 
 def test_disable_user(logged_in_cdp, target_user, base_url, admin_headers):
@@ -264,11 +257,13 @@ def test_disable_user(logged_in_cdp, target_user, base_url, admin_headers):
     username = target_user["username"]
     user_id = target_user["id"]
     # 确保目标用户为启用状态
-    requests.put(f"{base_url}/users/{user_id}/status",
-                 json={"is_active": True}, headers=admin_headers, timeout=5)
+    requests.put(
+        f"{base_url}/users/{user_id}/status",
+        json={"is_active": True},
+        headers=admin_headers,
+        timeout=5,
+    )
     _navigate_to_users(cdp)
-    wait_for_element(cdp, ".ant-table", timeout=15)
-    time.sleep(1)
     # 点击目标用户行的"禁用"按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -282,18 +277,21 @@ def test_disable_user(logged_in_cdp, target_user, base_url, admin_headers):
         }})();
     """)
     assert clicked, f"禁用 button not found for user '{username}'"
-    time.sleep(1)
     # 轮询等待 Popconfirm 弹出并点击"确定"按钮
     assert _click_popconfirm_ok(cdp), "Popconfirm confirm button not found"
-    time.sleep(2.5)
-    # 验证状态已变更为禁用
-    r = requests.get(f"{base_url}/users?page=1&page_size=100",
-                     headers=admin_headers, timeout=10)
-    users = extract_data(r).get("items", [])
-    target = next((u for u in users if u["id"] == user_id), None)
-    assert target, f"Target user {user_id} not found in API list"
-    assert target["is_active"] is False, \
-        f"User not disabled: is_active={target['is_active']}"
+
+    # 验证状态已变更为禁用（通过 API 轮询确认）
+    def _is_disabled():
+        r = requests.get(
+            f"{base_url}/users?page=1&page_size=100", headers=admin_headers, timeout=10
+        )
+        if r.status_code != 200:
+            return False
+        users = extract_data(r).get("items", [])
+        target = next((u for u in users if u["id"] == user_id), None)
+        return bool(target and target.get("is_active") is False)
+
+    wait_for(_is_disabled, timeout=10, interval=1, message=f"User not disabled for {user_id}")
 
 
 def test_enable_user(logged_in_cdp, target_user, base_url, admin_headers):
@@ -305,11 +303,13 @@ def test_enable_user(logged_in_cdp, target_user, base_url, admin_headers):
     username = target_user["username"]
     user_id = target_user["id"]
     # 确保目标用户为禁用状态
-    requests.put(f"{base_url}/users/{user_id}/status",
-                 json={"is_active": False}, headers=admin_headers, timeout=5)
+    requests.put(
+        f"{base_url}/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin_headers,
+        timeout=5,
+    )
     _navigate_to_users(cdp)
-    wait_for_element(cdp, ".ant-table", timeout=15)
-    time.sleep(1)
     # 点击目标用户行的"启用"按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -323,18 +323,21 @@ def test_enable_user(logged_in_cdp, target_user, base_url, admin_headers):
         }})();
     """)
     assert clicked, f"启用 button not found for user '{username}'"
-    time.sleep(1)
     # 轮询等待 Popconfirm 弹出并点击"确定"按钮
     assert _click_popconfirm_ok(cdp), "Popconfirm confirm button not found"
-    time.sleep(2.5)
-    # 验证状态已恢复为启用
-    r = requests.get(f"{base_url}/users?page=1&page_size=100",
-                     headers=admin_headers, timeout=10)
-    users = extract_data(r).get("items", [])
-    target = next((u for u in users if u["id"] == user_id), None)
-    assert target, f"Target user {user_id} not found in API list"
-    assert target["is_active"] is True, \
-        f"User not enabled: is_active={target['is_active']}"
+
+    # 验证状态已恢复为启用（通过 API 轮询确认）
+    def _is_enabled():
+        r = requests.get(
+            f"{base_url}/users?page=1&page_size=100", headers=admin_headers, timeout=10
+        )
+        if r.status_code != 200:
+            return False
+        users = extract_data(r).get("items", [])
+        target = next((u for u in users if u["id"] == user_id), None)
+        return bool(target and target.get("is_active") is True)
+
+    wait_for(_is_enabled, timeout=10, interval=1, message=f"User not enabled for {user_id}")
 
 
 def test_search_user(logged_in_cdp, target_user):
@@ -376,11 +379,14 @@ def test_search_user(logged_in_cdp, target_user):
             return true;
         }})();
     """)
-    time.sleep(1.5)
-    found = cdp.evaluate(f"""
-        (function() {{
-            return Array.from(document.querySelectorAll('.ant-table-tbody tr.ant-table-row'))
-                .some(tr => tr.textContent.includes({json.dumps(username)}));
-        }})();
-    """)
-    assert found, f"Search did not find user '{username}'"
+    wait_for(
+        lambda: cdp.evaluate(f"""
+            (function() {{
+                return Array.from(document.querySelectorAll('.ant-table-tbody tr.ant-table-row'))
+                    .some(tr => tr.textContent.includes({json.dumps(username)}));
+            }})();
+        """),
+        timeout=8,
+        interval=0.5,
+        message=f"Search did not find user '{username}'",
+    )

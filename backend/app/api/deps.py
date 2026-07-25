@@ -6,6 +6,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import AuthError, ForbiddenError
 from app.core.security import decode_token
 from app.database import get_db
@@ -16,8 +17,8 @@ security = HTTPBearer(auto_error=False)
 
 # ---------- 用户信息缓存 ----------
 # 缓存用户基本信息以减少 get_current_user 的 DB 查询；
-# TTL 较短（60s），在角色/状态/密码变更时主动失效。
-USER_CACHE_TTL = 60
+# TTL 较短（默认 60s，可通过 USER_CACHE_TTL 环境变量配置），在角色/状态/密码变更时主动失效。
+USER_CACHE_TTL = settings.USER_CACHE_TTL
 
 
 def _user_cache_key(user_id: int) -> str:
@@ -80,6 +81,7 @@ async def get_current_user(
     else:
         # Redis 不可用：降级到内存黑名单检查（best-effort，不保证跨进程一致）
         from app.services.auth_service import is_blacklisted
+
         if await is_blacklisted(token, "access"):
             raise AuthError("Token has been revoked")
 
@@ -91,13 +93,9 @@ async def get_current_user(
                 try:
                     return _deserialize_user(json.loads(cached))
                 except (json.JSONDecodeError, KeyError, TypeError) as e:
-                    logger.warning(
-                        f"User cache corrupted for {_user_cache_key(user_id)}: {e}"
-                    )
+                    logger.warning(f"User cache corrupted for {_user_cache_key(user_id)}: {e}")
         except Exception as e:
-            logger.warning(
-                f"Redis cache read failed for {_user_cache_key(user_id)}: {e}"
-            )
+            logger.warning(f"Redis cache read failed for {_user_cache_key(user_id)}: {e}")
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -115,9 +113,7 @@ async def get_current_user(
                 json.dumps(_serialize_user(user), default=str),
             )
         except Exception as e:
-            logger.warning(
-                f"Redis cache write failed for {_user_cache_key(user_id)}: {e}"
-            )
+            logger.warning(f"Redis cache write failed for {_user_cache_key(user_id)}: {e}")
 
     return user
 

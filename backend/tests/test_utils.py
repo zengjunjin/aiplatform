@@ -1,15 +1,24 @@
 """Tests for app.utils.token_counter and app.utils.storage"""
-import pytest
+
 import os
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-from app.utils.token_counter import count_tokens, count_messages_tokens
+
+import pytest
+
 from app.utils.storage import (
-    get_storage_dir, get_kb_dir, validate_file_type, safe_filename,
-    save_upload_file, compute_file_hash, delete_file, delete_kb_dir,
-    ALLOWED_EXT, TEXT_EXTENSIONS, MAGIC_NUMBERS,
+    ALLOWED_EXT,
+    MAGIC_NUMBERS,
+    TEXT_EXTENSIONS,
+    compute_file_hash,
+    delete_file,
+    delete_kb_dir,
+    get_kb_dir,
+    get_storage_dir,
+    safe_filename,
+    save_upload_file,
+    validate_file_type,
 )
+from app.utils.token_counter import count_messages_tokens, count_tokens
 
 
 class TestTokenCounter:

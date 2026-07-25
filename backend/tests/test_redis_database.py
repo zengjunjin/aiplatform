@@ -1,11 +1,14 @@
 """Tests for app.redis_client and app.database"""
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from app import redis_client as redis_module
-from app import database as database_module
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app import database as database_module
+from app import redis_client as redis_module
 
 # ========== redis_client ==========
+
 
 class TestRedisClient:
     def test_get_redis_returns_none_when_not_initialized(self):
@@ -47,21 +50,25 @@ class TestRedisClient:
 
 # ========== database ==========
 
+
 class TestDatabase:
     def test_engine_created_with_settings(self):
         """engine 已在模块加载时创建，验证它是 AsyncEngine"""
         from sqlalchemy.ext.asyncio import AsyncEngine
+
         assert isinstance(database_module.engine, AsyncEngine)
 
     def test_async_session_is_sessionmaker(self):
         """async_session 是 async_sessionmaker"""
         from sqlalchemy.ext.asyncio import async_sessionmaker
+
         assert isinstance(database_module.async_session, async_sessionmaker)
 
     @pytest.mark.asyncio
     async def test_get_db_yields_session(self):
         """get_db 是 async generator，yield 一个 session"""
         from sqlalchemy.ext.asyncio import AsyncSession
+
         gen = database_module.get_db()
         session = await gen.__anext__()
         assert isinstance(session, AsyncSession)

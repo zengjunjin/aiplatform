@@ -9,6 +9,7 @@ API:
 
 注意：所有反馈端点都在 /chat 前缀下，不是 /feedback
 """
+
 import pytest
 import requests
 
@@ -23,7 +24,8 @@ def test_submit_positive_feedback(base_url, admin_headers, chat_session_with_msg
     r = requests.post(
         f"{base_url}/chat/messages/{msg_id}/feedback",
         json={"rating": 1, "comment": "回答准确"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Submit feedback failed: {r.text}"
 
@@ -40,15 +42,15 @@ def test_submit_negative_feedback_with_type(base_url, admin_headers, chat_sessio
             "feedback_type": "faithfulness_issue",
             "comment": "回答不准确",
         },
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Submit negative feedback failed: {r.text}"
 
 
 def test_feedback_stats(base_url, admin_headers):
     """反馈统计"""
-    r = requests.get(f"{base_url}/chat/feedback/stats",
-                     headers=admin_headers, timeout=10)
+    r = requests.get(f"{base_url}/chat/feedback/stats", headers=admin_headers, timeout=10)
     assert r.status_code == 200, f"Feedback stats failed: {r.text}"
     data = extract_data(r)
     # 应包含统计字段
@@ -60,7 +62,8 @@ def test_low_rated_list(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/chat/feedback/low-rated",
         params={"page": 1, "page_size": 20},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Low-rated list failed: {r.text}"
     data = extract_data(r)

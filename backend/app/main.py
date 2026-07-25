@@ -1,7 +1,7 @@
 import asyncio
 import os
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -14,7 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api.deps import get_admin_user
 from app.api.v1.router import api_router
 from app.config import settings
-from app.db.user import User
+from app.core import health_checks
 from app.core.exceptions import (
     AppException,
     app_exception_handler,
@@ -27,9 +27,9 @@ from app.core.middleware import (
     limiter,
     rate_limit_exceeded_handler,
 )
+from app.db.user import User
 from app.redis_client import get_redis, init_redis
 from app.tasks.metrics_collector import metrics_collector_loop
-
 
 # Task 32: 跟踪进行中的 SSE 请求，用于优雅关闭时等待其完成。
 # 在 chat._run_sse_stream 中将当前 asyncio.Task 加入此集合，finally 中移除。
@@ -89,26 +89,31 @@ async def lifespan(app: FastAPI):
 
     # Task 10: 从 DB 加载 prompt 模板到内存缓存（失败时 fallback 到默认值，不阻断启动）
     from app.rag.prompt_builder import load_prompt_templates
+
     await load_prompt_templates()
     logger.info("Prompt templates loaded")
 
     # Initialize EventBus
     from app.core.events import EventBus
+
     await EventBus.init()
     logger.info("EventBus initialized")
 
     # Task 60: 注册 document_service 的事件订阅（原在模块加载时注册，移到 lifespan 避免 import 副作用）
     from app.services.document_service import register_event_handlers
+
     register_event_handlers()
     logger.info("Document service event handlers registered")
 
     # Initialize model registry from config
     from app.models import init_model_registry
+
     init_model_registry()
     logger.info("Model registry initialized")
 
     # Start model health checker
     from app.core.model_health import get_health_checker
+
     health_checker = get_health_checker()
     await health_checker.start()
     logger.info("Model health checker started")
@@ -131,7 +136,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # Task 32: 优雅关闭 — 等待进行中的 SSE 请求完成（超时 30s 强制取消）
+        # Task 32: 优雅关闭 — 等待进行中的 SSE 请求完成（超时由 settings.GRACEFUL_SHUTDOWN_TIMEOUT 控制）
         if _active_sse_requests:
             logger.info(
                 f"Graceful shutdown: waiting for {len(_active_sse_requests)} active SSE requests"
@@ -139,27 +144,27 @@ async def lifespan(app: FastAPI):
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*_active_sse_requests, return_exceptions=True),
-                    timeout=30,
+                    timeout=settings.GRACEFUL_SHUTDOWN_TIMEOUT,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 still_active = len(_active_sse_requests)
                 logger.warning(
-                    f"Graceful shutdown: {still_active} SSE requests still active after 30s, force cancelling"
+                    f"Graceful shutdown: {still_active} SSE requests still active after "
+                    f"{settings.GRACEFUL_SHUTDOWN_TIMEOUT}s, force cancelling"
                 )
                 for task in list(_active_sse_requests):
                     task.cancel()
                 await asyncio.gather(*_active_sse_requests, return_exceptions=True)
         metrics_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await metrics_task
-        except asyncio.CancelledError:
-            pass
         # Stop health checker
         await health_checker.stop()
         # Close EventBus
         await EventBus.close()
         # Close all LLM/Embedding/Reranker provider httpx clients
         from app.models.factory import ModelFactory, ModelRegistry
+
         try:
             await ModelRegistry.close_all()
         except Exception as exc:
@@ -238,11 +243,6 @@ async def internal_metrics(
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@app.get("/health")
-async def health():
-    return {"code": 0, "message": "ok", "data": {"status": "healthy"}}
-
-
 # ---------- 健康探测辅助函数（Task 45）----------
 # 每个探测有独立超时（2s），避免单一依赖故障阻塞 /readyz 响应
 # 返回 (ok, message)：ok=True 表示就绪，message 用于 checks 详情
@@ -250,20 +250,26 @@ async def health():
 
 async def _check_db() -> tuple[bool, str]:
     """Probe DB with SELECT 1（2s 超时，委托 app.core.health_checks）。"""
-    return await health_checks.check_db()
+    try:
+        return await asyncio.wait_for(health_checks.check_db(), timeout=2)
+    except TimeoutError as e:
+        return False, f"error: {e}"
 
 
 async def _check_redis() -> tuple[bool, str]:
     """Probe Redis with PING（2s 超时，委托 app.core.health_checks）。"""
     try:
         return await asyncio.wait_for(health_checks.check_redis(), timeout=2)
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         return False, f"error: {e}"
 
 
 async def _check_qdrant() -> tuple[bool, str]:
     """Probe Qdrant with GET /healthz（2s 超时，委托 app.core.health_checks）。"""
-    return await health_checks.check_qdrant()
+    try:
+        return await asyncio.wait_for(health_checks.check_qdrant(), timeout=2)
+    except TimeoutError as e:
+        return False, f"error: {e}"
 
 
 @app.get("/healthz")

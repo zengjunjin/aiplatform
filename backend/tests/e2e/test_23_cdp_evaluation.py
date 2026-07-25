@@ -12,42 +12,23 @@
 
 注意：触发评测需要 Ollama 可达且有 3/hour 限额，如不可达则标记 SKIPPED。
 """
-import json
+
 import os
 import time
-import uuid
+
 import pytest
 import requests
 
+from tests.e2e.helpers.cdp_auth import login_cdp_session
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import (
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-
-
-def _inject_auth_token(cdp, admin_token):
-    """注入 admin_token 到前端 localStorage，避免 WebView 填表登录触发 /auth/login 限流。
-
-    前端 auth store 使用 zustand persist，localStorage key 为 'rag-auth'，
-    存储格式为 {state: {token, refreshToken, refreshTokenExpiresAt, user, themeMode}, version: 0}。
-    """
-    auth_data = {
-        "state": {
-            "token": admin_token["access_token"],
-            "refreshToken": admin_token["refresh_token"],
-            "refreshTokenExpiresAt": int(time.time() * 1000) + 7 * 24 * 3600 * 1000,
-            "user": admin_token["user"],
-            "themeMode": "light",
-        },
-        "version": 0,
-    }
-    cdp.evaluate(f"""
-        try {{
-            const authData = {json.dumps(auth_data)};
-            localStorage.setItem('rag-auth', JSON.stringify(authData));
-        }} catch(e) {{}}
-    """)
 
 
 @pytest.fixture(scope="module")
@@ -58,11 +39,7 @@ def logged_in_cdp(admin_token):
         client.connect(timeout=30)
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
-    client.navigate(TAURI_HOME)
-    time.sleep(1)
-    _inject_auth_token(client, admin_token)
-    client.navigate(TAURI_HOME)
-    time.sleep(3)
+    login_cdp_session(client, admin_token, "#/evaluation")
     yield client
     client.close()
 
@@ -81,7 +58,8 @@ def eval_run(base_url, admin_headers, kb_with_doc):
         r = requests.post(
             f"{base_url}/evaluation/runs",
             params={"kb_id": kb_with_doc["kb"]["id"], "num_questions": 5},
-            headers=headers, timeout=30,
+            headers=headers,
+            timeout=30,
         )
         if r.status_code != 200:
             return None
@@ -93,13 +71,12 @@ def eval_run(base_url, admin_headers, kb_with_doc):
         deadline = time.time() + 60
         run = None
         while time.time() < deadline:
-            r2 = requests.get(f"{base_url}/evaluation/runs/{run_id}",
-                              headers=headers, timeout=10)
+            r2 = requests.get(f"{base_url}/evaluation/runs/{run_id}", headers=headers, timeout=10)
             if r2.status_code == 200:
                 run = r2.json().get("data", {})
                 if run.get("status") in ("completed", "failed"):
                     break
-            time.sleep(3)
+            time.sleep(3)  # API 轮询间隔
         return run
     except Exception:
         return None
@@ -108,9 +85,10 @@ def eval_run(base_url, admin_headers, kb_with_doc):
 def _reset_evaluation_page(cdp):
     """重置评测页：重新加载并导航到 /#/evaluation"""
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate("window.location.hash = '#/evaluation'")
-    time.sleep(3)
+    wait_for_url_change(cdp, "#/evaluation", timeout=10)
+    wait_for_element(cdp, ".ant-card, .ant-table, .ant-empty", timeout=15)
 
 
 def test_evaluation_page_loads(logged_in_cdp):
@@ -184,7 +162,7 @@ def test_trigger_eval_submit(logged_in_cdp, kb_with_doc):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-modal-content", timeout=5)
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     if not modal_open:
         pytest.skip("Failed to open trigger eval modal")
@@ -196,7 +174,7 @@ def test_trigger_eval_submit(logged_in_cdp, kb_with_doc):
             if (select) select.click();
         })();
     """)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-select-dropdown .ant-select-item", timeout=5)
     selected = cdp.evaluate(f"""
         (function() {{
             const items = Array.from(document.querySelectorAll('.ant-select-item'));
@@ -208,7 +186,7 @@ def test_trigger_eval_submit(logged_in_cdp, kb_with_doc):
     """)
     if not selected:
         pytest.skip("No KB option available in trigger eval modal")
-    time.sleep(0.5)
+    time.sleep(0.5)  # 必要固定等待：Ant Design Select onChange debounce
     # 点击确定按钮提交
     cdp.evaluate("""
         (function() {
@@ -228,7 +206,7 @@ def test_trigger_eval_submit(logged_in_cdp, kb_with_doc):
         """)
         if has_progress:
             break
-        time.sleep(1)
+        time.sleep(1)  # 轮询间隔
     if not has_progress:
         # 检查是否有错误 toast（Ollama 不可达或限流）
         has_error = cdp.evaluate("""
@@ -248,7 +226,7 @@ def test_eval_history_table_renders(logged_in_cdp, eval_run):
     """
     cdp = logged_in_cdp
     _reset_evaluation_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-table, .ant-empty", timeout=10)
     # 验证历史记录卡片存在（趋势图卡片 + 历史记录卡片）
     has_cards = cdp.evaluate("""
         (function() {
@@ -271,8 +249,9 @@ def test_eval_history_table_renders(logged_in_cdp, eval_run):
     """)
     assert table_state is not None, "Failed to evaluate table state"
     # 有表格或空状态均为合法
-    assert table_state.get("hasTable") or table_state.get("hasEmpty"), \
-        "History table neither rendered table nor empty state"
+    assert table_state.get("hasTable") or table_state.get(
+        "hasEmpty"
+    ), "History table neither rendered table nor empty state"
 
 
 def test_eval_detail_modal(logged_in_cdp, eval_run):
@@ -282,7 +261,7 @@ def test_eval_detail_modal(logged_in_cdp, eval_run):
     """
     cdp = logged_in_cdp
     _reset_evaluation_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, "button, .ant-table, .ant-empty", timeout=10)
     # 查找并点击"详情"按钮
     clicked = cdp.evaluate("""
         (function() {
@@ -338,6 +317,8 @@ def test_eval_trend_chart(logged_in_cdp):
     """)
     assert chart_state and chart_state.get("found"), "Trend chart card not found"
     # canvas（有数据渲染）或 empty（无数据）或 skeleton（加载中）均为合法状态
-    assert (chart_state.get("hasCanvas") or chart_state.get("hasEmpty") or
-            chart_state.get("hasSkeleton")), \
-        "Trend chart did not render (no canvas/empty/skeleton)"
+    assert (
+        chart_state.get("hasCanvas")
+        or chart_state.get("hasEmpty")
+        or chart_state.get("hasSkeleton")
+    ), "Trend chart did not render (no canvas/empty/skeleton)"

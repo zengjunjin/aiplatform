@@ -12,14 +12,13 @@ from app.config import settings
 from app.core.errors import ErrorCode
 from app.core.events import EventBus
 from app.core.exceptions import AppException, ConflictError, NotFoundError, ValidationError
-from app.db.document import Document, STATUS_PROGRESS
+from app.db.document import STATUS_PROGRESS, Document
 from app.db.document_chunk import DocumentChunk
 from app.db.user import User
 from app.schemas.document import DocumentProgress, DocumentUpdate
 from app.services import kb_service
 from app.services.audit_service import log_audit
 from app.utils.storage import ALLOWED_EXT, delete_file, get_kb_dir, save_upload_file
-
 
 
 async def _on_kb_deleted(payload: dict) -> None:
@@ -38,6 +37,7 @@ async def _on_kb_deleted(payload: dict) -> None:
         import asyncio
 
         from app.rag.retriever import retriever
+
         await asyncio.to_thread(retriever.delete_collection, kb_id)
     except Exception as e:
         logger.warning(f"Qdrant collection delete failed: {e}")
@@ -45,6 +45,7 @@ async def _on_kb_deleted(payload: dict) -> None:
     # 2. Delete BM25 index from Redis
     try:
         from app.rag.bm25 import bm25_store
+
         await bm25_store.delete(kb_id)
     except Exception as e:
         logger.warning(f"BM25 index delete failed: {e}")
@@ -52,6 +53,7 @@ async def _on_kb_deleted(payload: dict) -> None:
     # 3. Delete file storage directory
     try:
         from app.utils.storage import delete_kb_dir
+
         delete_kb_dir(kb_id)
     except Exception as e:
         logger.warning(f"Storage dir delete failed: {e}")
@@ -102,9 +104,7 @@ async def _validate_upload(file: UploadFile, kb_id: int, user: User, db: AsyncSe
     await kb_service.get_kb_for_write(kb_id, user.id, db)
 
     # 2. 文档数量限制检查
-    count_result = await db.execute(
-        select(func.count()).where(Document.kb_id == kb_id)
-    )
+    count_result = await db.execute(select(func.count()).where(Document.kb_id == kb_id))
     doc_count = count_result.scalar_one()
     if doc_count >= settings.MAX_DOCUMENTS_PER_KB:
         raise AppException(
@@ -130,7 +130,9 @@ async def _validate_upload(file: UploadFile, kb_id: int, user: User, db: AsyncSe
     return safe_filename
 
 
-async def _create_doc_record(kb_id: int, user_id: int, safe_filename: str, db: AsyncSession) -> Document:
+async def _create_doc_record(
+    kb_id: int, user_id: int, safe_filename: str, db: AsyncSession
+) -> Document:
     """创建文档记录（临时 hash 避免 UniqueConstraint 冲突）。"""
     ext = os.path.splitext(safe_filename)[1].lower()
     doc = Document(
@@ -232,6 +234,7 @@ async def _save_file_and_verify_hash(
 def _dispatch_parse_task(doc: Document) -> object:
     """派发 Celery 解析任务。"""
     from app.tasks.document_task import parse_document_task
+
     return parse_document_task.delay(doc.id)
 
 
@@ -257,15 +260,18 @@ async def upload_document(
         # Celery 派发失败：将 doc 标记为 failed 并提交，避免孤儿 pending 记录。
         # 标记失败的提交若自身出错则回滚，但始终重新抛出原始异常以保持异常流程不变
         # （API 层仍返回 500）。
+        logger.exception(f"Celery parse task dispatch failed for doc_id={doc.id}")
         doc.status = "failed"
         try:
             await db.commit()
-        except Exception:
+        except Exception as ce:
+            logger.debug(f"Failed to commit doc status=failed after dispatch failure: {ce}")
             await db.rollback()
         raise
     # 同步更新 KB doc_count (chunk_count 在文档解析完成后由解析任务更新)
     # 使用 SQLAlchemy 列表达式实现数据库层面原子更新, 避免并发竞争
     from app.db.knowledge_base import KnowledgeBase
+
     kb = await db.get(KnowledgeBase, kb_id)
     if kb:
         kb.doc_count = KnowledgeBase.doc_count + 1
@@ -284,14 +290,19 @@ async def list_documents(
     from app.db.knowledge_base import KnowledgeBase
 
     # owner OR collaborator 可见性过滤（与 list_kbs 一致）
-    collab_filter = cast(KnowledgeBase.collaborators, JSONB).op('@>')(
+    collab_filter = cast(KnowledgeBase.collaborators, JSONB).op("@>")(
         cast(_json.dumps([{"user_id": user_id}]), JSONB)
     )
     base_filter = or_(
         KnowledgeBase.owner_id == user_id,
         collab_filter,
     )
-    query = select(Document).join(KnowledgeBase, Document.kb_id == KnowledgeBase.id).where(base_filter).where(Document.deleted_at.is_(None))
+    query = (
+        select(Document)
+        .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
+        .where(base_filter)
+        .where(Document.deleted_at.is_(None))
+    )
     # 独立构造 count_query：复用过滤条件但不带 ORDER BY/offset/limit，避免无意义子查询
     count_query = (
         select(func.count(Document.id))
@@ -304,17 +315,16 @@ async def list_documents(
         query = query.where(Document.kb_id == kb_id)
         count_query = count_query.where(Document.kb_id == kb_id)
     result = await db.execute(
-        query
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .order_by(Document.created_at.desc())
+        query.offset((page - 1) * page_size).limit(page_size).order_by(Document.created_at.desc())
     )
     total = await db.scalar(count_query)
     return result.scalars().all(), total or 0
 
 
 async def get_document(doc_id: int, user_id: int, db: AsyncSession) -> Document:
-    result = await db.execute(select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None)))
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None))
+    )
     doc = result.scalar_one_or_none()
     if not doc:
         raise NotFoundError("Document not found")
@@ -327,7 +337,9 @@ async def get_document_for_write(doc_id: int, user_id: int, db: AsyncSession) ->
 
     用于文档上传/删除/reparse 等写操作, 防止 read 权限协作者越权修改。
     """
-    result = await db.execute(select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None)))
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None))
+    )
     doc = result.scalar_one_or_none()
     if not doc:
         raise NotFoundError("Document not found")
@@ -363,18 +375,23 @@ async def delete_document(doc_id: int, user_id: int, db: AsyncSession) -> None:
     doc.status = "deleted"
 
     # 2. Delete document chunks from DB
-    await db.execute(
-        delete(DocumentChunk).where(DocumentChunk.doc_id == doc.id)
-    )
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.doc_id == doc.id))
     await db.commit()
 
     # 同步更新 KB doc_count / chunk_count
     # 使用 SQLAlchemy 列表达式实现数据库层面原子更新, 避免并发竞争
     from app.db.knowledge_base import KnowledgeBase
+
     kb = await db.get(KnowledgeBase, doc.kb_id)
     if kb:
         kb.doc_count = case((KnowledgeBase.doc_count > 1, KnowledgeBase.doc_count - 1), else_=0)
-        kb.chunk_count = case((KnowledgeBase.chunk_count > (doc.chunk_count or 0), KnowledgeBase.chunk_count - (doc.chunk_count or 0)), else_=0)
+        kb.chunk_count = case(
+            (
+                KnowledgeBase.chunk_count > (doc.chunk_count or 0),
+                KnowledgeBase.chunk_count - (doc.chunk_count or 0),
+            ),
+            else_=0,
+        )
         await db.commit()
 
     # 审计日志（记录删除的文档信息）
@@ -394,6 +411,7 @@ async def delete_document(doc_id: int, user_id: int, db: AsyncSession) -> None:
         import asyncio
 
         from app.rag.retriever import retriever
+
         await asyncio.to_thread(retriever.delete_by_doc_id, doc.kb_id, doc.id)
     except Exception as e:
         logger.warning(f"Qdrant doc delete failed: {e}")
@@ -401,6 +419,7 @@ async def delete_document(doc_id: int, user_id: int, db: AsyncSession) -> None:
     # 4. BM25: 删除该文档在 BM25 索引中的 chunks（增量更新）
     try:
         from app.rag.bm25 import bm25_store
+
         await bm25_store.remove_document(doc.kb_id, doc.id)
     except Exception as e:
         logger.warning(f"BM25 remove_document failed: {e}")
@@ -445,15 +464,23 @@ async def reparse_document(doc_id: int, user_id: int, db: AsyncSession) -> tuple
     doc.error_message = None
     await db.commit()
     from app.tasks.document_task import parse_document_task
+
     task = parse_document_task.delay(doc_id)
     await db.refresh(doc)
     # 重新解析会替换原有 chunks, 先从 KB chunk_count 中扣减旧值
     # 新 chunks 数量由解析任务完成后更新
     # 使用 SQLAlchemy 列表达式实现数据库层面原子更新, 避免并发竞争
     from app.db.knowledge_base import KnowledgeBase
+
     kb = await db.get(KnowledgeBase, doc.kb_id)
     if kb and doc.chunk_count:
-        kb.chunk_count = case((KnowledgeBase.chunk_count > (doc.chunk_count or 0), KnowledgeBase.chunk_count - (doc.chunk_count or 0)), else_=0)
+        kb.chunk_count = case(
+            (
+                KnowledgeBase.chunk_count > (doc.chunk_count or 0),
+                KnowledgeBase.chunk_count - (doc.chunk_count or 0),
+            ),
+            else_=0,
+        )
         await db.commit()
     return doc, task
 
@@ -471,11 +498,13 @@ async def get_progress(doc_id: int, user_id: int, db: AsyncSession) -> dict:
     # Task 36: 缓存优先——先读 Redis，命中则直接返回，跳过 DB 查询
     try:
         from app.redis_client import get_redis
+
         redis = get_redis()
         if redis:
             cached = await redis.get(f"doc:progress:{doc_id}")
             if cached:
                 import json
+
                 return json.loads(cached)
     except Exception as e:
         logger.warning(f"Failed to read doc progress cache for doc={doc_id}: {e}", exc_info=True)
@@ -511,6 +540,7 @@ async def preview_document(
 
     # Parse the file to get raw text
     from app.parsers import get_parser
+
     parser = get_parser(doc.file_path)
     if not parser:
         raise AppException(
@@ -521,6 +551,7 @@ async def preview_document(
     try:
         # parser.parse 是同步阻塞调用（读取文件 + 解析），用 asyncio.to_thread 避免阻塞事件循环
         import asyncio
+
         raw_text = await asyncio.to_thread(parser.parse, doc.file_path)
     except Exception as e:
         logger.error(f"Preview parse failed: doc={doc_id} {e}")

@@ -1,6 +1,9 @@
 """Tests for app.rag.reranker.Reranker"""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.rag.reranker import Reranker
 
 
@@ -61,14 +64,16 @@ class TestReranker:
     @pytest.mark.asyncio
     async def test_rerank_preserves_original_chunk_fields(self, fake_provider):
         """rerank 返回的 chunk 保留原 chunk 的所有字段"""
-        chunks = [{
-            "chunk_id": 7,
-            "doc_id": 100,
-            "kb_id": 5,
-            "content": "text",
-            "filename": "a.md",
-            "file_type": "md",
-        }]
+        chunks = [
+            {
+                "chunk_id": 7,
+                "doc_id": 100,
+                "kb_id": 5,
+                "content": "text",
+                "filename": "a.md",
+                "file_type": "md",
+            }
+        ]
         fake_provider.rerank = AsyncMock(return_value=[(0, 0.99)])
         r = Reranker()
         r._provider = fake_provider
@@ -90,7 +95,7 @@ class TestReranker:
             assert p == "fake_provider"
             mock_factory.create_reranker.assert_called_once()
             # 第二次访问不重新创建
-            r.provider
+            _ = r.provider
             mock_factory.create_reranker.assert_called_once()
 
     def test_provider_cached_after_first_access(self):
@@ -108,6 +113,7 @@ class TestReranker:
 def reranker_singleton():
     """重置单例，避免影响其他测试"""
     from app.rag.reranker import reranker
+
     saved = reranker._provider
     reranker._provider = None
     yield reranker
@@ -117,6 +123,7 @@ def reranker_singleton():
 def test_reranker_singleton_exists():
     """reranker 单例已导出"""
     from app.rag.reranker import reranker
+
     assert isinstance(reranker, Reranker)
 
 

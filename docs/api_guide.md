@@ -552,7 +552,8 @@ SSE 事件类型：
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/` | 否 | 根路径，返回应用信息 |
-| GET | `/health` | 否 | 健康检查 |
+| GET | `/healthz` | 否 | 存活探针 (liveness) |
+| GET | `/readyz` | 否 | 就绪探针 (readiness) |
 | GET | `/metrics` | 否 | Prometheus 指标 |
 | GET | `/docs` | 否 | Swagger UI 文档 |
 | GET | `/redoc` | 否 | ReDoc 文档 |

@@ -5,6 +5,7 @@ content as-is); only the supported extensions differ. This base class
 extracts that shared logic so both parsers stay DRY without breaking
 their existing public interfaces.
 """
+
 from app.parsers.base import BaseParser
 
 

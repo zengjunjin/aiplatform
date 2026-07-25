@@ -1,4 +1,5 @@
 """Tests for app.core.model_router.ModelRouter"""
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 

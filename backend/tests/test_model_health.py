@@ -1,4 +1,5 @@
 """Tests for app.core.model_health.ModelHealthChecker"""
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,7 +30,7 @@ class TestConsecutiveFailuresMarkUnhealthy:
             mock_registry.get.return_value = provider
 
             # 连续检查 3 次，每次 health_check 返回 False
-            for i in range(3):
+            for _i in range(3):
                 await checker._check_all()
 
         # 3 次失败后 _healthy 应为 False
@@ -115,10 +116,12 @@ class TestTimeoutIsolation:
         """一个 provider health_check 超时不阻塞其他 provider 检查"""
         slow_provider = MagicMock()
         slow_provider._healthy = True
+
         # 模拟超时：health_check 永远不返回（但 wait_for 会超时）
         async def _slow_check():
             await asyncio.sleep(100)
             return True
+
         slow_provider.health_check = _slow_check
 
         fast_provider = _make_provider("p1", healthy=True, check_result=True)

@@ -5,8 +5,8 @@ Revises: 008_deleted_at_index
 Create Date: 2026-07-21
 
 """
-from alembic import op
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "009_kb_collaborators_gin"

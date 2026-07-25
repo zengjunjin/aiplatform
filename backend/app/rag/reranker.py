@@ -1,4 +1,5 @@
 """Reranker wrapper using bge-reranker-base."""
+
 from app.models.factory import ModelFactory
 
 
@@ -14,8 +15,7 @@ class Reranker:
             self._provider = ModelFactory.create_reranker()
         return self._provider
 
-    async def rerank(self, query: str, chunks: list[dict],
-                     top_k: int = 5) -> list[dict]:
+    async def rerank(self, query: str, chunks: list[dict], top_k: int = 5) -> list[dict]:
         if not chunks:
             return []
         documents = [c.get("content", "") for c in chunks]

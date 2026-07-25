@@ -22,7 +22,7 @@ function PasswordStrengthBar({ value }: { value: string }) {
       { key: 'uppercase', label: t('auth.passwordStrength.uppercase'), met: /[A-Z]/.test(value) },
       { key: 'lowercase', label: t('auth.passwordStrength.lowercase'), met: /[a-z]/.test(value) },
       { key: 'digit', label: t('auth.passwordStrength.digit'), met: /\d/.test(value) },
-      { key: 'symbol', label: t('auth.passwordStrength.symbol'), met: /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]/.test(value) },
+      { key: 'symbol', label: t('auth.passwordStrength.symbol'), met: /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/]/.test(value) },
     ];
   }, [value, t]);
 

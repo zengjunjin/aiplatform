@@ -5,26 +5,25 @@ Revises: 012_feedback_rating_check
 Create Date: 2026-07-23
 
 """
+
 from alembic import op
-import sqlalchemy as sa
 
-
-revision = '013_audit_log_user_fk'
-down_revision = '012_feedback_rating_check'
+revision = "013_audit_log_user_fk"
+down_revision = "012_feedback_rating_check"
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     op.create_foreign_key(
-        'fk_audit_logs_user_id_users',
-        'audit_logs',
-        'users',
-        ['user_id'],
-        ['id'],
-        ondelete='SET NULL'
+        "fk_audit_logs_user_id_users",
+        "audit_logs",
+        "users",
+        ["user_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
 
 
 def downgrade():
-    op.drop_constraint('fk_audit_logs_user_id_users', 'audit_logs', type_='foreignkey')
+    op.drop_constraint("fk_audit_logs_user_id_users", "audit_logs", type_="foreignkey")

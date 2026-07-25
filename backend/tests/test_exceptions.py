@@ -1,12 +1,22 @@
 """Tests for app.core.exceptions and exception handlers"""
+
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from app.core.exceptions import (
-    AppException, NotFoundError, AuthError, ForbiddenError,
-    ConflictError, RateLimitError, ValidationError,
-    app_exception_handler, validation_exception_handler, generic_exception_handler,
-)
+
 from app.core.errors import ErrorCode
+from app.core.exceptions import (
+    AppException,
+    AuthError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+    app_exception_handler,
+    generic_exception_handler,
+    validation_exception_handler,
+)
 
 
 class TestExceptionHierarchy:
@@ -70,7 +80,14 @@ class TestExceptionHierarchy:
 
     def test_all_exceptions_are_app_exception(self):
         """所有自定义异常都继承 AppException，便于统一处理"""
-        for exc_cls in [NotFoundError, AuthError, ForbiddenError, ConflictError, RateLimitError, ValidationError]:
+        for exc_cls in [
+            NotFoundError,
+            AuthError,
+            ForbiddenError,
+            ConflictError,
+            RateLimitError,
+            ValidationError,
+        ]:
             assert issubclass(exc_cls, AppException)
 
 
@@ -86,6 +103,7 @@ class TestAppExceptionHandler:
         assert response.status_code == 404
         # response.body 是 bytes
         import json
+
         body = json.loads(response.body)
         assert body["code"] == ErrorCode.RESOURCE_NOT_FOUND
         assert body["message"] == "doc not found"
@@ -107,13 +125,18 @@ class TestValidationExceptionHandler:
     async def test_validation_exception_handler_formats_errors(self):
         """RequestValidationError → 拼接错误信息"""
         from fastapi.exceptions import RequestValidationError
-        from fastapi import HTTPException
 
         # 构造一个 RequestValidationError（需要 errors 列表）
-        exc = RequestValidationError(errors=[
-            {"loc": ("body", "username"), "msg": "field required", "type": "value_error.missing"},
-            {"loc": ("body", "password"), "msg": "too short", "type": "value_error"},
-        ])
+        exc = RequestValidationError(
+            errors=[
+                {
+                    "loc": ("body", "username"),
+                    "msg": "field required",
+                    "type": "value_error.missing",
+                },
+                {"loc": ("body", "password"), "msg": "too short", "type": "value_error"},
+            ]
+        )
         request = MagicMock()
         request.method = "POST"
         request.url.path = "/api/v1/auth/register"
@@ -121,6 +144,7 @@ class TestValidationExceptionHandler:
         response = await validation_exception_handler(request, exc)
         assert response.status_code == 400
         import json
+
         body = json.loads(response.body)
         assert body["code"] == ErrorCode.VALIDATION_ERROR
         assert "username" in body["message"]
@@ -130,6 +154,7 @@ class TestValidationExceptionHandler:
     async def test_validation_exception_handler_empty_errors(self):
         """无 errors → 使用默认 message"""
         from fastapi.exceptions import RequestValidationError
+
         exc = RequestValidationError(errors=[])
         request = MagicMock()
         request.method = "POST"
@@ -138,6 +163,7 @@ class TestValidationExceptionHandler:
         response = await validation_exception_handler(request, exc)
         assert response.status_code == 400
         import json
+
         body = json.loads(response.body)
         assert body["code"] == ErrorCode.VALIDATION_ERROR
 
@@ -153,6 +179,7 @@ class TestGenericExceptionHandler:
         response = await generic_exception_handler(request, exc)
         assert response.status_code == 500
         import json
+
         body = json.loads(response.body)
         assert body["code"] == ErrorCode.INTERNAL_ERROR
         assert body["data"] is None

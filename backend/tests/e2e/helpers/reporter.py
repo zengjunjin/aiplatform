@@ -1,13 +1,14 @@
 """HTML 测试报告生成器"""
+
 import html
-from pathlib import Path
 from datetime import datetime
-from typing import List
+from pathlib import Path
 
 
 class TestRecord:
-    def __init__(self, name: str, status: str, duration: float,
-                 error: str = "", screenshot: str = ""):
+    def __init__(
+        self, name: str, status: str, duration: float, error: str = "", screenshot: str = ""
+    ):
         self.name = name
         self.status = status  # PASS/FAIL/SKIP
         self.duration = duration
@@ -16,7 +17,7 @@ class TestRecord:
         self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def generate_html_report(records: List[TestRecord], output_path: Path) -> None:
+def generate_html_report(records: list[TestRecord], output_path: Path) -> None:
     total = len(records)
     passed = sum(1 for r in records if r.status == "PASS")
     failed = sum(1 for r in records if r.status == "FAIL")
@@ -25,11 +26,13 @@ def generate_html_report(records: List[TestRecord], output_path: Path) -> None:
 
     rows = []
     for r in records:
-        status_color = {"PASS": "#52c41a", "FAIL": "#ff4d4f",
-                        "SKIP": "#faad14"}.get(r.status, "#999")
+        status_color = {"PASS": "#52c41a", "FAIL": "#ff4d4f", "SKIP": "#faad14"}.get(
+            r.status, "#999"
+        )
         error_html = html.escape(r.error).replace("\n", "<br>") if r.error else ""
-        screenshot_html = (f'<a href="{r.screenshot}" target="_blank">查看截图</a>'
-                           if r.screenshot else "")
+        screenshot_html = (
+            f'<a href="{r.screenshot}" target="_blank">查看截图</a>' if r.screenshot else ""
+        )
         rows.append(f"""
             <tr>
                 <td>{r.timestamp}</td>

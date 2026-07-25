@@ -1,44 +1,37 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Button,
   Table,
   Tag,
   Space,
   Typography,
-  Modal,
-  Progress,
   Popconfirm,
   App as AntdApp,
-  Tooltip,
   Card,
   Skeleton,
   Empty,
   Form,
-  Input,
-  Steps,
 } from 'antd';
 import { useShallow } from 'zustand/react/shallow';
 import {
   RefreshCw,
   Trash2,
   FileText,
-  AlertCircle,
-  CheckCircle,
-  Clock,
   Eye,
   Upload as UploadIcon,
 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useKBStore } from '../store/kb';
-import { formatFileSize, formatDateTime, getStatusColor, getStatusTextKey } from '../utils/format';
-import type { Document, DocumentProgress } from '../types';
+import { formatFileSize, formatDateTime } from '../utils/format';
+import type { Document } from '../types';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import DocumentUploadModal from '../components/DocumentUploadModal';
 import KBCollaboratorModal from '../components/KBCollaboratorModal';
 import KBBreadcrumbHeader from '../components/KBBreadcrumbHeader';
 import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
+import { useDocumentProgressPolling, DocumentStatusCell, EditKBModal } from './KnowledgeBaseDetailPage.parts';
 
 const { Text } = Typography;
 
@@ -56,10 +49,6 @@ export default function KnowledgeBaseDetailPage() {
   const [uploadModal, setUploadModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [collabModal, setCollabModal] = useState(false);
-  const [progressMap, setProgressMap] = useState<Record<number, DocumentProgress>>({});
-  // Task 21: 通过 ref 读取最新的 progressMap，避免轮询更新导致 columns 频繁重建
-  const progressMapRef = useRef(progressMap);
-  progressMapRef.current = progressMap;
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [docPage, setDocPage] = useState(1);
   const [docPageSize, setDocPageSize] = useState(20);
@@ -92,52 +81,18 @@ export default function KnowledgeBaseDetailPage() {
     [documents]
   );
 
-  // Task 52: useRef + 手动比较替代 pendingDocIds.join(',') 依赖, 移除 eslint-disable.
-  // ID 集合不变时 (如 fetchDocuments 后 doc 对象引用变化但 pending ID 集合不变) 不重新触发轮询.
-  // 通过 ref 管理清理函数, 使 effect 不返回 cleanup, 避免 docPage/docPageSize 等依赖变化时
-  // cleanup 误取消正在进行的轮询.
-  const prevPendingKeyRef = useRef('');
-  const pollCleanupRef = useRef<(() => void) | null>(null);
+  // 文档完成时刷新列表（useCallback 保证 hook 内 effect 依赖稳定）
+  const handleDocFinished = useCallback(() => {
+    fetchDocuments(kbIdNum, docPage, docPageSize);
+  }, [fetchDocuments, kbIdNum, docPage, docPageSize]);
 
-  // Task 30: pollProgress 传入 signal，卸载时 abort 取消轮询中的 getProgress 请求
-  useEffect(() => {
-    const currentKey = pendingDocIds.join(',');
-    // 手动值比较: ID 集合不变时跳过轮询重建
-    if (currentKey === prevPendingKeyRef.current) return;
-    prevPendingKeyRef.current = currentKey;
-
-    // 清理上一次轮询
-    pollCleanupRef.current?.();
-    pollCleanupRef.current = null;
-
-    if (pendingDocIds.length === 0) return;
-    const controller = new AbortController();
-    const stopFns: (() => void)[] = [];
-    pendingDocIds.forEach((docId) => {
-      const stop = pollProgress(
-        docId,
-        (p) => {
-          setProgressMap((prev) => ({ ...prev, [docId]: p }));
-          if (p.status === 'done' || p.status === 'failed') {
-            fetchDocuments(kbIdNum, docPage, docPageSize);
-          }
-        },
-        controller.signal,
-      );
-      stopFns.push(stop);
-    });
-    pollCleanupRef.current = () => {
-      controller.abort();
-      stopFns.forEach((fn) => fn());
-    };
-  }, [pendingDocIds, kbIdNum, pollProgress, fetchDocuments, docPage, docPageSize]);
-
-  // 组件卸载时清理轮询
-  useEffect(() => {
-    return () => {
-      pollCleanupRef.current?.();
-    };
-  }, []);
+  // Task 6.3: 轮询逻辑提取到 useDocumentProgressPolling hook（见 KnowledgeBaseDetailPage.parts.tsx）
+  // progressMap 用于 columns deps 触发 Table 重渲染；progressMapRef 用于渲染时读取最新值
+  const { progressMap, progressMapRef } = useDocumentProgressPolling(
+    pendingDocIds,
+    pollProgress,
+    handleDocFinished,
+  );
 
   const handleReparse = useCallback(async (docId: number, force: boolean = false) => {
     await runWithToast(() => reparseDocument(kbIdNum, docId, force), {
@@ -153,13 +108,8 @@ export default function KnowledgeBaseDetailPage() {
     });
   }, [runWithToast, deleteDocument, kbIdNum]);
 
-  const handleEditClick = () => {
-    editForm.setFieldsValue({
-      name: kb?.name || '',
-      description: kb?.description || '',
-    });
-    setEditModal(true);
-  };
+  // Task 6.3: 表单初始值由 EditKBModal 内部 useEffect 根据 initialName/initialDescription 设置
+  const handleEditClick = () => setEditModal(true);
 
   const handleEditSubmit = async () => {
     try {
@@ -206,61 +156,9 @@ export default function KnowledgeBaseDetailPage() {
       title: t('kb.status'),
       key: 'status',
       width: 320,
-      render: (_: unknown, record: Document) => {
-        const progress = progressMapRef.current[record.id];
-        const currentStatus = progress?.status || record.status;
-        const statusText = getStatusTextKey(currentStatus);
-        const statusColor = getStatusColor(currentStatus);
-        const progressVal = progress?.progress || 0;
-
-        const StatusIcon = currentStatus === 'failed' ? AlertCircle : currentStatus === 'done' ? CheckCircle : Clock;
-
-        // Task 38: 5 阶段 Stepper - pending → parsing → chunking → embedding → done
-        // 当前阶段索引 + 进度条; failed 状态用红色 Tag 单独展示.
-        const STAGES = ['pending', 'parsing', 'chunking', 'embedding', 'done'] as const;
-        const stageIndex = STAGES.indexOf(currentStatus as typeof STAGES[number]);
-        const isInPipeline = stageIndex >= 0 && stageIndex < STAGES.length - 1 && currentStatus !== 'failed';
-
-        return (
-          <div>
-            <Space style={{ marginBottom: 4 }}>
-              <Tag color={statusColor} icon={<StatusIcon size={12} />}>
-                {statusText}
-              </Tag>
-            </Space>
-            {isInPipeline ? (
-              <>
-                <Steps
-                  size="small"
-                  current={stageIndex}
-                  style={{ marginTop: 4, maxWidth: 280 }}
-                  items={STAGES.map((s) => ({
-                    title: getStatusTextKey(s),
-                  }))}
-                />
-                <Progress percent={progressVal} size="small" style={{ marginTop: 4, width: 280 }} />
-              </>
-            ) : currentStatus === 'done' ? (
-              <Steps
-                size="small"
-                current={STAGES.length - 1}
-                status="finish"
-                style={{ marginTop: 4, maxWidth: 280 }}
-                items={STAGES.map((s) => ({
-                  title: getStatusTextKey(s),
-                }))}
-              />
-            ) : null}
-            {currentStatus === 'failed' && record.error_message && (
-              <Tooltip title={record.error_message}>
-                <Text type="danger" style={{ fontSize: 12, cursor: 'pointer' }}>
-                  {t('kb.viewErrorDetails')}
-                </Text>
-              </Tooltip>
-            )}
-          </div>
-        );
-      },
+      render: (_: unknown, record: Document) => (
+        <DocumentStatusCell record={record} progressMapRef={progressMapRef} />
+      ),
     },
     {
       title: t('kb.chunkCount'),
@@ -308,6 +206,7 @@ export default function KnowledgeBaseDetailPage() {
         </Space>
       ),
     },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- progressMapRef 是 ref，不应作为依赖
   ], [t, progressMap, handleReparse, handleDelete, setPreviewDoc]);
 
   return (
@@ -366,29 +265,14 @@ export default function KnowledgeBaseDetailPage() {
         onUploaded={refreshDocuments}
       />
 
-      <Modal
-        title={t('kb.editKB')}
+      <EditKBModal
         open={editModal}
-        onOk={handleEditSubmit}
+        form={editForm}
+        initialName={kb?.name || ''}
+        initialDescription={kb?.description || ''}
         onCancel={() => setEditModal(false)}
-        transitionName=""
-        maskTransitionName=""
-        okText={t('kb.save')}
-        cancelText={t('kb.cancel')}
-      >
-        <Form form={editForm} layout="vertical">
-          <Form.Item
-            name="name"
-            label={t('kb.kbNameLabel')}
-            rules={[{ required: true, message: t('kb.kbNameRequired') }]}
-          >
-            <Input maxLength={100} placeholder={t('kb.kbNameInputPlaceholder')} />
-          </Form.Item>
-          <Form.Item name="description" label={t('kb.description')}>
-            <Input.TextArea rows={3} maxLength={500} placeholder={t('kb.descriptionOptional')} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        onSubmit={handleEditSubmit}
+      />
 
       <KBCollaboratorModal
         open={collabModal}

@@ -1,4 +1,5 @@
 import type { ErrorInfo } from 'react';
+import { logger } from './logger';
 
 /**
  * 全局错误上报与面包屑收集工具
@@ -83,7 +84,7 @@ export function clearBreadcrumbs() {
  * 注意：不要在此处记录密码、token 等敏感信息。
  */
 export function reportError(error: Error, errorInfo?: ErrorInfo) {
-  console.error('[ErrorBoundary]', error, errorInfo);
+  logger.error('[ErrorBoundary]', error, errorInfo);
   addBreadcrumb({
     type: 'error',
     message: `${error.name}: ${error.message}`,

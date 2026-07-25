@@ -4,14 +4,14 @@ from app.config import settings
 
 
 class TextChunker:
-    '''文本分块器:按段落 + 字符数分块'''
+    """文本分块器:按段落 + 字符数分块"""
 
     def __init__(self, chunk_size: int | None = None, overlap: int | None = None):
         self.chunk_size = chunk_size or settings.CHUNK_SIZE
         self.overlap = overlap or settings.CHUNK_OVERLAP
 
     def _clean_text(self, text: str) -> str:
-        '''清洗文本: 去除 NUL 字符和其他不可见控制字符(保留换行、制表符)'''
+        """清洗文本: 去除 NUL 字符和其他不可见控制字符(保留换行、制表符)"""
         # 移除 NUL 字符 (PostgreSQL 不允许)
         text = text.replace("\x00", "")
         # 移除其他不可见控制字符 (保留 \n \t \r)
@@ -19,7 +19,7 @@ class TextChunker:
         return text
 
     def chunk(self, text: str, source_pages: list[dict] | None = None) -> list[dict]:
-        '''分块,返回 [{"content": "...", "page": n, "char_count": ...}, ...]'''
+        """分块,返回 [{"content": "...", "page": n, "char_count": ...}, ...]"""
         text = self._clean_text(text)
         # 1. 按双换行(段落)分割
         paragraphs = re.split(r"\n\s*\n", text)
@@ -38,10 +38,7 @@ class TextChunker:
             if buffer and len(buffer) + len(para) > self.chunk_size:
                 chunks.append(self._make_chunk(buffer, buffer_start_page))
                 # overlap: 保留尾部
-                if self.overlap > 0:
-                    buffer = buffer[-self.overlap:] + "\n\n" + para
-                else:
-                    buffer = para
+                buffer = buffer[-self.overlap :] + "\n\n" + para if self.overlap > 0 else para
                 buffer_start_page = current_page
             else:
                 if not buffer:
@@ -52,7 +49,7 @@ class TextChunker:
             while len(buffer) > self.chunk_size * 1.5:
                 split_pos = self._find_split_pos(buffer, self.chunk_size)
                 chunks.append(self._make_chunk(buffer[:split_pos], buffer_start_page))
-                buffer = buffer[max(split_pos - self.overlap, 0):]
+                buffer = buffer[max(split_pos - self.overlap, 0) :]
 
         if buffer.strip():
             chunks.append(self._make_chunk(buffer, buffer_start_page))
@@ -67,7 +64,7 @@ class TextChunker:
         }
 
     def _find_split_pos(self, text: str, target: int) -> int:
-        '''在 target 附近找最近的句子边界'''
+        """在 target 附近找最近的句子边界"""
         for i in range(min(target, len(text)), max(0, target - 100), -1):
             if text[i] in "。?!;\n":
                 return i + 1

@@ -12,14 +12,15 @@
 
 注意：触发评测需要 Ollama 可达且有 3/hour 限额，如不可达则相关用例 skip。
 """
+
 import time
 
 import pytest
 import requests
 
-from tests.e2e.helpers.cdp_auth import make_cdp_client, login_cdp_session
-from tests.e2e.helpers.waiters import wait_for_element
 from tests.e2e.conftest import extract_data
+from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
+from tests.e2e.helpers.waiters import wait_for_element
 
 TAURI_HOME = "http://tauri.localhost/"
 
@@ -248,6 +249,8 @@ def test_eval_trend_chart(logged_in_cdp):
     """)
     assert chart_state and chart_state.get("found"), "Trend chart card not found"
     # canvas（有数据渲染）或 empty（无数据）或 skeleton（加载中）均为合法状态
-    assert (chart_state.get("hasCanvas") or chart_state.get("hasEmpty") or
-            chart_state.get("hasSkeleton")), \
-        "Trend chart did not render (no canvas/empty/skeleton)"
+    assert (
+        chart_state.get("hasCanvas")
+        or chart_state.get("hasEmpty")
+        or chart_state.get("hasSkeleton")
+    ), "Trend chart did not render (no canvas/empty/skeleton)"

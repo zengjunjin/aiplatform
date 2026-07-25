@@ -7,6 +7,7 @@ Task 8:  串行评估改并发（asyncio.gather + Semaphore）
 Task 9:  sync session 用 asyncio.to_thread 包装
 Task 11: run_evaluation_task 拆分为子函数（主函数 ≤ 50 行）
 """
+
 import asyncio
 from datetime import UTC, datetime
 from typing import Any
@@ -23,8 +24,11 @@ from app.db.sync_session import get_sync_session
 from app.tasks.celery_app import celery_app
 
 
-@celery_app.task(bind=True, max_retries=settings.TASK_MAX_RETRIES_EVALUATION,
-                 name="app.tasks.evaluation_task.run_evaluation")
+@celery_app.task(
+    bind=True,
+    max_retries=settings.TASK_MAX_RETRIES_EVALUATION,
+    name="app.tasks.evaluation_task.run_evaluation",
+)
 def run_evaluation_task(self, run_id: int):
     """Run evaluation asynchronously in Celery worker.
 
@@ -58,14 +62,17 @@ async def _run_evaluation_async(run_id: int) -> dict:
         kb_id = run.knowledge_base_id
         dataset = await _prepare_dataset(session, run)
         if not dataset:
-            await _update_run_status(session, run_id,
-                                     EvaluationStatus.FAILED,
-                                     "No chunks available to generate test dataset")
+            await _update_run_status(
+                session,
+                run_id,
+                EvaluationStatus.FAILED,
+                "No chunks available to generate test dataset",
+            )
             return {"error": "No chunks available"}
 
         results = await _run_evaluations(kb_id, dataset)
         return await _compute_and_persist_metrics(session, run_id, results)
-    except Exception as e:
+    except Exception:
         logger.exception(f"Evaluation run {run_id} failed")
         if session.is_active:
             try:
@@ -90,12 +97,14 @@ async def _run_evaluation_async(run_id: int) -> dict:
 # Task 5: 幂等性检查（乐观锁抢占 run）
 # ---------------------------------------------------------------------------
 
+
 async def _claim_run(session: Session, run_id: int) -> EvaluationRun | None:
     """Task 5: 幂等性 - 乐观锁抢占 run。
 
     仅当 status=pending 时原子更新为 running，避免并发重复执行。
     返回 None 表示 run 不存在或已被其他 worker 抢占。
     """
+
     def _sync_claim():
         result = session.execute(
             update(EvaluationRun)
@@ -125,6 +134,7 @@ async def _update_run_status(
     error_message: str | None = None,
 ) -> None:
     """更新 run 状态 (sync session 用 asyncio.to_thread 包装)。"""
+
     def _sync_update():
         run = session.get(EvaluationRun, run_id)
         if run:
@@ -140,12 +150,14 @@ async def _update_run_status(
 # Task 9: sync session 用 asyncio.to_thread 包装
 # ---------------------------------------------------------------------------
 
+
 async def _prepare_dataset(session: Session, run: EvaluationRun) -> list[dict]:
     """Task 9: 准备评估数据集。
 
     sync session 查询用 asyncio.to_thread 包装，避免阻塞事件循环。
     LLM 问题生成保持 async（内部已有 Semaphore 并发控制）。
     """
+
     def _sync_fetch_chunks():
         result = session.execute(
             select(DocumentChunk)
@@ -173,6 +185,7 @@ async def _generate_dataset_async(chunks: list) -> list[dict]:
 
     Task 14.3: 移除 requests.post 同步调用，改用 OllamaLLMProvider.chat() 异步调用。
     Task 8 风格: 用 asyncio.gather + Semaphore(8) 限制并发度。
+    Task 1.5: 数据集条目包含 question_type/difficulty。
     """
     from app.models.ollama_provider import OllamaLLMProvider
 
@@ -183,12 +196,14 @@ async def _generate_dataset_async(chunks: list) -> list[dict]:
 
     async def _gen_with_sem(idx: int, chunk_content: str) -> dict | None:
         async with semaphore:
-            question = await _generate_question_async(chunk_content, llm)
-            if question:
+            question_data = await _generate_question_async(chunk_content, llm)
+            if question_data:
                 return {
-                    "question": question,
+                    "question": question_data["question"],
                     "ground_truth": target_chunks[idx].content,
                     "contexts": [target_chunks[idx].content],
+                    "question_type": question_data["question_type"],
+                    "difficulty": question_data["difficulty"],
                 }
             return None
 
@@ -202,20 +217,21 @@ async def _generate_dataset_async(chunks: list) -> list[dict]:
     return [d for d in dataset if d is not None]
 
 
-async def _generate_question_async(chunk_content: str, llm: Any) -> str | None:
+async def _generate_question_async(chunk_content: str, llm: Any) -> dict | None:
     """Generate a question from chunk content using async LLM Provider.
 
     Task 14.3: 用 llm.chat() 替代 requests.post 同步调用。
     Task 1.7: prompt 与清理逻辑改用 core/evaluation.py 公共函数。
+    Task 1.5: 返回 dict 包含 question/question_type/difficulty。
     llm: BaseLLMProvider 实例（如 OllamaLLMProvider）。
     """
-    from app.core.evaluation import build_question_prompt, sanitize_question
+    from app.core.evaluation import build_question_prompt, parse_question_response
 
     prompt = build_question_prompt(chunk_content)
 
     try:
-        question = await llm.chat([{"role": "user", "content": prompt}], temperature=0.7)
-        return sanitize_question(question)
+        response = await llm.chat([{"role": "user", "content": prompt}], temperature=0.7)
+        return parse_question_response(response)
     except Exception as e:
         logger.warning(f"Failed to generate question: {e}")
         return None
@@ -224,6 +240,7 @@ async def _generate_question_async(chunk_content: str, llm: Any) -> str | None:
 # ---------------------------------------------------------------------------
 # Task 8: 串行评估改并发（asyncio.gather + Semaphore）
 # ---------------------------------------------------------------------------
+
 
 async def _run_evaluations(kb_id: int, dataset: list[dict]) -> list[dict]:
     """Task 8: 并发执行评估。
@@ -247,12 +264,14 @@ async def _run_evaluations(kb_id: int, dataset: list[dict]) -> list[dict]:
     for i, r in enumerate(results):
         if isinstance(r, Exception):
             logger.error(f"Failed question {i + 1}/{len(dataset)}: {r}")
-            processed.append({
-                "question": dataset[i]["question"],
-                "ground_truth": dataset[i]["ground_truth"],
-                "answer": "评估失败，请稍后重试",
-                "contexts": dataset[i].get("contexts", []),
-            })
+            processed.append(
+                {
+                    "question": dataset[i]["question"],
+                    "ground_truth": dataset[i]["ground_truth"],
+                    "answer": "评估失败，请稍后重试",
+                    "contexts": dataset[i].get("contexts", []),
+                }
+            )
         else:
             processed.append(r)
     return processed
@@ -274,8 +293,7 @@ async def _run_single_evaluation(kb_id: int, item: dict) -> dict:
         ground_truth=ground_truth,
     )
     logger.info(
-        f"Evaluated: faith={metrics.get('faithfulness')}, "
-        f"rel={metrics.get('answer_relevancy')}"
+        f"Evaluated: faith={metrics.get('faithfulness')}, " f"rel={metrics.get('answer_relevancy')}"
     )
     return {
         "question": question,
@@ -289,6 +307,7 @@ async def _run_single_evaluation(kb_id: int, item: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Task 11: 计算并持久化指标
 # ---------------------------------------------------------------------------
+
 
 async def _compute_and_persist_metrics(
     session: Session,
@@ -310,6 +329,10 @@ async def _compute_and_persist_metrics(
                 answer_relevancy=r.get("answer_relevancy"),
                 context_precision=r.get("context_precision"),
                 context_recall=r.get("context_recall"),
+                question_type=r.get("question_type"),
+                difficulty=r.get("difficulty"),
+                latency_ms=r.get("latency_ms"),
+                token_count=r.get("token_count"),
             )
             for r in results
         ]

@@ -1,5 +1,5 @@
 """Unit tests for parsers.chunker module."""
-import pytest
+
 from app.parsers.chunker import TextChunker, chunker
 
 

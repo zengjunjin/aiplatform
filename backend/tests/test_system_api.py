@@ -1,6 +1,9 @@
 """Tests for app.api.v1.system - 系统状态 API"""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.api.v1 import system
 
 
@@ -33,8 +36,10 @@ class TestSystemStatus:
         """所有组件不可用 → status 全部 'down'"""
         db_mock.execute = AsyncMock(side_effect=Exception("pg down"))
 
-        with patch("app.redis_client.get_redis", return_value=None), \
-             patch("app.rag.retriever.retriever") as mock_retriever:
+        with (
+            patch("app.redis_client.get_redis", return_value=None),
+            patch("app.rag.retriever.retriever") as mock_retriever,
+        ):
             mock_retriever.qdrant.get_collections.side_effect = Exception("qdrant down")
             with patch("app.tasks.celery_app.celery_app") as mock_celery:
                 mock_inspect = MagicMock()
@@ -47,7 +52,11 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(side_effect=Exception("ollama down"))
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
+                    result = (
+                        await system.system_status(
+                            request=request_mock, db=db_mock, admin=admin_user
+                        )
+                    ).model_dump()
 
         # PostgreSQL: down
         assert result["data"]["postgresql"] == "down"
@@ -82,8 +91,10 @@ class TestSystemStatus:
         # Celery 正常
         celery_stats = {"worker1": {"pool": "prefork"}}
 
-        with patch("app.redis_client.get_redis", return_value=redis_mock), \
-             patch("app.rag.retriever.retriever") as mock_retriever:
+        with (
+            patch("app.redis_client.get_redis", return_value=redis_mock),
+            patch("app.rag.retriever.retriever") as mock_retriever,
+        ):
             mock_retriever.qdrant.get_collections.return_value = qdrant_collections
             with patch("app.tasks.celery_app.celery_app") as mock_celery:
                 mock_inspect = MagicMock()
@@ -96,7 +107,11 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(return_value=ollama_response)
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
+                    result = (
+                        await system.system_status(
+                            request=request_mock, db=db_mock, admin=admin_user
+                        )
+                    ).model_dump()
 
         assert result["data"]["postgresql"] == "up"
         assert result["data"]["redis"] == "up"
@@ -113,8 +128,10 @@ class TestSystemStatus:
         ollama_response = MagicMock()
         ollama_response.status_code = 500
 
-        with patch("app.redis_client.get_redis", return_value=MagicMock(ping=AsyncMock())), \
-             patch("app.rag.retriever.retriever") as mock_retriever:
+        with (
+            patch("app.redis_client.get_redis", return_value=MagicMock(ping=AsyncMock())),
+            patch("app.rag.retriever.retriever") as mock_retriever,
+        ):
             mock_retriever.qdrant.get_collections.return_value = MagicMock(collections=[])
             with patch("app.tasks.celery_app.celery_app") as mock_celery:
                 mock_inspect = MagicMock()
@@ -127,7 +144,11 @@ class TestSystemStatus:
                     mock_client.get = AsyncMock(return_value=ollama_response)
                     mock_client_cls.return_value = mock_client
 
-                    result = await system.system_status(request=request_mock, db=db_mock, admin=admin_user)
+                    result = (
+                        await system.system_status(
+                            request=request_mock, db=db_mock, admin=admin_user
+                        )
+                    ).model_dump()
         assert "down" in result["data"]["ollama"]
         assert "500" in result["data"]["ollama"]
 
@@ -136,7 +157,9 @@ class TestListModels:
     """Task 4: list_models 端点需要认证 (Depends(get_current_user))"""
 
     @pytest.mark.asyncio
-    async def test_list_models_returns_models_for_authenticated_user(self, normal_user, request_mock):
+    async def test_list_models_returns_models_for_authenticated_user(
+        self, normal_user, request_mock
+    ):
         """认证用户 → 返回模型列表"""
         # 模拟 ModelRegistry.list_all 和 ModelRegistry.get
         fake_provider_1 = MagicMock()
@@ -149,9 +172,19 @@ class TestListModels:
         fake_provider_2.model_name = "gpt-4"
         fake_provider_2.is_healthy = False
 
-        with patch("app.models.factory.ModelRegistry.list_all", return_value=["ollama-llama3", "openai-gpt-4"]), \
-             patch("app.models.factory.ModelRegistry.get", side_effect=[fake_provider_1, fake_provider_2]):
-            result = await system.list_models(request=request_mock, current_user=normal_user)
+        with (
+            patch(
+                "app.models.factory.ModelRegistry.list_all",
+                return_value=["ollama-llama3", "openai-gpt-4"],
+            ),
+            patch(
+                "app.models.factory.ModelRegistry.get",
+                side_effect=[fake_provider_1, fake_provider_2],
+            ),
+        ):
+            result = (
+                await system.list_models(request=request_mock, current_user=normal_user)
+            ).model_dump()
 
         assert "data" in result
         assert "models" in result["data"]
@@ -168,6 +201,7 @@ class TestListModels:
     async def test_list_models_endpoint_signature_requires_current_user(self):
         """list_models 函数签名应包含 current_user: User = Depends(get_current_user) 依赖"""
         import inspect
+
         from app.api.deps import get_current_user
         from app.db.user import User
 
@@ -179,12 +213,16 @@ class TestListModels:
         assert callable(get_current_user)
         # 类型注解应为 User 或 Union[User, ...]
         annotation = param.annotation
-        assert annotation is User or (hasattr(annotation, "__args__") and User in annotation.__args__)
+        assert annotation is User or (
+            hasattr(annotation, "__args__") and User in annotation.__args__
+        )
 
     @pytest.mark.asyncio
     async def test_list_models_returns_empty_when_no_providers(self, normal_user, request_mock):
         """无可用 Provider → 返回空列表"""
         with patch("app.models.factory.ModelRegistry.list_all", return_value=[]):
-            result = await system.list_models(request=request_mock, current_user=normal_user)
+            result = (
+                await system.list_models(request=request_mock, current_user=normal_user)
+            ).model_dump()
         assert result["data"]["models"] == []
         assert result["data"]["default_model"] == "ollama"

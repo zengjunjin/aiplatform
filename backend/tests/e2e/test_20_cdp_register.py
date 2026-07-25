@@ -12,14 +12,20 @@
 注意：/auth/register 限流 5/minute，本文件最多触发 2 次注册请求
 （test_register_success + test_register_duplicate_username），其余靠前端校验拦截。
 """
+
 import json
 import os
 import time
 import uuid
+
 import pytest
 
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -45,18 +51,24 @@ def _navigate_to_register(cdp):
     token 为 null, /register 作为公开路由正常渲染。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(1)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate("""
         try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}
     """)
     # 完整导航到注册页 (触发页面重新加载 + React 重新初始化)
     cdp.navigate("http://tauri.localhost/#/register")
-    time.sleep(3)
+    wait_for_dom_ready(cdp, timeout=10)
+    wait_for_element(cdp, "#register_username, form input", timeout=15)
 
 
 # Ant Design Form name="register" 不会渲染为 HTML <form> 的 name 属性,
 # 而是作为内部名称生成字段 ID: register_username, register_email 等。
-REGISTER_FIELD_IDS = ["register_username", "register_email", "register_password", "register_confirm"]
+REGISTER_FIELD_IDS = [
+    "register_username",
+    "register_email",
+    "register_password",
+    "register_confirm",
+]
 
 
 def _fill_register_field(cdp, index, value):
@@ -81,7 +93,7 @@ def _fill_register_field(cdp, index, value):
             el.dispatchEvent(new Event('blur', {{bubbles: true}}));
         }})();
     """)
-    time.sleep(0.5)
+    time.sleep(0.5)  # 必要固定等待：React onChange debounce
 
 
 def _click_register_submit(cdp):
@@ -102,7 +114,7 @@ def test_register_page_loads(cdp):
     """注册页面加载：表单 + 4 个输入框 + 提交按钮均渲染。"""
     _navigate_to_register(cdp)
     # 等待注册页面的第一个字段出现（Ant Design Form name 生成 ID 前缀 register_）
-    wait_for_element(cdp, '#register_username', timeout=10)
+    wait_for_element(cdp, "#register_username", timeout=10)
     # 验证表单存在
     has_form = cdp.evaluate('!!document.querySelector("form")')
     assert has_form, "Register form not found"
@@ -149,15 +161,14 @@ def test_register_success(cdp):
     _fill_register_field(cdp, 1, email)
     _fill_register_field(cdp, 2, password)
     _fill_register_field(cdp, 3, password)
-    time.sleep(1)
     _click_register_submit(cdp)
+
     # 等待跳转或成功提示（register 后 navigate('/')，未登录会重定向到 /login）
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        url = cdp.evaluate("window.location.href")
-        if url and "/register" not in url:
-            return
-        has_success = cdp.evaluate("""
+    def _redirected_or_success():
+        url = cdp.evaluate("window.location.href") or ""
+        if "/register" not in url:
+            return True
+        return cdp.evaluate("""
             (function() {
                 const msgs = document.querySelectorAll(
                     '.ant-message-success, .ant-message-notice-success'
@@ -165,11 +176,17 @@ def test_register_success(cdp):
                 return msgs.length > 0;
             })();
         """)
-        if has_success:
-            return
-        time.sleep(1)
-    url = cdp.evaluate("window.location.href")
-    assert "/register" not in url, f"Still on register page after submit: {url}"
+
+    try:
+        wait_for(
+            _redirected_or_success,
+            timeout=15,
+            interval=1,
+            message="Register did not redirect or show success",
+        )
+    except TimeoutError:
+        url = cdp.evaluate("window.location.href")
+        assert "/register" not in url, f"Still on register page after submit: {url}"
 
 
 def test_register_duplicate_username(cdp):
@@ -184,12 +201,10 @@ def test_register_duplicate_username(cdp):
     _fill_register_field(cdp, 1, email)
     _fill_register_field(cdp, 2, password)
     _fill_register_field(cdp, 3, password)
-    time.sleep(1)
     _click_register_submit(cdp)
     # 等待错误提示出现（msg.error 或表单校验错误）
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        has_error = cdp.evaluate("""
+    wait_for(
+        lambda: cdp.evaluate("""
             (function() {
                 const msgs = document.querySelectorAll(
                     '.ant-message-error, .ant-message-notice-error'
@@ -198,11 +213,11 @@ def test_register_duplicate_username(cdp):
                 const formErrors = document.querySelectorAll('.ant-form-item-explain-error');
                 return formErrors.length > 0;
             })();
-        """)
-        if has_error:
-            return
-        time.sleep(1)
-    assert False, "No error message shown for duplicate username"
+        """),
+        timeout=10,
+        interval=1,
+        message="No error message shown for duplicate username",
+    )
 
 
 def test_register_password_mismatch(cdp):
@@ -218,9 +233,8 @@ def test_register_password_mismatch(cdp):
     _fill_register_field(cdp, 1, email)
     _fill_register_field(cdp, 2, "Test@123456")
     _fill_register_field(cdp, 3, "Different@123456")
-    time.sleep(1)
     _click_register_submit(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-form-item-explain-error", timeout=5)
     # 验证表单校验错误出现
     has_error = cdp.evaluate("""
         (function() {
@@ -248,9 +262,8 @@ def test_register_weak_password(cdp):
     _fill_register_field(cdp, 1, email)
     _fill_register_field(cdp, 2, "123")
     _fill_register_field(cdp, 3, "123")
-    time.sleep(1)
     _click_register_submit(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-form-item-explain-error", timeout=5)
     # 验证表单校验错误出现
     has_error = cdp.evaluate("""
         (function() {

@@ -18,7 +18,9 @@ class ChatMessage(Base):
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    session_id = Column(BigInteger, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(
+        BigInteger, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     referenced_chunks = Column(JSONB, nullable=True)
@@ -28,6 +30,8 @@ class ChatMessage(Base):
     summary_snapshot = Column(Text, nullable=True)
     # Task 10: 记录该消息使用的 prompt 模板版本号，便于审计与回溯
     prompt_version = Column(String(50), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
 
     session = relationship("ChatSession", back_populates="messages")

@@ -1,14 +1,18 @@
 """Tests for app.models.cached_embedding.CachedEmbeddingProvider"""
-import pytest
-import json
+
 import hashlib
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.models.cached_embedding import CachedEmbeddingProvider
+
+import pytest
+
 from app.models.base import BaseEmbeddingProvider
+from app.models.cached_embedding import CachedEmbeddingProvider
 
 
 class FakeInnerProvider(BaseEmbeddingProvider):
     """测试用 inner provider"""
+
     model = "test-model"
     _dim = 768
 
@@ -91,10 +95,12 @@ class TestEmbedWithCache:
         """全部 cache hit → 不调 inner，不写缓存"""
         provider = CachedEmbeddingProvider(FakeInnerProvider())
         redis_mock = MagicMock()
-        redis_mock.mget = AsyncMock(return_value=[
-            json.dumps([0.5, 0.6]),
-            json.dumps([0.7, 0.8]),
-        ])
+        redis_mock.mget = AsyncMock(
+            return_value=[
+                json.dumps([0.5, 0.6]),
+                json.dumps([0.7, 0.8]),
+            ]
+        )
         pipe_mock = MagicMock()
         pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock()
@@ -303,9 +309,11 @@ class TestEmbeddingCacheMetrics:
         provider.inner.embed = AsyncMock()
 
         with patch.object(provider, "_get_redis", new=AsyncMock(return_value=redis_mock)):
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 await provider.embed(["a"])
 
         hits_mock.inc.assert_called_once()
@@ -324,9 +332,11 @@ class TestEmbeddingCacheMetrics:
         redis_mock.pipeline.return_value = pipe_mock
 
         with patch.object(provider, "_get_redis", new=AsyncMock(return_value=redis_mock)):
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 await provider.embed(["a"])
 
         misses_mock.inc.assert_called_once()
@@ -346,9 +356,11 @@ class TestEmbeddingCacheMetrics:
         provider.inner.embed = AsyncMock(return_value=[[0.0]])
 
         with patch.object(provider, "_get_redis", new=AsyncMock(return_value=redis_mock)):
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 await provider.embed(["a"])
 
         misses_mock.inc.assert_called_once()
@@ -362,9 +374,11 @@ class TestEmbeddingCacheMetrics:
 
         with patch("app.models.cached_embedding.redis_async.from_url") as mock_from_url:
             mock_from_url.return_value.ping = AsyncMock(side_effect=Exception("connect failed"))
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 result = await provider._get_redis()
 
         assert result is None
@@ -378,11 +392,13 @@ class TestEmbeddingCacheMetrics:
         provider = CachedEmbeddingProvider(FakeInnerProvider())
         redis_mock = MagicMock()
         # 3 个文本: hit, miss, hit
-        redis_mock.mget = AsyncMock(return_value=[
-            json.dumps([0.1]),
-            None,
-            json.dumps([0.3]),
-        ])
+        redis_mock.mget = AsyncMock(
+            return_value=[
+                json.dumps([0.1]),
+                None,
+                json.dumps([0.3]),
+            ]
+        )
         pipe_mock = MagicMock()
         pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock()
@@ -390,9 +406,11 @@ class TestEmbeddingCacheMetrics:
         provider.inner.embed = AsyncMock(return_value=[[0.2]])
 
         with patch.object(provider, "_get_redis", new=AsyncMock(return_value=redis_mock)):
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 await provider.embed(["a", "b", "c"])
 
         assert hits_mock.inc.call_count == 2
@@ -405,9 +423,11 @@ class TestEmbeddingCacheMetrics:
         provider = CachedEmbeddingProvider(FakeInnerProvider())
 
         with patch.object(provider, "_get_redis", new=AsyncMock(return_value=None)):
-            with patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock, \
-                 patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock:
+            with (
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_HITS") as hits_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_MISSES") as misses_mock,
+                patch("app.models.cached_embedding.EMBEDDING_CACHE_ERRORS") as errors_mock,
+            ):
                 result = await provider.embed(["a", "b"])
 
         assert result == [[0.0], [1.0]]

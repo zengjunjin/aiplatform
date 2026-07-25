@@ -9,7 +9,7 @@ from app.parsers.text_parser import TextParser
 
 
 def get_parser(file_path: str) -> BaseParser | None:
-    '''根据文件扩展名返回对应的解析器'''
+    """根据文件扩展名返回对应的解析器"""
     ext = os.path.splitext(file_path)[1].lower()
     parsers = [PDFParser(), DocxParser(), MarkdownParser(), TextParser()]
     for p in parsers:
@@ -19,7 +19,12 @@ def get_parser(file_path: str) -> BaseParser | None:
 
 
 __all__ = [
-    "BaseParser", "TextParser", "MarkdownParser",
-    "PDFParser", "DocxParser", "TextChunker", "chunker",
+    "BaseParser",
+    "TextParser",
+    "MarkdownParser",
+    "PDFParser",
+    "DocxParser",
+    "TextChunker",
+    "chunker",
     "get_parser",
 ]

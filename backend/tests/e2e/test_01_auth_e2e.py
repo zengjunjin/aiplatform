@@ -8,8 +8,8 @@ API:
 - GET  /auth/me         -> 当前用户信息
 - PUT  /auth/password   -> 修改密码（需 confirm_password）
 """
+
 import jwt
-import pytest
 import requests
 
 from tests.e2e.conftest import extract_data
@@ -28,10 +28,14 @@ def test_login_admin_success(admin_token):
 
 def test_login_wrong_password(base_url):
     """错误密码登录失败"""
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": "admin",
-        "password": "wrong_password_xxx",
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": "admin",
+            "password": "wrong_password_xxx",
+        },
+        timeout=10,
+    )
     assert r.status_code == 401, f"Expected 401, got {r.status_code}: {r.text}"
 
 
@@ -53,32 +57,46 @@ def test_refresh_token_flow_and_single_use(base_url):
     这里 sleep 1.1s 确保新 token 与 admin_token fixture 的 token 不同（记录为生产 bug）。
     """
     import time
+
     # 等待 1.1s 确保 iat 与 admin_token fixture 不同
     time.sleep(1.1)
 
     # 独立登录获取新 refresh_token
-    r_login = requests.post(f"{base_url}/auth/login", json={
-        "username": "admin", "password": "admin123",
-    }, timeout=10)
+    r_login = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": "admin",
+            "password": "admin123",
+        },
+        timeout=10,
+    )
     assert r_login.status_code == 200, f"Login failed: {r_login.text}"
     refresh_token = extract_data(r_login)["refresh_token"]
 
     # 第一次刷新成功
-    r1 = requests.post(f"{base_url}/auth/refresh", json={
-        "refresh_token": refresh_token,
-    }, timeout=10)
+    r1 = requests.post(
+        f"{base_url}/auth/refresh",
+        json={
+            "refresh_token": refresh_token,
+        },
+        timeout=10,
+    )
     assert r1.status_code == 200, f"First refresh should succeed: {r1.text}"
     new_data = extract_data(r1)
     assert "access_token" in new_data
     assert new_data["refresh_token"]  # 非空
 
     # 第二次使用旧 refresh_token 应失败（已在黑名单）
-    r2 = requests.post(f"{base_url}/auth/refresh", json={
-        "refresh_token": refresh_token,
-    }, timeout=10)
-    assert r2.status_code == 401, (
-        f"Old refresh token should be revoked. Got {r2.status_code}: {r2.text}"
+    r2 = requests.post(
+        f"{base_url}/auth/refresh",
+        json={
+            "refresh_token": refresh_token,
+        },
+        timeout=10,
     )
+    assert (
+        r2.status_code == 401
+    ), f"Old refresh token should be revoked. Got {r2.status_code}: {r2.text}"
 
 
 def test_protected_endpoint_require_auth(base_url):
@@ -90,37 +108,42 @@ def test_protected_endpoint_require_auth(base_url):
 def test_logout_blacklists_token(base_url):
     """登出后 access_token 失效"""
     import time
+
     # 等待 1.1s 确保 iat 与前一个测试不同（refresh_token 不含 jti 的生产 bug 规避）
     time.sleep(1.1)
 
     # 独立登录，避免污染 session 级 admin_token
     # 注意: 这是整个 session 的第 5 次 /auth/login 调用（2 次 conftest + 2 次前面测试 + 本次），
     # 可能触发 5/minute 限流。若被限流则等待 60s 重试。
-    r_login = requests.post(f"{base_url}/auth/login", json={
-        "username": "admin", "password": "admin123",
-    }, timeout=10)
-    if r_login.status_code == 429:
-        time.sleep(60)
-        r_login = requests.post(f"{base_url}/auth/login", json={
-            "username": "admin", "password": "admin123",
-        }, timeout=10)
-    assert r_login.status_code == 200, (
-        f"Login failed: {r_login.status_code}: {r_login.text}"
-    )
+    # 限流可能 429，重试直到成功或耗尽重试次数（替代固定 sleep(60)）
+    for _ in range(12):
+        r_login = requests.post(
+            f"{base_url}/auth/login",
+            json={
+                "username": "admin",
+                "password": "admin123",
+            },
+            timeout=10,
+        )
+        if r_login.status_code != 429:
+            break
+        time.sleep(5)  # 限流退避：5/minute 窗口，每 5s 重试一次
+    assert r_login.status_code == 200, f"Login failed: {r_login.status_code}: {r_login.text}"
     login_data = extract_data(r_login)
     headers = {"Authorization": f"Bearer {login_data['access_token']}"}
 
     # 登出
-    r = requests.post(f"{base_url}/auth/logout",
-                      json={"refresh_token": login_data["refresh_token"]},
-                      headers=headers, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/logout",
+        json={"refresh_token": login_data["refresh_token"]},
+        headers=headers,
+        timeout=10,
+    )
     assert r.status_code == 200, f"Logout failed: {r.text}"
 
     # 验证 access_token 已失效
     r2 = requests.get(f"{base_url}/auth/me", headers=headers, timeout=10)
-    assert r2.status_code == 401, (
-        f"Token should be blacklisted after logout. Got {r2.status_code}"
-    )
+    assert r2.status_code == 401, f"Token should be blacklisted after logout. Got {r2.status_code}"
 
 
 def test_get_me(base_url, admin_headers):

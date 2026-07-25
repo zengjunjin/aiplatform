@@ -19,9 +19,7 @@ def _is_retryable_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
         return status_code >= 500 or status_code == 429
-    if isinstance(exc, (httpx.NetworkError, httpx.TimeoutException, httpx.ConnectError)):
-        return True
-    return False
+    return bool(isinstance(exc, httpx.NetworkError | httpx.TimeoutException | httpx.ConnectError))
 
 
 def _build_client(timeout: float = 60.0) -> httpx.AsyncClient:
@@ -60,7 +58,9 @@ class OllamaLLMProvider(BaseLLMProvider):
         """关闭底层 httpx 连接池，应用 shutdown 时调用。"""
         await self._client.aclose()
 
-    async def chat_stream(self, messages: list[dict], temperature: float = 0.7) -> AsyncIterator[str]:
+    async def chat_stream(
+        self, messages: list[dict], temperature: float = 0.7
+    ) -> AsyncIterator[str]:
         async with self._client.stream(
             "POST",
             f"{self.host}/api/chat",
@@ -94,7 +94,9 @@ class OllamaLLMProvider(BaseLLMProvider):
             f"Ollama LLM chat retry attempt {retry_state.attempt_number} after error: {retry_state.outcome.exception()}"
         ),
     )
-    async def chat(self, messages: list[dict], temperature: float = 0.7, stream: bool = False, **kwargs) -> str | AsyncIterator[str]:
+    async def chat(
+        self, messages: list[dict], temperature: float = 0.7, stream: bool = False, **kwargs
+    ) -> str | AsyncIterator[str]:
         if stream:
             return self.chat_stream(messages, temperature=temperature)
         resp = await self._client.post(
@@ -111,10 +113,10 @@ class OllamaLLMProvider(BaseLLMProvider):
         return data.get("message", {}).get("content", "")
 
     async def health_check(self) -> bool:
-        '''通过 Ollama 的 /api/tags 端点进行健康检查。
+        """通过 Ollama 的 /api/tags 端点进行健康检查。
 
         仅返回检查结果，不修改 self._healthy（由 ModelHealthChecker 根据连续失败计数统一管理）。
-        '''
+        """
         try:
             resp = await self._client.get(f"{self.host}/api/tags")
             return resp.status_code == 200

@@ -7,15 +7,13 @@
 - RAG_E2E_LATENCY{kb_id=...}
 - RAG_DOCUMENT_COUNT{kb_id=...}
 """
-import asyncio
-import time
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.api.v1 import chat as chat_module
 from app.tasks import metrics_collector
-
 
 # ---------------------------------------------------------------------------
 # Task 1.1: RAG_RETRIEVAL_LATENCY — retriever.retrieve() 各阶段埋点
@@ -31,16 +29,16 @@ class TestRetrievalLatencyMetrics:
         r = HybridRetriever()
         # mock 依赖方法，避免真实 IO
         r._get_chunks_for_bm25 = AsyncMock(return_value=[])
-        r._vector_search = AsyncMock(return_value=[
-            {"chunk_id": 1, "content": "a", "score": 0.9}
-        ])
+        r._vector_search = AsyncMock(return_value=[{"chunk_id": 1, "content": "a", "score": 0.9}])
 
-        with patch("app.rag.retriever.bm25_store") as mock_bm25, \
-             patch("app.rag.retriever.RAG_RETRIEVAL_LATENCY") as mock_latency, \
-             patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"):
-            mock_bm25.search = AsyncMock(return_value=[
-                {"chunk_id": 1, "content": "a", "score": 5.0}
-            ])
+        with (
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+            patch("app.rag.retriever.RAG_RETRIEVAL_LATENCY") as mock_latency,
+            patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"),
+        ):
+            mock_bm25.search = AsyncMock(
+                return_value=[{"chunk_id": 1, "content": "a", "score": 5.0}]
+            )
             result = await r.retrieve("query", kb_id=1, top_k=5)
 
         assert len(result) == 1
@@ -69,6 +67,7 @@ class TestLLMMetrics:
     @pytest.mark.asyncio
     async def test_stream_llm_records_ttft_and_tokens_per_second(self):
         """_stream_llm_with_fallback 应在首 token 时记录 TTFT，结束时记录 tokens/s"""
+
         # 构造 mock primary_llm：chat_stream yield 3 个 token
         async def fake_chat_stream(messages):
             for t in ["hello", " world", "!"]:
@@ -82,8 +81,10 @@ class TestLLMMetrics:
         model_router = MagicMock()
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
 
-        with patch("app.api.v1.chat.RAG_LLM_TTFT") as mock_ttft, \
-             patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps:
+        with (
+            patch("app.api.v1.chat.RAG_LLM_TTFT") as mock_ttft,
+            patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
+        ):
             events = []
             async for evt in chat_module._stream_llm_with_fallback(
                 messages=[{"role": "user", "content": "hi"}],
@@ -107,6 +108,7 @@ class TestLLMMetrics:
     @pytest.mark.asyncio
     async def test_stream_llm_no_tokens_no_metrics(self):
         """LLM 未产出任何 token 时不记录 tokens/s（避免除零或无意义数据）"""
+
         async def empty_stream(messages):
             return
             yield  # 使其成为 async generator
@@ -119,8 +121,10 @@ class TestLLMMetrics:
         model_router = MagicMock()
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
 
-        with patch("app.api.v1.chat.RAG_LLM_TTFT"), \
-             patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps:
+        with (
+            patch("app.api.v1.chat.RAG_LLM_TTFT"),
+            patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
+        ):
             async for _ in chat_module._stream_llm_with_fallback(
                 messages=[{"role": "user", "content": "hi"}],
                 primary_llm=primary_llm,
@@ -147,13 +151,15 @@ class TestE2ELatencyMetric:
         counter_cm = MagicMock()
         counter_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("app.api.v1.chat._save_user_msg", new=AsyncMock()), \
-             patch("app.api.v1.chat.chat_service") as mock_chat_svc, \
-             patch("app.api.v1.chat._retrieve_and_rerank", new=AsyncMock(return_value=([], []))), \
-             patch("app.api.v1.chat._stream_llm_with_fallback") as mock_stream, \
-             patch("app.api.v1.chat._save_assistant_msg", new=AsyncMock(return_value=100)), \
-             patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e, \
-             patch("app.api.v1.chat.settings"):
+        with (
+            patch("app.api.v1.chat._save_user_msg", new=AsyncMock()),
+            patch("app.api.v1.chat.chat_service") as mock_chat_svc,
+            patch("app.api.v1.chat._retrieve_and_rerank", new=AsyncMock(return_value=([], []))),
+            patch("app.api.v1.chat._stream_llm_with_fallback") as mock_stream,
+            patch("app.api.v1.chat._save_assistant_msg", new=AsyncMock(return_value=100)),
+            patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e,
+            patch("app.api.v1.chat.settings"),
+        ):
             mock_chat_svc.get_history_context = AsyncMock(return_value=[])
             mock_chat_svc.is_cancelled = AsyncMock(return_value=False)
             mock_chat_svc.clear_cancel = AsyncMock()
@@ -167,8 +173,12 @@ class TestE2ELatencyMetric:
 
             # 消费 generator
             async for _ in chat_module._run_sse_stream(
-                session_id=1, content="hi", kb_id=5,
-                session_title="test", model=None, counter_cm=counter_cm,
+                session_id=1,
+                content="hi",
+                kb_id=5,
+                session_title="test",
+                model=None,
+                counter_cm=counter_cm,
             ):
                 pass
 
@@ -182,15 +192,23 @@ class TestE2ELatencyMetric:
         counter_cm = MagicMock()
         counter_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("app.api.v1.chat._save_user_msg", new=AsyncMock(side_effect=RuntimeError("boom"))), \
-             patch("app.api.v1.chat.chat_service") as mock_chat_svc, \
-             patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e, \
-             patch("app.api.v1.chat.settings"):
+        with (
+            patch(
+                "app.api.v1.chat._save_user_msg", new=AsyncMock(side_effect=RuntimeError("boom"))
+            ),
+            patch("app.api.v1.chat.chat_service") as mock_chat_svc,
+            patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e,
+            patch("app.api.v1.chat.settings"),
+        ):
             mock_chat_svc.clear_cancel = AsyncMock()
 
             async for _ in chat_module._run_sse_stream(
-                session_id=1, content="hi", kb_id=None,
-                session_title="test", model=None, counter_cm=counter_cm,
+                session_id=1,
+                content="hi",
+                kb_id=None,
+                session_title="test",
+                model=None,
+                counter_cm=counter_cm,
             ):
                 pass
 
@@ -214,16 +232,20 @@ class TestDocumentCountMetric:
         fake_result.all.return_value = [(1, 4), (2, 6), (3, 0)]
         fake_db.execute = AsyncMock(return_value=fake_result)
 
-        with patch("app.tasks.metrics_collector.async_session") as mock_session_cls, \
-             patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT") as mock_dc:
+        with (
+            patch("app.tasks.metrics_collector.async_session") as mock_session_cls,
+            patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT") as mock_dc,
+        ):
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=fake_db)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session
 
-            with patch("app.tasks.metrics_collector.TOTAL_USERS"), \
-                 patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"), \
-                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"):
+            with (
+                patch("app.tasks.metrics_collector.TOTAL_USERS"),
+                patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"),
+                patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"),
+            ):
                 await metrics_collector.update_business_metrics()
 
         # 3 个 KB 都被设置

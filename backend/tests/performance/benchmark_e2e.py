@@ -10,7 +10,6 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -36,9 +35,10 @@ def assert_within_baseline(metric_name: str, actual_ms: float):
     baseline = load_baseline()
     if metric_name in baseline:
         threshold = baseline[metric_name] * 1.2  # 允许 20% 退化
-        assert actual_ms <= threshold, (
-            f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
-        )
+        assert (
+            actual_ms <= threshold
+        ), f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
+
 
 DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "small.json"
 
@@ -47,7 +47,7 @@ def load_dataset(dataset_path: str) -> dict:
     path = Path(dataset_path)
     if not path.is_absolute():
         path = Path(__file__).resolve().parent / dataset_path
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -163,7 +163,9 @@ async def send_message_stream(
         result["ttft"] = first_token_time - start_time
         if result["token_count"] > 0:
             result["total_tokens_time"] = end_time - first_token_time
-            result["tokens_per_second"] = result["token_count"] / max(result["total_tokens_time"], 0.001)
+            result["tokens_per_second"] = result["token_count"] / max(
+                result["total_tokens_time"], 0.001
+            )
 
     return result
 
@@ -214,7 +216,9 @@ async def run_e2e_benchmark(
     results: list[dict] = []
     errors: list[dict] = []
 
-    print(f"开始端到端基准测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}")
+    print(
+        f"开始端到端基准测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}"
+    )
     print("-" * 60)
 
     for i, q in enumerate(questions):
@@ -225,11 +229,13 @@ async def run_e2e_benchmark(
 
         if r["error"]:
             print(f"    错误: {r['error']}")
-            errors.append({
-                "index": i,
-                "question": question,
-                "error": r["error"],
-            })
+            errors.append(
+                {
+                    "index": i,
+                    "question": question,
+                    "error": r["error"],
+                }
+            )
         else:
             e2e_latencies.append(r["e2e_latency"])
             if r["ttft"] > 0:
@@ -248,8 +254,10 @@ async def run_e2e_benchmark(
                 "tokens_per_second": round(r["tokens_per_second"], 2),
             }
             results.append(result_entry)
-            print(f"    E2E: {r['e2e_latency']:.4f}s, TTFT: {r['ttft']:.4f}s, "
-                  f"Tokens: {r['token_count']}, TPS: {r['tokens_per_second']:.2f}")
+            print(
+                f"    E2E: {r['e2e_latency']:.4f}s, TTFT: {r['ttft']:.4f}s, "
+                f"Tokens: {r['token_count']}, TPS: {r['tokens_per_second']:.2f}"
+            )
 
         # 每个问题之间短暂间隔
         await asyncio.sleep(1)
@@ -266,7 +274,6 @@ async def run_e2e_benchmark(
         "session_id": session_id,
         "total_questions": len(questions),
         "successful": len(e2e_latencies),
-        "errors": len(errors),
         "e2e_latency_stats": {
             "min": round(sorted_e2e[0], 4) if sorted_e2e else 0,
             "max": round(sorted_e2e[-1], 4) if sorted_e2e else 0,
@@ -298,11 +305,12 @@ async def run_e2e_benchmark(
     print("-" * 60)
     print("端到端基准测试完成")
     print(f"  成功: {len(e2e_latencies)}, 失败: {len(errors)}")
-    print(f"  E2E 延迟 (秒): P50={report['e2e_latency_stats']['p50']}, "
-          f"P95={report['e2e_latency_stats']['p95']}, "
-          f"P99={report['e2e_latency_stats']['p99']}")
-    print(f"  TTFT (秒): P50={report['ttft_stats']['p50']}, "
-          f"P95={report['ttft_stats']['p95']}")
+    print(
+        f"  E2E 延迟 (秒): P50={report['e2e_latency_stats']['p50']}, "
+        f"P95={report['e2e_latency_stats']['p95']}, "
+        f"P99={report['e2e_latency_stats']['p99']}"
+    )
+    print(f"  TTFT (秒): P50={report['ttft_stats']['p50']}, " f"P95={report['ttft_stats']['p95']}")
     print(f"  TPS: mean={report['tokens_per_second_stats']['mean']}")
 
     # 性能回归阈值检查
@@ -342,14 +350,16 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="输出 JSON 报告文件路径")
     args = parser.parse_args()
 
-    asyncio.run(run_e2e_benchmark(
-        base_url=args.base_url,
-        kb_id=args.kb_id,
-        username=args.username,
-        password=args.password,
-        dataset_path=args.dataset,
-        output=args.output,
-    ))
+    asyncio.run(
+        run_e2e_benchmark(
+            base_url=args.base_url,
+            kb_id=args.kb_id,
+            username=args.username,
+            password=args.password,
+            dataset_path=args.dataset,
+            output=args.output,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import {
   Card,
   Tag,
@@ -33,7 +34,7 @@ const { Title } = Typography;
 interface ComponentConfig {
   key: 'postgresql' | 'redis' | 'ollama' | 'qdrant' | 'celery';
   labelKey: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }
 
 const COMPONENTS: ComponentConfig[] = [

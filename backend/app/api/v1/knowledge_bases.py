@@ -77,6 +77,7 @@ async def delete_kb(
 
 # --- Collaboration endpoints ---
 
+
 @router.post("/{kb_id}/collaborators")
 @limiter.limit("60/minute")
 async def add_collaborator(

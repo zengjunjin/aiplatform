@@ -1,12 +1,13 @@
 """Unit tests for core.security module."""
-import pytest
-import time
+
+from datetime import UTC
+
 from app.core.security import (
-    hash_password,
-    verify_password,
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
+    verify_password,
 )
 
 
@@ -87,14 +88,19 @@ class TestJWT:
 
     def test_decode_token_expired(self):
         # 用一个已知过期的 token
+        from datetime import datetime, timedelta
+
         import jwt
-        from datetime import datetime, timedelta, timezone
+
         from app.config import settings
+
         expired_payload = {
             "sub": "1",
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+            "exp": datetime.now(UTC) - timedelta(hours=1),
             "type": "access",
         }
-        expired_token = jwt.encode(expired_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        expired_token = jwt.encode(
+            expired_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM
+        )
         result = decode_token(expired_token)
         assert result is None

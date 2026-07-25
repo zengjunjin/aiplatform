@@ -1,5 +1,5 @@
 """Tests for app.models.openai_compatible_provider.OpenAICompatibleProvider"""
-import json
+
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -7,8 +7,8 @@ import pytest
 
 from app.models.openai_compatible_provider import (
     OpenAICompatibleProvider,
-    _resolve_env_vars,
     _is_retryable_error,
+    _resolve_env_vars,
 )
 
 
@@ -173,9 +173,7 @@ class TestSseParse:
         transport = httpx.MockTransport(handler)
         provider = _make_provider(transport)
 
-        result = await provider.chat(
-            [{"role": "user", "content": "hi"}], stream=True
-        )
+        result = await provider.chat([{"role": "user", "content": "hi"}], stream=True)
 
         tokens = []
         async for token in result:
@@ -241,6 +239,7 @@ class TestHealthCheckFallback:
     @pytest.mark.asyncio
     async def test_health_check_models_success(self):
         """/models 返回 200 → health_check 返回 True"""
+
         def handler(request):
             if request.url.path == "/models":
                 return httpx.Response(200, json={"data": []})
@@ -256,6 +255,7 @@ class TestHealthCheckFallback:
     @pytest.mark.asyncio
     async def test_health_check_fallback_to_chat_completions(self):
         """/models 失败 fallback 到 /chat/completions"""
+
         def handler(request):
             if request.url.path == "/models":
                 return httpx.Response(404, text="Not Found")
@@ -273,6 +273,7 @@ class TestHealthCheckFallback:
     @pytest.mark.asyncio
     async def test_health_check_both_fail_returns_false(self):
         """/models 和 /chat/completions 都失败 → 返回 False"""
+
         def handler(request):
             if request.url.path == "/models":
                 return httpx.Response(500, text="Server Error")
@@ -290,6 +291,7 @@ class TestHealthCheckFallback:
     @pytest.mark.asyncio
     async def test_health_check_chat_completions_4xx_still_true(self):
         """/chat/completions 返回 4xx（< 500）→ health_check 仍返回 True"""
+
         def handler(request):
             if request.url.path == "/models":
                 return httpx.Response(404)

@@ -26,11 +26,13 @@ async def upload_document(
     """上传文档到知识库。业务逻辑下沉到 document_service.upload_document。"""
     doc, task = await document_service.upload_document(file, kb_id, user, db)
     logger.info(f"Document uploaded: id={doc.id} kb={kb_id} user={user.id} name={doc.filename}")
-    return ok(data={
-        "document_id": doc.id,
-        "status": "pending",
-        "task_id": task.id,
-    })
+    return ok(
+        data={
+            "document_id": doc.id,
+            "status": "pending",
+            "task_id": task.id,
+        }
+    )
 
 
 @router.get("")

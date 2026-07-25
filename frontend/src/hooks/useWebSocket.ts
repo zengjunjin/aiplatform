@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { message } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getApiBase } from '../api/client';
+import { logger } from '../utils/logger';
 
 /** WebSocket 通知消息类型 */
 export interface WSNotification {
@@ -133,7 +134,7 @@ export function useWebSocket(
     };
 
     ws.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
+      logger.error('[WebSocket] Error:', error);
       ws.close();
     };
   }, [token, reconnectInterval, pingInterval, clearTimers]);

@@ -9,15 +9,18 @@
 注意：通过直接调用 websocket_endpoint 函数 + mock WebSocket 进行单元测试，
 避免 TestClient/httpx 版本不兼容问题。
 """
+
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from starlette.websockets import WebSocket
 
 from app.api.v1 import ws as ws_module
 from app.core.notification_manager import NotificationManager
 
-
 # ---------- Helpers / Fixtures ----------
+
 
 class MockWebSocket:
     """最小化的 WebSocket mock，支持 headers / accept / close / send_json / receive_text"""
@@ -83,11 +86,13 @@ def fake_access_token():
 def short_recv_timeout(monkeypatch):
     """将接收超时缩短为 0.05s 以便测试"""
     from app.config import settings
+
     monkeypatch.setattr(settings, "WEBSOCKET_RECV_TIMEOUT", 0.05)
     yield
 
 
 # ---------- SubTask 20.1: Origin 校验 ----------
+
 
 class TestOriginValidation:
     """Origin 白名单校验"""
@@ -95,10 +100,12 @@ class TestOriginValidation:
     @pytest.mark.asyncio
     async def test_forbidden_origin_rejected_with_4003(self, reset_notification_manager):
         """非白名单 Origin 应被拒绝，返回 4003，且不 accept"""
-        ws = MockWebSocket(headers={
-            "origin": "https://evil.example.com",
-            "sec-websocket-protocol": "bearer.some.token",
-        })
+        ws = MockWebSocket(
+            headers={
+                "origin": "https://evil.example.com",
+                "sec-websocket-protocol": "bearer.some.token",
+            }
+        )
         await ws_module.websocket_endpoint(ws)
         assert ws.closed is True
         assert ws.close_code == 4003
@@ -107,10 +114,12 @@ class TestOriginValidation:
     @pytest.mark.asyncio
     async def test_forbidden_origin_does_not_call_decode_token(self, reset_notification_manager):
         """非白名单 Origin 应在 token 解析之前被拒绝"""
-        ws = MockWebSocket(headers={
-            "origin": "https://evil.example.com",
-            "sec-websocket-protocol": "bearer.some.token",
-        })
+        ws = MockWebSocket(
+            headers={
+                "origin": "https://evil.example.com",
+                "sec-websocket-protocol": "bearer.some.token",
+            }
+        )
         with patch.object(ws_module, "decode_token") as mock_decode:
             await ws_module.websocket_endpoint(ws)
             mock_decode.assert_not_called()
@@ -120,10 +129,12 @@ class TestOriginValidation:
         self, reset_notification_manager, fake_access_token, short_recv_timeout
     ):
         """白名单 Origin 应通过 Origin 校验进入 token 校验"""
-        ws = MockWebSocket(headers={
-            "origin": "http://localhost:5173",
-            "sec-websocket-protocol": "bearer.some.token",
-        })
+        ws = MockWebSocket(
+            headers={
+                "origin": "http://localhost:5173",
+                "sec-websocket-protocol": "bearer.some.token",
+            }
+        )
         with patch.object(ws_module, "decode_token", return_value=fake_access_token):
             with patch.object(NotificationManager, "connect", new=AsyncMock(return_value=True)):
                 with patch.object(NotificationManager, "disconnect", new=AsyncMock()):
@@ -138,10 +149,12 @@ class TestOriginValidation:
         self, reset_notification_manager, fake_access_token, short_recv_timeout
     ):
         """空 Origin（非浏览器客户端）应允许通过"""
-        ws = MockWebSocket(headers={
-            "origin": "",
-            "sec-websocket-protocol": "bearer.some.token",
-        })
+        ws = MockWebSocket(
+            headers={
+                "origin": "",
+                "sec-websocket-protocol": "bearer.some.token",
+            }
+        )
         with patch.object(ws_module, "decode_token", return_value=fake_access_token):
             with patch.object(NotificationManager, "connect", new=AsyncMock(return_value=True)):
                 with patch.object(NotificationManager, "disconnect", new=AsyncMock()):
@@ -156,10 +169,12 @@ class TestOriginValidation:
     ):
         """Tauri 2 release 模式所需的两个 origins 必须通过"""
         for origin in ("https://tauri.localhost", "http://tauri.localhost"):
-            ws = MockWebSocket(headers={
-                "origin": origin,
-                "sec-websocket-protocol": "bearer.some.token",
-            })
+            ws = MockWebSocket(
+                headers={
+                    "origin": origin,
+                    "sec-websocket-protocol": "bearer.some.token",
+                }
+            )
             with patch.object(ws_module, "decode_token", return_value=fake_access_token):
                 with patch.object(NotificationManager, "connect", new=AsyncMock(return_value=True)):
                     with patch.object(NotificationManager, "disconnect", new=AsyncMock()):
@@ -171,6 +186,7 @@ class TestOriginValidation:
 
 # ---------- SubTask 20.2: 单用户连接数限制 ----------
 
+
 class TestNotificationManagerConnectionLimit:
     """NotificationManager 单用户连接数限制 (5)"""
 
@@ -179,7 +195,7 @@ class TestNotificationManagerConnectionLimit:
         """第 6 个连接应被拒绝，返回 False 并 close"""
         # 创建 5 个已 accept 的 mock WebSocket
         sockets = []
-        for i in range(5):
+        for _i in range(5):
             mock_ws = AsyncMock()
             mock_ws.close = AsyncMock()
             ok = await NotificationManager.connect("user1", mock_ws)
@@ -199,7 +215,7 @@ class TestNotificationManagerConnectionLimit:
     @pytest.mark.asyncio
     async def test_first_five_connections_accepted(self, reset_notification_manager):
         """前 5 个连接应成功"""
-        for i in range(5):
+        for _i in range(5):
             mock_ws = AsyncMock()
             ok = await NotificationManager.connect("user1", mock_ws)
             assert ok is True
@@ -209,7 +225,7 @@ class TestNotificationManagerConnectionLimit:
     @pytest.mark.asyncio
     async def test_limit_is_per_user(self, reset_notification_manager):
         """不同用户互不影响"""
-        for i in range(5):
+        for _i in range(5):
             await NotificationManager.connect("user1", AsyncMock())
         # user2 仍可连接
         ok = await NotificationManager.connect("user2", AsyncMock())
@@ -219,7 +235,7 @@ class TestNotificationManagerConnectionLimit:
     async def test_disconnect_frees_slot(self, reset_notification_manager):
         """断开后释放配额"""
         sockets = []
-        for i in range(5):
+        for _i in range(5):
             mock_ws = AsyncMock()
             await NotificationManager.connect("user1", mock_ws)
             sockets.append(mock_ws)
@@ -231,67 +247,61 @@ class TestNotificationManagerConnectionLimit:
         assert ok is True
 
 
-# ---------- SubTask 17.1: broadcast 并行 ----------
-class TestBroadcastParallel:
-    """broadcast 使用 asyncio.gather 并行发送 + return_exceptions 隔离失败"""
+# ---------- SubTask 17.1: send_to_user 并行 ----------
+class TestSendToUserParallel:
+    """send_to_user 使用 asyncio.gather 并行发送 + return_exceptions 隔离失败"""
 
     @pytest.mark.asyncio
-    async def test_broadcast_sends_to_all_connections_in_parallel(self, reset_notification_manager):
-        """广播应并行发送到所有用户的所有连接"""
-        # user1 2 个连接，user2 1 个连接
+    async def test_send_to_user_sends_to_all_connections_in_parallel(
+        self, reset_notification_manager
+    ):
+        """向单用户推送应并行发送到该用户的所有连接"""
         ws_a = AsyncMock()
         ws_a.send_text = AsyncMock()
         ws_b = AsyncMock()
         ws_b.send_text = AsyncMock()
-        ws_c = AsyncMock()
-        ws_c.send_text = AsyncMock()
         await NotificationManager.connect("user1", ws_a)
         await NotificationManager.connect("user1", ws_b)
-        await NotificationManager.connect("user2", ws_c)
 
-        await NotificationManager.broadcast({"type": "ping", "data": "hello"})
+        await NotificationManager.send_to_user("user1", {"type": "ping", "data": "hello"})
 
         ws_a.send_text.assert_awaited_once()
         ws_b.send_text.assert_awaited_once()
-        ws_c.send_text.assert_awaited_once()
         # 内容应是 JSON 序列化后的消息
         import json as _json
+
         expected = _json.dumps({"type": "ping", "data": "hello"}, ensure_ascii=False)
-        for ws in (ws_a, ws_b, ws_c):
+        for ws in (ws_a, ws_b):
             assert ws.send_text.await_args[0][0] == expected
 
     @pytest.mark.asyncio
-    async def test_broadcast_isolates_failed_connections(self, reset_notification_manager):
-        """单个连接发送失败不应阻断其他连接，失败连接应被断开"""
-        good_ws = AsyncMock()
+    async def test_send_to_user_isolates_failed_connections(self, reset_notification_manager):
+        """单个连接发送失败不应阻断其他连接，失败连接应被移除"""
+        # 用 spec=WebSocket 让 isinstance(r, WebSocket) 通过，
+        # 否则 notification_manager.send_to_user 中 dead = [r for r in results if isinstance(r, WebSocket)]
+        # 会因 AsyncMock 不是 WebSocket 子类而过滤掉 bad_ws，导致 bad_ws 未被移除。
+        good_ws = AsyncMock(spec=WebSocket)
         good_ws.send_text = AsyncMock()
-        bad_ws = AsyncMock()
+        bad_ws = AsyncMock(spec=WebSocket)
         bad_ws.send_text = AsyncMock(side_effect=RuntimeError("connection closed"))
 
         await NotificationManager.connect("user1", good_ws)
-        await NotificationManager.connect("user2", bad_ws)
+        await NotificationManager.connect("user1", bad_ws)
 
-        # 广播不应抛出
-        await NotificationManager.broadcast({"type": "ping"})
+        # 推送不应抛出
+        await NotificationManager.send_to_user("user1", {"type": "ping"})
 
         good_ws.send_text.assert_awaited_once()
         bad_ws.send_text.assert_awaited_once()
-        # bad_ws 应被 disconnect（user2 已无连接，从 _connections 移除）
-        assert "user2" not in NotificationManager._connections
-        # user1 的 good_ws 仍保留
-        assert "user1" in NotificationManager._connections
+        # bad_ws 应被移除，good_ws 仍保留
         assert good_ws in NotificationManager._connections["user1"]
+        assert bad_ws not in NotificationManager._connections["user1"]
 
     @pytest.mark.asyncio
-    async def test_broadcast_empty_connections_noop(self, reset_notification_manager):
-        """无连接时广播应安全返回"""
-        # 不应抛出
-        await NotificationManager.broadcast({"type": "ping"})
-
-    @pytest.mark.asyncio
-    async def test_broadcast_uses_gather_not_sequential(self, reset_notification_manager):
-        """验证 broadcast 使用 asyncio.gather（并行）而非串行 await"""
+    async def test_send_to_user_uses_gather_not_sequential(self, reset_notification_manager):
+        """验证 send_to_user 使用 asyncio.gather（并行）而非串行 await"""
         import asyncio
+
         ws1 = AsyncMock()
         ws2 = AsyncMock()
 
@@ -311,12 +321,11 @@ class TestBroadcastParallel:
         ws2.send_text = slow_send2
 
         await NotificationManager.connect("user1", ws1)
-        await NotificationManager.connect("user2", ws2)
+        await NotificationManager.connect("user1", ws2)
 
-        await NotificationManager.broadcast({"type": "ping"})
+        await NotificationManager.send_to_user("user1", {"type": "ping"})
         # 并行：两个 start 应在两个 end 之前
         starts = [i for i, x in enumerate(send_order) if x.startswith("start")]
-        ends = [i for i, x in enumerate(send_order) if x.startswith("end")]
         # 如果是串行，会 start1, end1, start2, end2 - starts=[0,2], ends=[1,3]
         # 如果是并行，会 start1, start2, end1, end2 (or similar) - starts=[0,1], ends=[2,3]
         assert starts == [0, 1], f"Expected parallel start, got order: {send_order}"
@@ -339,9 +348,7 @@ class TestConnectionsLock:
         """并发 connect 不会破坏 _connections 结构"""
         # 并发 5 个 connect，最终应有 5 个连接
         sockets = [AsyncMock() for _ in range(5)]
-        await asyncio.gather(
-            *[NotificationManager.connect("user1", ws) for ws in sockets]
-        )
+        await asyncio.gather(*[NotificationManager.connect("user1", ws) for ws in sockets])
         assert len(NotificationManager._connections["user1"]) == 5
 
     @pytest.mark.asyncio
@@ -365,6 +372,7 @@ class TestConnectionsLock:
 
 # ---------- SubTask 20.3: 消息频率限制 ----------
 
+
 class TestRateLimit:
     """_check_rate_limit 函数：10/分钟，超过则 False"""
 
@@ -374,8 +382,10 @@ class TestRateLimit:
         fake_redis = AsyncMock()
         # 模拟 incr 每次返回递增
         counts = iter([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
         async def fake_incr(key):
             return next(counts)
+
         fake_redis.incr = fake_incr
         fake_redis.expire = AsyncMock()
 
@@ -388,8 +398,10 @@ class TestRateLimit:
         """Redis 模式下：计数 > 10 拒绝"""
         fake_redis = AsyncMock()
         counts = iter([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+
         async def fake_incr(key):
             return next(counts)
+
         fake_redis.incr = fake_incr
         fake_redis.expire = AsyncMock()
 
@@ -423,24 +435,29 @@ class TestRateLimit:
 
 # ---------- SubTask 20.4: ping/pong 超时（间接验证配置） ----------
 
+
 class TestPingPongTimeoutConfig:
     """ping/pong 超时配置可用（实际超时行为集成测试难做，仅验证配置读取）"""
 
     def test_recv_timeout_setting(self):
         from app.config import settings
+
         assert settings.WEBSOCKET_RECV_TIMEOUT == 30
 
     def test_rate_limit_setting(self):
         from app.config import settings
+
         assert settings.WEBSOCKET_RATE_LIMIT_PER_MINUTE == 10
 
     def test_max_connections_setting(self):
         from app.config import settings
+
         assert settings.WEBSOCKET_MAX_CONNECTIONS_PER_USER == 5
 
     def test_websocket_allowed_origins_includes_tauri(self):
         """白名单必须包含 Tauri 2 release 模式所需 origins"""
         from app.config import settings
+
         origins = settings.websocket_allowed_origins_list
         assert "https://tauri.localhost" in origins
         assert "http://tauri.localhost" in origins

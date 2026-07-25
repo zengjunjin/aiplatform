@@ -16,16 +16,23 @@
 精简原则：注册页前 4 个用例只导航 1 次（test_register_page_loads 导航，
 后续用例在同一页面上下文操作；如有跳转再按需导航）。
 """
+
 import os
 import time
 import uuid
+
 import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
+    login_cdp_session,
+    make_cdp_client,
+)
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_element,
+    wait_for_url_change,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
@@ -80,14 +87,12 @@ def _click_submit(cdp):
 def test_register_page_loads(cdp):
     """注册页加载：导航 /#/register 一次，验证 form#register + 4 个 input + 提交按钮"""
     cdp.navigate(TAURI_HOME + "#/register")
-    time.sleep(2)
+    wait_for_url_change(cdp, "#/register", timeout=10)
     # 验证表单存在
     form_exists = cdp.evaluate("!!document.querySelector('form#register')")
     assert form_exists, "Register form#register not found"
     # 验证至少 4 个 input（username/email/password/confirm）
-    input_count = cdp.evaluate(
-        "document.querySelectorAll('form#register input').length"
-    )
+    input_count = cdp.evaluate("document.querySelectorAll('form#register input').length")
     assert input_count >= 4, f"Expected >=4 inputs in register form, got {input_count}"
     # 验证提交按钮文案包含"注册"
     # Ant Design 5 中文按钮会在字符间插入空格（letter-spacing 渲染），去除空格后再比较
@@ -107,50 +112,49 @@ def test_register_success(cdp):
     password = "Test@123456"
     # 此时已在注册页（test_register_page_loads 导航过）
     _set_form_inputs(cdp, [username, email, password, password])
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     _click_submit(cdp)
     # 等待跳转完成（注册成功后前端 navigate('/')，若 localStorage 有残留
     # refreshToken 会重定向到 #/dashboard，否则重定向到 #/login）
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        hash_val = cdp.evaluate("window.location.hash")
-        if hash_val and ("#/login" in hash_val or "#/dashboard" in hash_val):
-            break
-        time.sleep(0.5)
-    hash_val = cdp.evaluate("window.location.hash")
-    assert hash_val and ("#/login" in hash_val or "#/dashboard" in hash_val), (
-        f"Did not navigate to #/login or #/dashboard after register, hash={hash_val}"
+    wait_for(
+        lambda: any(
+            part in (cdp.evaluate("window.location.hash") or "")
+            for part in ("#/login", "#/dashboard")
+        ),
+        timeout=10,
+        interval=0.5,
+        message="Did not navigate to #/login or #/dashboard after register",
     )
+    hash_val = cdp.evaluate("window.location.hash")
+    assert hash_val and (
+        "#/login" in hash_val or "#/dashboard" in hash_val
+    ), f"Did not navigate to #/login or #/dashboard after register, hash={hash_val}"
 
 
 def test_register_duplicate(cdp):
     """注册重复用户名：用 admin 注册，验证 .ant-message-error 出现"""
     # 上一用例跳转到 login，需重新导航到注册页
     cdp.navigate(TAURI_HOME + "#/register")
-    time.sleep(2)
-    _set_form_inputs(cdp, [
-        "admin", "admin_dup@test.com", "Test@123456", "Test@123456"
-    ])
+    wait_for_url_change(cdp, "#/register", timeout=10)
+    _set_form_inputs(cdp, ["admin", "admin_dup@test.com", "Test@123456", "Test@123456"])
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     _click_submit(cdp)
     # 等待错误提示
-    deadline = time.time() + 8
-    found = False
-    while time.time() < deadline:
-        found = cdp.evaluate("!!document.querySelector('.ant-message-error')")
-        if found:
-            break
-        time.sleep(0.5)
-    assert found, "No .ant-message-error shown for duplicate username"
+    wait_for(
+        lambda: cdp.evaluate("!!document.querySelector('.ant-message-error')"),
+        timeout=8,
+        interval=0.5,
+        message="No .ant-message-error shown for duplicate username",
+    )
 
 
 def test_register_password_mismatch(cdp):
     """注册密码不匹配：password≠confirm，验证 .ant-form-item-explain-error 出现"""
     # 此时仍在注册页（上一用例提交失败未跳转）
     username = f"e2e_mismatch_{uuid.uuid4().hex[:6]}"
-    _set_form_inputs(cdp, [
-        username, "mismatch@test.com", "Test@123456", "Test@1234567"
-    ])
+    _set_form_inputs(cdp, [username, "mismatch@test.com", "Test@123456", "Test@1234567"])
     # 触发 confirm input 的 blur 以激活校验
     cdp.evaluate("""
         (function() {
@@ -160,10 +164,11 @@ def test_register_password_mismatch(cdp):
             }
         })();
     """)
+    # 必要固定等待：Ant Design 表单 blur 校验异步渲染
     time.sleep(1)
     # 点击提交触发完整校验
     _click_submit(cdp)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-form-item-explain-error", timeout=5)
     found = cdp.evaluate("!!document.querySelector('.ant-form-item-explain-error')")
     assert found, "No .ant-form-item-explain-error shown for password mismatch"
 
@@ -173,31 +178,30 @@ def test_login_success(cdp, base_url, admin_headers):
     user_info = create_user_via_api(base_url, admin_headers)
     login_cdp_session(cdp, user_info, "#/dashboard")
     hash_val = cdp.evaluate("window.location.hash")
-    assert hash_val and "#/dashboard" in hash_val, (
-        f"Did not navigate to #/dashboard after login, hash={hash_val}"
-    )
+    assert (
+        hash_val and "#/dashboard" in hash_val
+    ), f"Did not navigate to #/dashboard after login, hash={hash_val}"
 
 
 def test_login_wrong_password(cdp):
     """登录错误密码：导航 /#/login，填表登录 admin+错误密码，验证错误提示"""
     cdp.navigate(TAURI_HOME + "#/login")
-    time.sleep(2)
+    wait_for_url_change(cdp, "#/login", timeout=10)
     # 登录表单通常是 username + password 两个 input
     _set_form_inputs(cdp, ["admin", "WrongPassword@123"])
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     _click_submit(cdp)
     # 等待错误提示（message 或 form 校验错误）
-    deadline = time.time() + 8
-    found = False
-    while time.time() < deadline:
-        found = cdp.evaluate(
+    wait_for(
+        lambda: cdp.evaluate(
             "!!document.querySelector('.ant-message-error') || "
             "!!document.querySelector('.ant-form-item-explain-error')"
-        )
-        if found:
-            break
-        time.sleep(0.5)
-    assert found, "No error shown for wrong password login"
+        ),
+        timeout=8,
+        interval=0.5,
+        message="No error shown for wrong password login",
+    )
 
 
 def test_logout(cdp, base_url, admin_headers):
@@ -213,45 +217,45 @@ def test_logout(cdp, base_url, admin_headers):
     # 缓存供 test_token_expiry_behavior 复用（refresh_token 仍有效）
     _shared_user["info"] = user_info
     login_cdp_session(cdp, user_info, "#/dashboard")
-    # 轮询等待 .user-dropdown-trigger 出现（Layout/HeaderActions 渲染可能需要时间）
-    deadline = time.time() + 10
-    trigger_found = False
-    while time.time() < deadline:
-        trigger_found = cdp.evaluate("!!document.querySelector('.user-dropdown-trigger')")
-        if trigger_found:
-            break
-        time.sleep(0.5)
-    if not trigger_found:
+    # 等待 .user-dropdown-trigger 出现（Layout/HeaderActions 渲染可能需要时间）
+    trigger_found = True
+    try:
+        wait_for_element(cdp, ".user-dropdown-trigger", timeout=10)
+    except TimeoutError:
         # 强制整页刷新重试（zustand persist 可能未及时 rehydrate）
         cdp.send("Page.reload")
+        # 必要固定等待：reload 后 zustand persist rehydrate
         time.sleep(3)
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            trigger_found = cdp.evaluate("!!document.querySelector('.user-dropdown-trigger')")
-            if trigger_found:
-                break
-            time.sleep(0.5)
+        try:
+            wait_for_element(cdp, ".user-dropdown-trigger", timeout=5)
+        except TimeoutError:
+            trigger_found = False
     assert trigger_found, ".user-dropdown-trigger not found after login + reload"
     # 使用真实鼠标点击触发 Ant Design Dropdown（JS .click() 不能触发 Dropdown onOpenChange）
     # 注意：menu_ready 只能检查 .ant-dropdown-menu-item（不能查 [role="menuitem"]），
     # 因为侧边栏 .ant-menu-item 也有 role="menuitem"，会误判 dropdown 已打开。
     menu_ready = False
-    for attempt in range(3):
-        cdp.click_element('.user-dropdown-trigger')
-        # 轮询等待 Dropdown 菜单渲染（Portal 挂载到 body）
-        deadline = time.time() + 3
-        while time.time() < deadline:
-            menu_ready = cdp.evaluate("""
-                (function() {
-                    const items = document.querySelectorAll('.ant-dropdown-menu-item');
-                    return items.length > 0;
-                })();
-            """)
-            if menu_ready:
-                break
-            time.sleep(0.3)
+    for _attempt in range(3):
+        cdp.click_element(".user-dropdown-trigger")
+        # 等待 Dropdown 菜单渲染（Portal 挂载到 body）
+        try:
+            wait_for(
+                lambda: cdp.evaluate("""
+                    (function() {
+                        const items = document.querySelectorAll('.ant-dropdown-menu-item');
+                        return items.length > 0;
+                    })();
+                """),
+                timeout=3,
+                interval=0.3,
+                message="Dropdown menu not rendered",
+            )
+            menu_ready = True
+        except TimeoutError:
+            pass
         if menu_ready:
             break
+        # 必要固定等待：重试点击间隔
         time.sleep(0.5)
     assert menu_ready, "Dropdown menu did not appear after clicking trigger"
     # 诊断：打印所有菜单项的 textContent（便于排查 i18n / 渲染问题）
@@ -286,16 +290,11 @@ def test_logout(cdp, base_url, admin_headers):
     """)
     assert logout_clicked, f"Logout menu item not found. Menu items: {menu_dump}"
     # 等待跳转登录页
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        hash_val = cdp.evaluate("window.location.hash")
-        if hash_val and "#/login" in hash_val:
-            break
-        time.sleep(0.5)
+    wait_for_url_change(cdp, "#/login", timeout=8)
     hash_val = cdp.evaluate("window.location.hash")
-    assert hash_val and "#/login" in hash_val, (
-        f"Did not navigate to #/login after logout, hash={hash_val}"
-    )
+    assert (
+        hash_val and "#/login" in hash_val
+    ), f"Did not navigate to #/login after logout, hash={hash_val}"
     # 验证 localStorage rag-auth 已清空（token 字段为空或整个 key 移除）
     auth_token = cdp.evaluate("""
         (function() {
@@ -307,9 +306,7 @@ def test_logout(cdp, base_url, admin_headers):
             } catch(e) { return 'parse_error'; }
         })();
     """)
-    assert not auth_token, (
-        f"rag-auth token not cleared after logout: {auth_token}"
-    )
+    assert not auth_token, f"rag-auth token not cleared after logout: {auth_token}"
 
 
 def test_refresh_token_flow(cdp, base_url, admin_headers):
@@ -343,7 +340,7 @@ def test_token_expiry_behavior(cdp, base_url, admin_headers):
     """
     user_info = create_user_via_api(base_url, admin_headers)
     login_cdp_session(cdp, user_info, "#/dashboard")
-    time.sleep(1)
+    wait_for_url_change(cdp, "#/dashboard", timeout=10)
     # 修改 refreshTokenExpiresAt 为过去时间（1 小时前）
     cdp.evaluate("""
         (function() {
@@ -359,16 +356,12 @@ def test_token_expiry_behavior(cdp, base_url, admin_headers):
     # 强制整页刷新触发 onRehydrateStorage：前端检查 refreshTokenExpiresAt 过期后
     # 清空 refreshToken + user，AuthWatcher 检测到 token/refreshToken 均为空后跳转 #/login
     cdp.send("Page.reload")
+    # 必要固定等待：reload 后 onRehydrateStorage 异步执行
     time.sleep(3)
-    # 轮询等待跳转完成（AuthWatcher 异步导航可能有延迟）
-    deadline = time.time() + 7
-    hash_val = ""
-    while time.time() < deadline:
-        hash_val = cdp.evaluate("window.location.hash")
-        if hash_val and "#/login" in hash_val:
-            break
-        time.sleep(0.5)
+    # 等待跳转完成（AuthWatcher 异步导航可能有延迟）
+    wait_for_url_change(cdp, "#/login", timeout=7)
+    hash_val = cdp.evaluate("window.location.hash")
     # 验证过期后触发登出（跳转 #/login）
-    assert hash_val and "#/login" in hash_val, (
-        f"Token expiry did not trigger logout after Page.reload, hash={hash_val}"
-    )
+    assert (
+        hash_val and "#/login" in hash_val
+    ), f"Token expiry did not trigger logout after Page.reload, hash={hash_val}"

@@ -109,12 +109,13 @@ def save_upload_file(upload_file, kb_id: int, doc_id: int) -> tuple:
                     first_chunk = False
                 h.update(buf)
                 out.write(buf)
-    except Exception:
+    except Exception as exc:
         # 写入失败或超限，清理半成品文件
+        logger.debug(f"File save failed, cleaning up: {exc}")
         try:
             file_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to cleanup partial file: {e}")
         raise
 
     if file_type is None:

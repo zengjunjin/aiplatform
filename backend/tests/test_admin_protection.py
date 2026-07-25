@@ -3,10 +3,13 @@
 Verifies that an admin cannot disable themselves or change their own role,
 which would otherwise lead to lockout.
 """
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock
-from app.services import user_service
+
+import pytest
+
 from app.core.exceptions import AppException
+from app.services import user_service
 
 
 @pytest.fixture
@@ -58,13 +61,9 @@ class TestAdminSelfProtection:
         # 构造一个返回 user 的 mock
         fake_user = MagicMock()
         fake_user.role = "user"
-        fake_db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=lambda: fake_user)
-        )
+        fake_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: fake_user))
         # 不应抛异常
-        result = await user_service.update_role(
-            user_id=2, role="admin", db=fake_db, admin_id=1
-        )
+        result = await user_service.update_role(user_id=2, role="admin", db=fake_db, admin_id=1)
         assert result is fake_user
         assert fake_user.role == "admin"
         fake_db.commit.assert_awaited_once()
@@ -74,9 +73,7 @@ class TestAdminSelfProtection:
         """admin 禁用其他用户 → 不抛异常"""
         fake_user = MagicMock()
         fake_user.is_active = True
-        fake_db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=lambda: fake_user)
-        )
+        fake_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: fake_user))
         result = await user_service.update_status(
             user_id=2, is_active=False, db=fake_db, admin_id=1
         )
@@ -88,17 +85,15 @@ class TestAdminSelfProtection:
     async def test_update_role_nonexistent_user_raises_not_found(self, fake_db):
         """admin 修改不存在的用户 → NotFoundError（admin_id != user_id，越过自我保护检查）"""
         from app.core.exceptions import NotFoundError
+
         # db.execute 默认返回 None
         with pytest.raises(NotFoundError):
-            await user_service.update_role(
-                user_id=999, role="admin", db=fake_db, admin_id=1
-            )
+            await user_service.update_role(user_id=999, role="admin", db=fake_db, admin_id=1)
 
     @pytest.mark.asyncio
     async def test_update_status_nonexistent_user_raises_not_found(self, fake_db):
         """admin 禁用不存在的用户 → NotFoundError"""
         from app.core.exceptions import NotFoundError
+
         with pytest.raises(NotFoundError):
-            await user_service.update_status(
-                user_id=999, is_active=False, db=fake_db, admin_id=1
-            )
+            await user_service.update_status(user_id=999, is_active=False, db=fake_db, admin_id=1)

@@ -1,4 +1,5 @@
 """Evaluation service: generate test datasets and run RAGAS evaluation."""
+
 import asyncio
 
 from loguru import logger
@@ -10,6 +11,7 @@ from app.core.exceptions import NotFoundError
 from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
+from app.rag.retriever import retriever
 from app.services import kb_service
 
 
@@ -45,34 +47,66 @@ async def generate_test_dataset(
     # Sample up to num_questions chunks
     sample_chunks = chunks[:num_questions]
 
+    # KB 描述用于独立生成 ground_truth（LLM 不看 chunk 内容，避免与 contexts 同源
+    # 导致 RAGAS 指标循环验证、虚高）
+    kb_description = kb.description or kb.name
+
     # 并发生成问题（Semaphore 限制并发度，避免打爆 LLM 服务）
     sem = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
 
     async def _gen(chunk):
         async with sem:
-            return await _generate_question_from_chunk(chunk.content)
+            # 1. 由 chunk 生成问题（失败返回 None，跳过该条）
+            question_data = await _generate_question_from_chunk(chunk.content)
+            if not question_data:
+                return None
+            question = question_data["question"]
+            # 2. 独立生成 ground_truth：LLM 仅依据 question + kb_description 生成参考答案，
+            #    不看 chunk 内容；生成失败时 raise，不 fallback 到 chunk.content
+            # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
+            from app.models.factory import ModelFactory
 
-    questions = await asyncio.gather(*[_gen(c) for c in sample_chunks], return_exceptions=True)
+            llm = ModelFactory.create_llm()
+            ground_truth = await _generate_ground_truth(llm, question, kb_description)
+            # 3. contexts 由 retriever 对 question 重新检索得到，与 ground_truth 不同源
+            retrieved = await retriever.retrieve(question, kb_id, top_k=settings.RETRIEVAL_TOP_K)
+            contexts = [c.get("content", "") for c in retrieved]
+            return {
+                "question": question,
+                "ground_truth": ground_truth,
+                "contexts": contexts,
+                "question_type": question_data["question_type"],
+                "difficulty": question_data["difficulty"],
+            }
+
+    results = await asyncio.gather(*[_gen(c) for c in sample_chunks], return_exceptions=True)
 
     dataset = []
-    for chunk, question in zip(sample_chunks, questions):
-        if isinstance(question, Exception) or not question:
+    for item in results:
+        if isinstance(item, Exception):
+            # ground_truth 生成或检索失败：记录并跳过，不污染数据集
+            logger.warning(f"Failed to generate dataset entry: {item}")
             continue
-        dataset.append({
-            "question": question,
-            "ground_truth": chunk.content,
-            "contexts": [chunk.content],
-        })
+        if item is None:
+            # 问题生成失败：跳过
+            continue
+        dataset.append(item)
 
     logger.info(f"Generated {len(dataset)} questions for KB {kb_id}")
     return dataset
 
 
-async def _generate_question_from_chunk(chunk_content: str) -> str | None:
-    """Use LLM to generate a question that can be answered by the chunk."""
+async def _generate_question_from_chunk(chunk_content: str) -> dict | None:
+    """Use LLM to generate a question that can be answered by the chunk.
+
+    Task 1.5: 返回 dict 包含 question/question_type/difficulty。
+    """
     try:
-        from app.core.evaluation import build_question_prompt, sanitize_question
+        from app.core.evaluation import build_question_prompt, parse_question_response
+
+        # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
         from app.models.factory import ModelFactory
+
         llm = ModelFactory.create_llm()
 
         prompt = build_question_prompt(chunk_content)
@@ -83,15 +117,37 @@ async def _generate_question_from_chunk(chunk_content: str) -> str | None:
             temperature=0.3,
         )
 
-        return sanitize_question(response)
+        return parse_question_response(response)
     except Exception as e:
         logger.warning(f"Failed to generate question from chunk: {e}")
         return None
 
 
+async def _generate_ground_truth(llm, question: str, kb_description: str) -> str:
+    """由 LLM 仅依据 question 和 kb_description 独立生成参考答案。
+
+    LLM 不看 chunk 内容，避免与 contexts 同源导致 RAGAS 指标循环验证、虚高。
+    生成失败时 raise，不 fallback 到 chunk.content。
+    """
+    prompt = (
+        "你是一个领域专家。请针对以下问题给出一个准确、简洁的参考答案。\n\n"
+        f"知识库描述：{kb_description}\n"
+        f"问题：{question}\n"
+        "参考答案："
+    )
+    response = await llm.chat(
+        [{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+    if not response or not response.strip():
+        raise RuntimeError("LLM returned empty ground_truth")
+    return response.strip()
+
+
 async def get_rag_answer(query: str, kb_id: int) -> tuple[str, list[str]]:
     """Run the RAG pipeline to get an answer and retrieved contexts."""
     try:
+        # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
         from app.models.factory import ModelFactory
         from app.rag.prompt_builder import build_rag_prompt
         from app.rag.retriever import retriever
@@ -117,7 +173,7 @@ async def get_rag_answer(query: str, kb_id: int) -> tuple[str, list[str]]:
 
         return answer, contexts
 
-    except Exception as e:
+    except Exception:
         # 记录原始异常堆栈（脱敏返回值前保留排查信息）
         logger.exception(f"RAG pipeline error for query '{query[:50]}...'")
         return "评估失败，请稍后重试", []
@@ -128,6 +184,7 @@ async def trigger_evaluation(
     num_questions: int,
     user_id: int,
     db: AsyncSession,
+    trigger_source: str = "manual",
 ) -> tuple[EvaluationRun, object]:
     """触发新的评估运行 (admin only)。
 
@@ -136,6 +193,9 @@ async def trigger_evaluation(
     2. 创建 EvaluationRun (PENDING)
     3. 派发 Celery 异步任务
 
+    Args:
+        trigger_source: 触发来源，'manual'（手动/API）或 'scheduled'（定时任务）。
+
     Returns:
         (run, task) 元组，task 为 Celery AsyncResult。
     """
@@ -143,11 +203,25 @@ async def trigger_evaluation(
     await kb_service.get_kb_for_read(kb_id, user_id, db)
 
     # 2. 创建评估运行记录
+    # 记录评估时使用的检索/生成参数快照，便于横向对比不同参数下的效果。
+    # retriever_alpha 当前无对应 settings 配置项，保留 None 以待后续配置化。
+    try:
+        from app.rag.prompt_builder import get_prompt_version
+
+        prompt_version = get_prompt_version()
+    except Exception as e:
+        logger.debug(f"Failed to get prompt_version, fallback to None: {e}")
+        prompt_version = None
     run = EvaluationRun(
         knowledge_base_id=kb_id,
         status=EvaluationStatus.PENDING,
         total_questions=num_questions,
         created_by=user_id,
+        prompt_version=prompt_version,
+        retriever_alpha=None,
+        retriever_top_k=settings.RETRIEVAL_TOP_K,
+        rerank_top_k=settings.RERANK_TOP_K,
+        trigger_source=trigger_source,
     )
     db.add(run)
     await db.commit()
@@ -155,16 +229,19 @@ async def trigger_evaluation(
 
     # 3. 派发 Celery 异步任务
     from app.tasks.evaluation_task import run_evaluation_task
+
     try:
         task = run_evaluation_task.delay(run.id)
     except Exception:
         # Celery 派发失败：将 run 标记为 FAILED 并提交，避免孤儿 PENDING 记录。
         # 标记失败的提交若自身出错则回滚，但始终重新抛出原始异常以保持异常流程不变
         # （API 层仍走 generic_exception_handler 返回 500）。
+        logger.exception(f"Celery evaluation task dispatch failed for run_id={run.id}")
         run.status = EvaluationStatus.FAILED
         try:
             await db.commit()
-        except Exception:
+        except Exception as ce:
+            logger.debug(f"Failed to commit run status=FAILED after dispatch failure: {ce}")
             await db.rollback()
         raise
     logger.info(
@@ -175,7 +252,6 @@ async def trigger_evaluation(
 
 
 async def list_evaluation_runs(
-    user_id: int,
     db: AsyncSession,
     kb_id: int | None = None,
     page: int = 1,
@@ -196,8 +272,7 @@ async def list_evaluation_runs(
     total = count_result.scalar_one()
 
     result = await db.execute(
-        query
-        .order_by(EvaluationRun.created_at.desc())
+        query.order_by(EvaluationRun.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -205,9 +280,7 @@ async def list_evaluation_runs(
     return runs, total
 
 
-async def get_evaluation_run(
-    run_id: int, user_id: int, db: AsyncSession
-) -> EvaluationRun:
+async def get_evaluation_run(run_id: int, user_id: int, db: AsyncSession) -> EvaluationRun:
     """获取单个评估运行详情 (admin only)。
 
     run 不存在抛 NotFoundError。
@@ -219,9 +292,7 @@ async def get_evaluation_run(
     return run
 
 
-async def delete_evaluation_run(
-    run_id: int, user_id: int, db: AsyncSession
-) -> None:
+async def delete_evaluation_run(run_id: int, user_id: int, db: AsyncSession) -> None:
     """删除评估运行及其结果 (admin only)。
 
     业务流程：
@@ -240,6 +311,7 @@ async def delete_evaluation_run(
 
     # 显式删除关联结果（CASCADE 也会处理，但显式更安全）
     from sqlalchemy import delete
+
     await db.execute(delete(EvaluationResult).where(EvaluationResult.run_id == run_id))
     await db.delete(run)
     await db.commit()
@@ -263,9 +335,7 @@ async def get_evaluation_results(
         raise NotFoundError("Evaluation run not found")
 
     count_result = await db.execute(
-        select(func.count())
-        .select_from(EvaluationResult)
-        .where(EvaluationResult.run_id == run_id)
+        select(func.count()).select_from(EvaluationResult).where(EvaluationResult.run_id == run_id)
     )
     total = count_result.scalar_one()
 

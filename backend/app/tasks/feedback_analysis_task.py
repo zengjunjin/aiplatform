@@ -3,6 +3,7 @@
 
 每周日凌晨 3 点执行，汇总过去一周的反馈数据，生成 Markdown 分析报告。
 """
+
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -13,6 +14,7 @@ from app.core.prompt_optimizer import generate_optimization_suggestions
 from app.database import async_session
 from app.services.feedback_service import analyze_feedback
 from app.tasks.celery_app import celery_app
+
 
 def _get_report_dir() -> str:
     """获取反馈报告目录路径。
@@ -58,9 +60,7 @@ def run_feedback_analysis(self) -> dict:
             try:
                 mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=UTC)
                 if mtime > cutoff:
-                    logger.info(
-                        f"Recent report exists: {filepath}, skipping (idempotent)"
-                    )
+                    logger.info(f"Recent report exists: {filepath}, skipping (idempotent)")
                     return {"status": "skipped", "reason": "recent_report_exists"}
             except OSError as e:
                 logger.warning(f"Failed to stat {filepath}: {e}")
@@ -86,9 +86,7 @@ def run_feedback_analysis(self) -> dict:
                 optimization = await generate_optimization_suggestions(analysis)
 
                 # 生成 Markdown 报告
-                report = _generate_markdown_report(
-                    analysis, optimization, start_date, end_date
-                )
+                report = _generate_markdown_report(analysis, optimization, start_date, end_date)
 
                 # 保存报告
                 os.makedirs(report_dir, exist_ok=True)
@@ -111,7 +109,7 @@ def run_feedback_analysis(self) -> dict:
 
         except Exception as e:
             logger.error(f"Feedback analysis task failed: {e}")
-            raise self.retry(exc=e)
+            raise self.retry(exc=e) from e
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -245,7 +243,7 @@ def _render_low_rated_samples(analysis: dict) -> list[str]:
             lines.append(f"- **问题**: {sample.get('question', 'N/A')[:300]}")
             lines.append(f"- **回答**: {sample.get('answer', 'N/A')[:300]}")
             lines.append(f"- **反馈类型**: {sample.get('feedback_type', 'N/A')}")
-            if sample.get('comment'):
+            if sample.get("comment"):
                 lines.append(f"- **用户评价**: {sample['comment']}")
             lines.append("")
     else:
@@ -293,7 +291,11 @@ def _cleanup_old_reports(keep: int = 12) -> None:
         if not os.path.exists(report_dir):
             return
         files = sorted(
-            [f for f in os.listdir(report_dir) if f.startswith("feedback_report_") and f.endswith(".md")],
+            [
+                f
+                for f in os.listdir(report_dir)
+                if f.startswith("feedback_report_") and f.endswith(".md")
+            ],
             reverse=True,
         )
         for old_file in files[keep:]:

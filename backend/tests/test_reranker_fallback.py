@@ -5,6 +5,7 @@ Task 2 SubTask 2.2: 验证 reranker fallback 在模型未加载时返回 list[tu
 BaseRerankerProvider.rerank -> list[tuple[int, float]] 不一致，下游 Reranker.rerank
 将其作为 score 写入 chunk["rerank_score"]，类型错误会导致序列化/排序异常。
 """
+
 from app.models.reranker_provider import LocalBgeRerankerProvider
 
 

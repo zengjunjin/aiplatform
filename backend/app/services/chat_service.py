@@ -21,10 +21,10 @@ async def create_session(req: SessionCreate, user_id: int, db: AsyncSession) -> 
     return session
 
 
-async def list_sessions(user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> tuple[list[ChatSession], int]:
-    count_result = await db.execute(
-        select(func.count()).where(ChatSession.user_id == user_id)
-    )
+async def list_sessions(
+    user_id: int, db: AsyncSession, page: int = 1, page_size: int = 20
+) -> tuple[list[ChatSession], int]:
+    count_result = await db.execute(select(func.count()).where(ChatSession.user_id == user_id))
     total = count_result.scalar_one()
     result = await db.execute(
         select(ChatSession)
@@ -46,7 +46,9 @@ async def get_session(session_id: int, user_id: int, db: AsyncSession) -> ChatSe
     return session
 
 
-async def update_session(session_id: int, req: SessionUpdate, user_id: int, db: AsyncSession) -> ChatSession:
+async def update_session(
+    session_id: int, req: SessionUpdate, user_id: int, db: AsyncSession
+) -> ChatSession:
     session = await get_session(session_id, user_id, db)
     if req.title is not None:
         session.title = req.title
@@ -68,7 +70,9 @@ async def delete_session(session_id: int, user_id: int, db: AsyncSession):
     logger.info(f"Session deleted: id={session_id} user={user_id}")
 
 
-async def get_messages(session_id: int, user_id: int, db: AsyncSession, page: int = 1, page_size: int = 50) -> tuple[list[ChatMessage], int]:
+async def get_messages(
+    session_id: int, user_id: int, db: AsyncSession, page: int = 1, page_size: int = 50
+) -> tuple[list[ChatMessage], int]:
     await get_session(session_id, user_id, db)
     count_result = await db.execute(
         select(func.count()).where(ChatMessage.session_id == session_id)
@@ -89,7 +93,7 @@ async def get_history_context(
     limit: int = settings.CHAT_HISTORY_LIMIT,
     db: AsyncSession | None = None,
 ) -> list[dict]:
-    '''从 Redis 获取最近 N 轮历史，Redis 不可用 / key 不存在 / 查询异常时回退 DB'''
+    """从 Redis 获取最近 N 轮历史，Redis 不可用 / key 不存在 / 查询异常时回退 DB"""
     redis = get_redis()
     if redis:
         try:
@@ -120,11 +124,11 @@ async def get_history_context(
 
 
 async def append_to_context(session_id: int, role: str, content: str) -> None:
-    '''追加消息到 Redis 上下文
+    """追加消息到 Redis 上下文
 
     使用 pipeline 将 lpush+expire+ltrim 合并为 1 次 RTT，
     SSE 流式场景每条消息节省 2 次 RTT。
-    '''
+    """
     redis = get_redis()
     if not redis:
         return
@@ -154,6 +158,7 @@ async def save_message(
     # 仅 assistant 消息需要记录 prompt_version（user 消息不经过 prompt 构建）
     if prompt_version is None and role == "assistant":
         from app.rag.prompt_builder import get_prompt_version
+
         prompt_version = get_prompt_version()
     msg = ChatMessage(
         session_id=session_id,
@@ -195,9 +200,7 @@ async def is_cancelled(session_id: int) -> bool:
     redis = get_redis()
     if not redis:
         return False
-    if await redis.exists(_cancel_key(session_id)):
-        return True
-    return False
+    return bool(await redis.exists(_cancel_key(session_id)))
 
 
 async def clear_cancel(session_id: int) -> None:

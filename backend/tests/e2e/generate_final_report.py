@@ -1,7 +1,8 @@
 """Generate final consolidated E2E test report combining all test batches."""
+
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from tests.e2e.helpers.reporter import TestRecord, generate_html_report
@@ -39,8 +40,12 @@ api_tests = [
     ("tests/e2e/test_04_documents_e2e.py::test_document_parsed_done", "PASS", 15.6),
     ("tests/e2e/test_04_documents_e2e.py::test_get_document_detail", "PASS", 0.3),
     ("tests/e2e/test_04_documents_e2e.py::test_get_document_progress", "PASS", 0.3),
-    ("tests/e2e/test_04_documents_e2e.py::test_reparse_document", "SKIP", 0.0,
-     "RateLimitError: reparse endpoint 5/hour limit"),
+    (
+        "tests/e2e/test_04_documents_e2e.py::test_reparse_document",
+        "SKIP",
+        0.0,
+        "RateLimitError: reparse endpoint 5/hour limit",
+    ),
     ("tests/e2e/test_04_documents_e2e.py::test_delete_document", "PASS", 0.4),
     ("tests/e2e/test_04_documents_e2e.py::test_list_documents", "PASS", 0.3),
     # test_05_chat_sse_e2e
@@ -55,13 +60,21 @@ api_tests = [
     ("tests/e2e/test_06_feedback_e2e.py::test_feedback_stats", "PASS", 0.3),
     ("tests/e2e/test_06_feedback_e2e.py::test_low_rated_list", "PASS", 0.3),
     # test_07_evaluation_e2e
-    ("tests/e2e/test_07_evaluation_e2e.py::test_trigger_evaluation", "SKIP", 0.0,
-     "Evaluation trigger 3/hour rate limit"),
+    (
+        "tests/e2e/test_07_evaluation_e2e.py::test_trigger_evaluation",
+        "SKIP",
+        0.0,
+        "Evaluation trigger 3/hour rate limit",
+    ),
     ("tests/e2e/test_07_evaluation_e2e.py::test_list_runs", "PASS", 0.3),
     ("tests/e2e/test_07_evaluation_e2e.py::test_get_run_detail", "PASS", 0.3),
     ("tests/e2e/test_07_evaluation_e2e.py::test_normal_user_cannot_trigger", "PASS", 0.3),
-    ("tests/e2e/test_07_evaluation_e2e.py::test_evaluation_complete_with_metrics", "SKIP", 0.0,
-     "Depends on test_trigger_evaluation"),
+    (
+        "tests/e2e/test_07_evaluation_e2e.py::test_evaluation_complete_with_metrics",
+        "SKIP",
+        0.0,
+        "Depends on test_trigger_evaluation",
+    ),
     # test_08_system_e2e
     ("tests/e2e/test_08_system_e2e.py::test_system_status_requires_admin", "PASS", 0.2),
     ("tests/e2e/test_08_system_e2e.py::test_system_status_admin_ok", "PASS", 0.3),
@@ -79,7 +92,11 @@ api_tests = [
     # test_10_rate_limit_e2e
     ("tests/e2e/test_10_rate_limit_e2e.py::test_auth_login_rate_limit", "PASS", 12.5),
     ("tests/e2e/test_10_rate_limit_e2e.py::test_default_rate_limit_60_per_minute", "PASS", 8.3),
-    ("tests/e2e/test_10_rate_limit_e2e.py::test_authenticated_overrides_ip_rate_limit", "PASS", 0.5),
+    (
+        "tests/e2e/test_10_rate_limit_e2e.py::test_authenticated_overrides_ip_rate_limit",
+        "PASS",
+        0.5,
+    ),
     ("tests/e2e/test_10_rate_limit_e2e.py::test_rate_limit_response_format", "PASS", 0.3),
     # test_16_tauri_config
     ("tests/e2e/test_16_tauri_config.py::test_tauri_conf_exists", "PASS", 0.1),
@@ -89,8 +106,12 @@ api_tests = [
     ("tests/e2e/test_16_tauri_config.py::test_csp_allows_localhost_8000", "PASS", 0.1),
     ("tests/e2e/test_16_tauri_config.py::test_csp_blocks_unsafe_eval", "PASS", 0.1),
     ("tests/e2e/test_16_tauri_config.py::test_csp_has_default_src_self", "PASS", 0.1),
-    ("tests/e2e/test_16_tauri_config.py::test_release_tauri_conf_matches", "SKIP", 0.0,
-     "Release directory path not found"),
+    (
+        "tests/e2e/test_16_tauri_config.py::test_release_tauri_conf_matches",
+        "SKIP",
+        0.0,
+        "Release directory path not found",
+    ),
 ]
 
 # ============ Batch 2: CDP UI (test_14 + test_17) ============
@@ -101,8 +122,12 @@ cdp_batch1 = [
     ("tests/e2e/test_14_cdp_csp.py::test_localstorage_no_access_token", "PASS", 1.2),
     ("tests/e2e/test_17_tauri_mixed_content.py::test_https_to_http_fetch_succeeds", "PASS", 2.5),
     ("tests/e2e/test_17_tauri_mixed_content.py::test_no_mixed_content_warning", "PASS", 2.2),
-    ("tests/e2e/test_17_tauri_mixed_content.py::test_websocket_to_backend", "SKIP", 0.0,
-     "User not logged in (no refreshToken)"),
+    (
+        "tests/e2e/test_17_tauri_mixed_content.py::test_websocket_to_backend",
+        "SKIP",
+        0.0,
+        "User not logged in (no refreshToken)",
+    ),
 ]
 
 # ============ Batch 3: CDP UI (test_11 + test_12) ============
@@ -135,16 +160,14 @@ all_batches = [
     ("CDP UI (Batch 3: test_13+15)", cdp_batch3),
 ]
 
-for batch_name, batch_tests in all_batches:
+for _batch_name, batch_tests in all_batches:
     for item in batch_tests:
         if len(item) == 3:
             name, status, duration = item
             error = ""
         else:
             name, status, duration, error = item
-        records.append(TestRecord(
-            name=name, status=status, duration=duration, error=error
-        ))
+        records.append(TestRecord(name=name, status=status, duration=duration, error=error))
 
 # Generate final report
 report_dir = Path(__file__).parent / "reports"
@@ -162,7 +185,7 @@ skipped = sum(1 for r in records if r.status == "SKIP")
 pass_rate = (passed / total * 100) if total else 0
 
 print(f"\n{'='*60}")
-print(f"CDP + E2E 全方位测试最终报告")
+print("CDP + E2E 全方位测试最终报告")
 print(f"{'='*60}")
 print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"总测试数: {total}")
@@ -172,7 +195,7 @@ print(f"跳过: {skipped} (黄色)")
 print(f"通过率: {pass_rate:.1f}%")
 print(f"{'='*60}")
 print(f"\n报告位置: {final_report}")
-print(f"\n按测试模块汇总:")
+print("\n按测试模块汇总:")
 modules = {}
 for r in records:
     module = r.name.split("::")[0].split("/")[-1]
@@ -182,4 +205,6 @@ for r in records:
 
 for module, counts in modules.items():
     total_m = counts["PASS"] + counts["FAIL"] + counts["SKIP"]
-    print(f"  {module}: {counts['PASS']} passed, {counts['FAIL']} failed, {counts['SKIP']} skipped (total: {total_m})")
+    print(
+        f"  {module}: {counts['PASS']} passed, {counts['FAIL']} failed, {counts['SKIP']} skipped (total: {total_m})"
+    )

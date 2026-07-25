@@ -12,17 +12,13 @@
   - save_upload_file ValueError（不支持的类型）
   - 其他异常 → INTERNAL_ERROR
 """
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.core.exceptions import AppException, ConflictError, ValidationError
 from app.services import document_service
-
-
-def _make_user(user_id=1):
-    u = MagicMock()
-    u.id = user_id
-    return u
 
 
 def _make_file(filename="test.md"):
@@ -31,30 +27,13 @@ def _make_file(filename="test.md"):
     return f
 
 
-def _make_db(doc_count=0, existing_doc=None, commit_side_effect=None):
-    """构造 mock db：count 查询返回 doc_count，existing 查询返回 existing_doc。"""
-    db = AsyncMock()
-    # count_result.scalar_one() → doc_count
-    count_result = MagicMock()
-    count_result.scalar_one.return_value = doc_count
-    # existing_result.scalar_one_or_none() → existing_doc (or None)
-    existing_result = MagicMock()
-    existing_result.scalar_one_or_none.return_value = existing_doc
-    db.execute = AsyncMock(side_effect=[count_result, existing_result])
-    if commit_side_effect:
-        db.commit = AsyncMock(side_effect=commit_side_effect)
-    # db.refresh 默认设置 doc.id
-    async def fake_refresh(obj, *args, **kwargs):
-        obj.id = 99
-    db.refresh = AsyncMock(side_effect=fake_refresh)
-    return db
-
-
 @pytest.fixture
 def patch_save_upload_file():
     """patch save_upload_file 返回 (path, type, size, hash)。"""
-    with patch("app.services.document_service.save_upload_file",
-               return_value=("/tmp/test.md", "md", 100, "abc123")) as m:
+    with patch(
+        "app.services.document_service.save_upload_file",
+        return_value=("/tmp/test.md", "md", 100, "abc123"),
+    ) as m:
         yield m
 
 
@@ -69,22 +48,20 @@ def patch_parse_task():
     """patch Celery parse_document_task.delay 返回 mock task。"""
     fake_task = MagicMock()
     fake_task.id = "task-uuid"
-    with patch("app.tasks.document_task.parse_document_task.delay",
-               return_value=fake_task) as m:
+    with patch("app.tasks.document_task.parse_document_task.delay", return_value=fake_task) as m:
         yield m
 
 
 class TestUploadDocumentNormal:
     @pytest.mark.asyncio
     async def test_normal_upload_returns_doc_and_task(
-        self, patch_save_upload_file, patch_parse_task
+        self, make_user, make_db, patch_save_upload_file, patch_parse_task
     ):
         """正常路径：返回 (doc, task)，doc 元数据被正确更新。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
-        db = _make_db(doc_count=0, existing_doc=None)
+        db = make_db(doc_count=0, existing_doc=None)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             doc, task = await document_service.upload_document(file, 1, user, db)
@@ -101,31 +78,32 @@ class TestUploadDocumentNormal:
 
 class TestUploadDocumentPermission:
     @pytest.mark.asyncio
-    async def test_kb_permission_failure_propagates(self):
+    async def test_kb_permission_failure_propagates(self, make_user, make_db):
         """KB 权限不足时应抛出原异常，不继续后续逻辑。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
-        db = _make_db()
+        db = make_db()
 
-        with patch("app.services.kb_service.get_kb_for_write",
-                   new=AsyncMock(side_effect=PermissionError("forbidden"))):
+        with patch(
+            "app.services.kb_service.get_kb_for_write",
+            new=AsyncMock(side_effect=PermissionError("forbidden")),
+        ):
             with pytest.raises(PermissionError):
                 await document_service.upload_document(file, 1, user, db)
 
 
 class TestUploadDocumentCountLimit:
     @pytest.mark.asyncio
-    async def test_doc_count_exceeded_raises_app_exception(self):
+    async def test_doc_count_exceeded_raises_app_exception(self, make_user, make_db):
         """文档数量超限时抛出 AppException(DOC_LIMIT_EXCEEDED)。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
         # doc_count = MAX_DOCUMENTS_PER_KB (默认 100)
         from app.config import settings
-        db = _make_db(doc_count=settings.MAX_DOCUMENTS_PER_KB)
+
+        db = make_db(doc_count=settings.MAX_DOCUMENTS_PER_KB)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             with pytest.raises(AppException) as exc_info:
@@ -136,27 +114,25 @@ class TestUploadDocumentCountLimit:
 
 class TestUploadDocumentFilename:
     @pytest.mark.asyncio
-    async def test_empty_filename_raises_validation_error(self):
+    async def test_empty_filename_raises_validation_error(self, make_user, make_db):
         """空文件名应抛出 ValidationError。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file(filename="")
-        db = _make_db(doc_count=0)
+        db = make_db(doc_count=0)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             with pytest.raises(ValidationError):
                 await document_service.upload_document(file, 1, user, db)
 
     @pytest.mark.asyncio
-    async def test_path_traversal_filename_raises_validation_error(self):
+    async def test_path_traversal_filename_raises_validation_error(self, make_user, make_db):
         """含 '..' 的文件名（basename 后仍保留 '..'）应抛出 ValidationError。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         # os.path.basename("..hidden") = "..hidden"（仍含 ".."），触发 ValidationError
         file = _make_file(filename="..hidden")
-        db = _make_db(doc_count=0)
+        db = make_db(doc_count=0)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             with pytest.raises(ValidationError):
@@ -165,13 +141,12 @@ class TestUploadDocumentFilename:
 
 class TestUploadDocumentExt:
     @pytest.mark.asyncio
-    async def test_unsupported_extension_raises_app_exception(self):
+    async def test_unsupported_extension_raises_app_exception(self, make_user, make_db):
         """不支持的扩展名应抛出 AppException(UNSUPPORTED_FILE_TYPE)。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.exe")  # .exe 不在 ALLOWED_EXT
-        db = _make_db(doc_count=0)
+        db = make_db(doc_count=0)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             with pytest.raises(AppException) as exc_info:
@@ -182,16 +157,14 @@ class TestUploadDocumentExt:
 
 class TestUploadDocumentIntegrityError:
     @pytest.mark.asyncio
-    async def test_temp_hash_integrity_error_raises_internal_error(self):
+    async def test_temp_hash_integrity_error_raises_internal_error(self, make_user, make_db):
         """第一次 commit 抛 IntegrityError 时应抛出 AppException(INTERNAL_ERROR)。"""
         from sqlalchemy.exc import IntegrityError as SAIntegrityError
 
-        from app.services import document_service
-
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
         # 第一次 commit 抛 IntegrityError
-        db = _make_db(
+        db = make_db(
             doc_count=0,
             existing_doc=None,
             commit_side_effect=[SAIntegrityError("stmt", "params", Exception("orig")), None],
@@ -207,16 +180,15 @@ class TestUploadDocumentIntegrityError:
 class TestUploadDocumentHashConflict:
     @pytest.mark.asyncio
     async def test_existing_hash_conflict_raises_conflict_error(
-        self, patch_save_upload_file, patch_delete_file
+        self, make_user, make_db, patch_save_upload_file, patch_delete_file
     ):
         """save_upload_file 后发现 existing doc 应抛出 ConflictError 并清理。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
         existing_doc = MagicMock()
         existing_doc.id = 50
-        db = _make_db(doc_count=0, existing_doc=existing_doc)
+        db = make_db(doc_count=0, existing_doc=existing_doc)
 
         with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
             with pytest.raises(ConflictError):
@@ -228,51 +200,66 @@ class TestUploadDocumentHashConflict:
 
 class TestUploadDocumentSaveFileError:
     @pytest.mark.asyncio
-    async def test_save_upload_file_too_large_raises_file_too_large(self, patch_delete_file):
+    async def test_save_upload_file_too_large_raises_file_too_large(
+        self, make_user, make_db, patch_delete_file
+    ):
         """save_upload_file ValueError 含 'too large' 应抛出 AppException(FILE_TOO_LARGE)。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
-        db = _make_db(doc_count=0, existing_doc=None)
+        db = make_db(doc_count=0, existing_doc=None)
 
-        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()), \
-             patch("app.services.document_service.save_upload_file",
-                   side_effect=ValueError("File too large: 100MB > 20MB")):
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.services.document_service.save_upload_file",
+                side_effect=ValueError("File too large: 100MB > 20MB"),
+            ),
+        ):
             with pytest.raises(AppException) as exc_info:
                 await document_service.upload_document(file, 1, user, db)
 
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_save_upload_file_unsupported_type_raises_app_exception(self, patch_delete_file):
+    async def test_save_upload_file_unsupported_type_raises_app_exception(
+        self, make_user, make_db, patch_delete_file
+    ):
         """save_upload_file ValueError 含 'Unsupported' 应抛出 AppException(UNSUPPORTED_FILE_TYPE)。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
-        db = _make_db(doc_count=0, existing_doc=None)
+        db = make_db(doc_count=0, existing_doc=None)
 
-        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()), \
-             patch("app.services.document_service.save_upload_file",
-                   side_effect=ValueError("Unsupported file type (magic mismatch)")):
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.services.document_service.save_upload_file",
+                side_effect=ValueError("Unsupported file type (magic mismatch)"),
+            ),
+        ):
             with pytest.raises(AppException) as exc_info:
                 await document_service.upload_document(file, 1, user, db)
 
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_save_upload_file_generic_error_raises_internal_error(self, patch_delete_file):
+    async def test_save_upload_file_generic_error_raises_internal_error(
+        self, make_user, make_db, patch_delete_file
+    ):
         """save_upload_file 其他异常应抛出 AppException(INTERNAL_ERROR)。"""
-        from app.services import document_service
 
-        user = _make_user()
+        user = make_user()
         file = _make_file("test.md")
-        db = _make_db(doc_count=0, existing_doc=None)
+        db = make_db(doc_count=0, existing_doc=None)
 
-        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()), \
-             patch("app.services.document_service.save_upload_file",
-                   side_effect=RuntimeError("disk full")):
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.services.document_service.save_upload_file",
+                side_effect=RuntimeError("disk full"),
+            ),
+        ):
             with pytest.raises(AppException) as exc_info:
                 await document_service.upload_document(file, 1, user, db)
 

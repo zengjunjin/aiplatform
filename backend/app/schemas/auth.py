@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class RegisterRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -10,7 +10,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     username: str = Field(..., min_length=3, max_length=254, description="用户名或邮箱")
     password: str
@@ -24,13 +24,13 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     refresh_token: str
 
 
 class ChangePasswordRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     old_password: str
     new_password: str = Field(..., min_length=8, max_length=100)
@@ -50,5 +50,4 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

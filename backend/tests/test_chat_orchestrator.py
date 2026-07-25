@@ -4,6 +4,7 @@
 _stream_llm_with_fallback / _save_assistant_msg。
 不依赖真实 PostgreSQL / Redis / LLM。
 """
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,8 +12,8 @@ import pytest
 
 from app.api.v1 import chat
 
-
 # ---------- _send_sse / _send_sse_error ----------
+
 
 class TestSendSse:
     def test_send_sse_serializes_dict_with_chinese(self):
@@ -20,7 +21,7 @@ class TestSendSse:
         evt = chat._send_sse({"event": "warn", "message": "重排序服务暂不可用"})
         assert evt.startswith("data: ")
         assert evt.endswith("\n\n")
-        payload = evt[len("data: "):].strip()
+        payload = evt[len("data: ") :].strip()
         data = json.loads(payload)
         assert data["event"] == "warn"
         assert data["message"] == "重排序服务暂不可用"
@@ -28,7 +29,7 @@ class TestSendSse:
     def test_send_sse_error_returns_error_event(self):
         evt = chat._send_sse_error("boom")
         assert evt.startswith("data: ")
-        payload = evt[len("data: "):].strip()
+        payload = evt[len("data: ") :].strip()
         data = json.loads(payload)
         assert data["event"] == "error"
         assert data["message"] == "boom"
@@ -36,13 +37,16 @@ class TestSendSse:
 
 # ---------- _save_user_msg ----------
 
+
 class TestSaveUserMsg:
     @pytest.mark.asyncio
     async def test_save_user_msg_persists_and_appends_context(self):
         """普通路径：保存 user message + append_to_context，标题不更新。"""
-        with patch("app.api.v1.chat.async_session") as mock_session_cls, \
-             patch("app.services.chat_service.save_message", new=AsyncMock()) as mock_save, \
-             patch("app.services.chat_service.append_to_context", new=AsyncMock()) as mock_append:
+        with (
+            patch("app.api.v1.chat.async_session") as mock_session_cls,
+            patch("app.services.chat_service.save_message", new=AsyncMock()) as mock_save,
+            patch("app.services.chat_service.append_to_context", new=AsyncMock()) as mock_append,
+        ):
             # async_session() 作为 async context manager
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__.return_value = mock_db
@@ -56,9 +60,11 @@ class TestSaveUserMsg:
     @pytest.mark.asyncio
     async def test_save_user_msg_updates_title_for_new_session(self):
         """标题为 '新对话' 时应触发更新逻辑（执行 select ChatSession）。"""
-        with patch("app.api.v1.chat.async_session") as mock_session_cls, \
-             patch("app.services.chat_service.save_message", new=AsyncMock()), \
-             patch("app.services.chat_service.append_to_context", new=AsyncMock()):
+        with (
+            patch("app.api.v1.chat.async_session") as mock_session_cls,
+            patch("app.services.chat_service.save_message", new=AsyncMock()),
+            patch("app.services.chat_service.append_to_context", new=AsyncMock()),
+        ):
             # 模拟 stream_db.execute 返回一个 session 对象
             mock_db = AsyncMock()
             fake_sess = MagicMock()
@@ -83,6 +89,7 @@ class TestSaveUserMsg:
 
 # ---------- _retrieve_and_rerank ----------
 
+
 class TestRetrieveAndRerank:
     @pytest.mark.asyncio
     async def test_retrieve_and_rerank_no_kb_returns_empty(self):
@@ -95,39 +102,50 @@ class TestRetrieveAndRerank:
     async def test_retrieve_and_rerank_normal_path(self):
         """有 kb_id 时返回 chunks 与 searching 事件。"""
         fake_chunks = [{"id": 1, "content": "c1"}]
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=fake_chunks)), \
-             patch("app.rag.reranker.reranker.rerank", new=AsyncMock(return_value=fake_chunks)) as mock_rerank:
+        with (
+            patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=fake_chunks)),
+            patch(
+                "app.rag.reranker.reranker.rerank", new=AsyncMock(return_value=fake_chunks)
+            ) as mock_rerank,
+        ):
             chunks, events = await chat._retrieve_and_rerank(query="q", kb_id=1)
 
         assert chunks == fake_chunks
         # 应有 2 个 searching 事件（chunks_found=0 和 chunks_found=1）
         assert len(events) == 2
         for evt in events:
-            data = json.loads(evt[len("data: "):].strip())
+            data = json.loads(evt[len("data: ") :].strip())
             assert data["event"] == "searching"
-        assert json.loads(events[0][len("data: "):].strip())["chunks_found"] == 0
-        assert json.loads(events[1][len("data: "):].strip())["chunks_found"] == 1
+        assert json.loads(events[0][len("data: ") :].strip())["chunks_found"] == 0
+        assert json.loads(events[1][len("data: ") :].strip())["chunks_found"] == 1
         mock_rerank.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_retrieve_and_rerank_reranker_failure_emits_warn(self):
         """reranker 失败时应发出 warn 事件，并保留原 chunks（截断到 top_k）。"""
         fake_chunks = [{"id": i, "content": f"c{i}"} for i in range(8)]
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=fake_chunks)), \
-             patch("app.rag.reranker.reranker.rerank", new=AsyncMock(side_effect=RuntimeError("model load failed"))):
+        with (
+            patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=fake_chunks)),
+            patch(
+                "app.rag.reranker.reranker.rerank",
+                new=AsyncMock(side_effect=RuntimeError("model load failed")),
+            ),
+        ):
             chunks, events = await chat._retrieve_and_rerank(query="q", kb_id=1)
 
         # 应该有 3 个事件：searching 0, searching 8, warn
         assert len(events) == 3
-        warn_data = json.loads(events[2][len("data: "):].strip())
+        warn_data = json.loads(events[2][len("data: ") :].strip())
         assert warn_data["event"] == "warn"
         assert "重排序" in warn_data["message"]
         # chunks 应被截断到 RERANK_TOP_K
         from app.config import settings
+
         assert len(chunks) == settings.RERANK_TOP_K
 
 
 # ---------- _stream_llm_with_fallback ----------
+
 
 class TestStreamLlmWithFallback:
     @pytest.mark.asyncio
@@ -158,10 +176,10 @@ class TestStreamLlmWithFallback:
 
         # 期望：1 个 model 事件 + 2 个 delta 事件
         assert len(events) == 3
-        model_data = json.loads(events[0][len("data: "):].strip())
+        model_data = json.loads(events[0][len("data: ") :].strip())
         assert model_data["event"] == "model"
         assert model_data["model_name"] == "ollama"
-        delta1 = json.loads(events[1][len("data: "):].strip())
+        delta1 = json.loads(events[1][len("data: ") :].strip())
         assert delta1 == {"event": "delta", "content": "Hello"}
         # state 应累积完整答案
         assert state["full_answer"] == "Hello world"
@@ -215,13 +233,13 @@ class TestStreamLlmWithFallback:
         # 4. model (fallback, fallback=True)
         # 5. delta (full)
         # 6. delta (answer)
-        event_types = [json.loads(e[len("data: "):].strip())["event"] for e in events]
+        event_types = [json.loads(e[len("data: ") :].strip())["event"] for e in events]
         assert event_types == ["model", "delta", "restart", "model", "delta", "delta"]
         # state 应只包含 fallback 的内容（primary 部分已重置）
         assert state["full_answer"] == "full answer"
         assert state["token_count"] == 2
         # 检查 fallback model 事件带 fallback=True
-        fallback_model_evt = json.loads(events[3][len("data: "):].strip())
+        fallback_model_evt = json.loads(events[3][len("data: ") :].strip())
         assert fallback_model_evt["fallback"] is True
         assert fallback_model_evt["model_name"] == "openai"
         model_router.release.assert_called_once_with("ollama")
@@ -294,7 +312,9 @@ class TestStreamLlmWithFallback:
                 events.append(evt)
 
         # 应在第 16 个 token 后取消
-        delta_count = sum(1 for e in events if json.loads(e[len("data: "):].strip())["event"] == "delta")
+        delta_count = sum(
+            1 for e in events if json.loads(e[len("data: ") :].strip())["event"] == "delta"
+        )
         assert delta_count == 16
         assert state["cancelled"] is True
         assert state["token_count"] == 16
@@ -303,22 +323,31 @@ class TestStreamLlmWithFallback:
 
 # ---------- _save_assistant_msg ----------
 
+
 class TestSaveAssistantMsg:
     @pytest.mark.asyncio
     async def test_save_assistant_msg_normal_path(self):
         """正常保存路径应返回 saved_msg.id。"""
         fake_msg = MagicMock()
         fake_msg.id = 42
-        with patch("app.api.v1.chat.async_session") as mock_session_cls, \
-             patch("app.services.chat_service.save_message", new=AsyncMock(return_value=fake_msg)) as mock_save:
+        with (
+            patch("app.api.v1.chat.async_session") as mock_session_cls,
+            patch(
+                "app.services.chat_service.save_message", new=AsyncMock(return_value=fake_msg)
+            ) as mock_save,
+        ):
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__.return_value = mock_db
             mock_session_cls.return_value.__aexit__.return_value = None
 
             msg_id = await chat._save_assistant_msg(
-                session_id=1, content="answer", references=[1, 2],
-                latency_ms=200, summary_text=None,
-                token_input=10, token_output=20,
+                session_id=1,
+                content="answer",
+                references=[1, 2],
+                latency_ms=200,
+                summary_text=None,
+                token_input=10,
+                token_output=20,
             )
 
         assert msg_id == 42
@@ -340,17 +369,25 @@ class TestSaveAssistantMsg:
         """首次保存失败时应尝试保存错误 fallback 消息。"""
         fallback_msg = MagicMock()
         fallback_msg.id = 99
-        with patch("app.api.v1.chat.async_session") as mock_session_cls, \
-             patch("app.services.chat_service.save_message",
-                   new=AsyncMock(side_effect=[RuntimeError("db error"), fallback_msg])) as mock_save:
+        with (
+            patch("app.api.v1.chat.async_session") as mock_session_cls,
+            patch(
+                "app.services.chat_service.save_message",
+                new=AsyncMock(side_effect=[RuntimeError("db error"), fallback_msg]),
+            ) as mock_save,
+        ):
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__.return_value = mock_db
             mock_session_cls.return_value.__aexit__.return_value = None
 
             msg_id = await chat._save_assistant_msg(
-                session_id=1, content="answer", references=[],
-                latency_ms=200, summary_text=None,
-                token_input=10, token_output=20,
+                session_id=1,
+                content="answer",
+                references=[],
+                latency_ms=200,
+                summary_text=None,
+                token_input=10,
+                token_output=20,
             )
 
         assert msg_id == 99
@@ -363,23 +400,32 @@ class TestSaveAssistantMsg:
     @pytest.mark.asyncio
     async def test_save_assistant_msg_returns_none_on_total_failure(self):
         """两次保存都失败时应返回 None。"""
-        with patch("app.api.v1.chat.async_session") as mock_session_cls, \
-             patch("app.services.chat_service.save_message",
-                   new=AsyncMock(side_effect=[RuntimeError("1st"), RuntimeError("2nd")])):
+        with (
+            patch("app.api.v1.chat.async_session") as mock_session_cls,
+            patch(
+                "app.services.chat_service.save_message",
+                new=AsyncMock(side_effect=[RuntimeError("1st"), RuntimeError("2nd")]),
+            ),
+        ):
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__.return_value = mock_db
             mock_session_cls.return_value.__aexit__.return_value = None
 
             msg_id = await chat._save_assistant_msg(
-                session_id=1, content="answer", references=[],
-                latency_ms=200, summary_text=None,
-                token_input=10, token_output=20,
+                session_id=1,
+                content="answer",
+                references=[],
+                latency_ms=200,
+                summary_text=None,
+                token_input=10,
+                token_output=20,
             )
 
         assert msg_id is None
 
 
 # ---------- event_stream 主函数编排 ----------
+
 
 class TestEventStreamOrchestration:
     """验证 event_stream 主函数仅做编排（通过 mock 子函数测试端到端流程）。"""
@@ -395,8 +441,12 @@ class TestEventStreamOrchestration:
 
         # 构造 send_message 调用所需的上下文
         scope = {
-            "type": "http", "method": "POST", "path": "/api/v1/chat/sessions/1/messages",
-            "headers": [], "query_string": b"", "client": ("127.0.0.1", 8000),
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/chat/sessions/1/messages",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 8000),
         }
         request = Request(scope)
         user = MagicMock()
@@ -415,18 +465,25 @@ class TestEventStreamOrchestration:
         req.model = "ollama"
 
         # mock 所有依赖：SSE 计数（直接降级）+ 子函数
-        with patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)), \
-             patch("app.api.v1.chat.get_redis", return_value=None), \
-             patch("app.api.v1.chat._save_user_msg", new=AsyncMock()) as mock_save_user, \
-             patch("app.services.chat_service.get_history_context", new=AsyncMock(return_value=[])), \
-             patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)), \
-             patch("app.api.v1.chat._retrieve_and_rerank", new=AsyncMock(return_value=([], []))), \
-             patch("app.rag.context_manager.context_manager.build_messages", return_value=[{"role": "user", "content": "hi"}]), \
-             patch("app.core.model_router.ModelRouter") as mock_router_cls, \
-             patch("app.api.v1.chat._stream_llm_with_fallback") as mock_stream_gen, \
-             patch("app.api.v1.chat._save_assistant_msg", new=AsyncMock(return_value=42)) as mock_save_asst, \
-             patch("app.services.chat_service.append_to_context", new=AsyncMock()), \
-             patch("app.services.chat_service.clear_cancel", new=AsyncMock()):
+        with (
+            patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
+            patch("app.api.v1.chat.get_redis", return_value=None),
+            patch("app.api.v1.chat._save_user_msg", new=AsyncMock()) as mock_save_user,
+            patch("app.services.chat_service.get_history_context", new=AsyncMock(return_value=[])),
+            patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)),
+            patch("app.api.v1.chat._retrieve_and_rerank", new=AsyncMock(return_value=([], []))),
+            patch(
+                "app.rag.context_manager.context_manager.build_messages",
+                return_value=[{"role": "user", "content": "hi"}],
+            ),
+            patch("app.core.model_router.ModelRouter") as mock_router_cls,
+            patch("app.api.v1.chat._stream_llm_with_fallback") as mock_stream_gen,
+            patch(
+                "app.api.v1.chat._save_assistant_msg", new=AsyncMock(return_value=42)
+            ) as mock_save_asst,
+            patch("app.services.chat_service.append_to_context", new=AsyncMock()),
+            patch("app.services.chat_service.clear_cancel", new=AsyncMock()),
+        ):
             # _stream_llm_with_fallback 是 async generator
             async def fake_stream(messages, llm, router, sid, state):
                 state["full_answer"] = "answer"
@@ -435,12 +492,18 @@ class TestEventStreamOrchestration:
                 yield chat._send_sse({"event": "delta", "content": "answer"})
 
             mock_stream_gen.side_effect = fake_stream
-            mock_router_cls.return_value.select = AsyncMock(return_value=MagicMock(provider_name="ollama", model_name="qwen"))
+            mock_router_cls.return_value.select = AsyncMock(
+                return_value=MagicMock(provider_name="ollama", model_name="qwen")
+            )
             mock_router_cls.return_value.release = MagicMock()
 
             # 调用 send_message（会内部构造 event_stream 并返回 StreamingResponse）
             response = await chat.send_message(
-                request=request, session_id=1, req=req, user=user, db=db,
+                request=request,
+                session_id=1,
+                req=req,
+                user=user,
+                db=db,
             )
 
             # 必须在 patch 上下文内迭代 body_iterator，才会真正执行 event_stream

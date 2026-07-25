@@ -13,11 +13,17 @@
 
 精简原则：筛选操作不刷新页面。
 """
+
 import time
 
 import pytest
 
-from tests.e2e.helpers.cdp_auth import make_cdp_client, login_cdp_session
+from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 TAURI_HOME = "http://tauri.localhost/"
 
@@ -36,14 +42,15 @@ def _ensure_feedback_page(cdp):
     url = cdp.evaluate("window.location.href")
     if "/feedback" not in url:
         cdp.evaluate("window.location.hash = '#/feedback'")
-        time.sleep(3)
+        wait_for_url_change(cdp, "#/feedback", timeout=10)
+        wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-empty", timeout=15)
 
 
 def test_feedback_page_loads(logged_in_cdp):
     """反馈页加载：验证页面渲染（Title + 统计卡片 + 筛选栏 + 列表）"""
     cdp = logged_in_cdp
     _ensure_feedback_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-table, .ant-empty", timeout=10)
     # 反馈页有标题 + 统计概览卡片行
     has_stats = cdp.evaluate("""
         (function() {
@@ -59,22 +66,23 @@ def test_feedback_stats_overview(logged_in_cdp):
     """统计概览：验证 4 个 Statistic 卡片（.ant-statistic）"""
     cdp = logged_in_cdp
     _ensure_feedback_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-table, .ant-empty", timeout=10)
     # FeedbackStatsOverview 有 4 个 Statistic 卡片
     stats_count = cdp.evaluate("""
         (function() {
             return document.querySelectorAll('.ant-statistic').length;
         })();
     """)
-    assert stats_count and stats_count >= 4, \
-        f"Expected at least 4 statistic cards, got {stats_count}"
+    assert (
+        stats_count and stats_count >= 4
+    ), f"Expected at least 4 statistic cards, got {stats_count}"
 
 
 def test_filter_by_kb(logged_in_cdp):
     """按 KB 筛选：选择 KB Select，验证列表过滤（不刷新页面）"""
     cdp = logged_in_cdp
     _ensure_feedback_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-table, .ant-empty", timeout=10)
     # 点击第一个 Select（KB 筛选）打开下拉
     cdp.evaluate("""
         (function() {
@@ -82,7 +90,7 @@ def test_filter_by_kb(logged_in_cdp):
             if (selects.length > 0) selects[0].click();
         })();
     """)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-select-item", timeout=5)
     # 选择第一个 KB 选项（跳过"全部"选项，选第一个 KB）
     cdp.evaluate("""
         (function() {
@@ -95,7 +103,19 @@ def test_filter_by_kb(logged_in_cdp):
         })();
     """)
     # 等待列表刷新（不刷新页面，前端过滤）
-    time.sleep(2)
+    wait_for(
+        lambda: cdp.evaluate("""
+            (function() {
+                const stats = document.querySelectorAll('.ant-statistic');
+                const tables = document.querySelectorAll('.ant-table');
+                const empties = document.querySelectorAll('.ant-empty');
+                return stats.length > 0 || tables.length > 0 || empties.length > 0;
+            })();
+        """),
+        timeout=8,
+        interval=0.5,
+        message="Page did not stabilize after KB filter selection",
+    )
     # 验证页面未崩溃（统计卡片或表格仍存在）
     page_ok = cdp.evaluate("""
         (function() {
@@ -112,7 +132,7 @@ def test_filter_by_type(logged_in_cdp):
     """按类型筛选：选择类型 Select，验证列表过滤（不刷新页面）"""
     cdp = logged_in_cdp
     _ensure_feedback_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-table, .ant-empty", timeout=10)
     # 点击最后一个 Select（类型筛选）打开下拉
     cdp.evaluate("""
         (function() {
@@ -120,7 +140,7 @@ def test_filter_by_type(logged_in_cdp):
             if (selects.length > 0) selects[selects.length - 1].click();
         })();
     """)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-select-item", timeout=5)
     # 选择第一个类型选项（如果有）
     cdp.evaluate("""
         (function() {
@@ -129,7 +149,19 @@ def test_filter_by_type(logged_in_cdp):
         })();
     """)
     # 等待列表刷新（不刷新页面，前端过滤）
-    time.sleep(2)
+    wait_for(
+        lambda: cdp.evaluate("""
+            (function() {
+                const stats = document.querySelectorAll('.ant-statistic');
+                const tables = document.querySelectorAll('.ant-table');
+                const empties = document.querySelectorAll('.ant-empty');
+                return stats.length > 0 || tables.length > 0 || empties.length > 0;
+            })();
+        """),
+        timeout=8,
+        interval=0.5,
+        message="Page did not stabilize after type filter selection",
+    )
     # 验证页面未崩溃
     page_ok = cdp.evaluate("""
         (function() {
@@ -146,7 +178,7 @@ def test_low_rated_table(logged_in_cdp):
     """低分回答列表：验证 LowRatedTable 表格渲染（.ant-table）"""
     cdp = logged_in_cdp
     _ensure_feedback_page(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-statistic, .ant-card, .ant-table, .ant-empty", timeout=10)
     # LowRatedTable 是一个 Card，内含 Table 或 Empty
     table_state = cdp.evaluate("""
         (function() {
@@ -161,8 +193,9 @@ def test_low_rated_table(logged_in_cdp):
     """)
     assert table_state is not None, "Failed to evaluate low rated table state"
     # 有表格或空状态均为合法
-    assert table_state.get("hasTable") or table_state.get("hasEmpty"), \
-        "Low rated table neither rendered table nor empty state"
+    assert table_state.get("hasTable") or table_state.get(
+        "hasEmpty"
+    ), "Low rated table neither rendered table nor empty state"
 
 
 def test_feedback_trend_chart(logged_in_cdp):
@@ -196,5 +229,6 @@ def test_feedback_type_chart(logged_in_cdp):
         })();
     """)
     assert chart_state is not None, "Failed to evaluate chart state"
-    assert chart_state.get("hasCanvas") or chart_state.get("cardCount", 0) >= 3, \
-        "Feedback type chart not rendered and page appears broken"
+    assert (
+        chart_state.get("hasCanvas") or chart_state.get("cardCount", 0) >= 3
+    ), "Feedback type chart not rendered and page appears broken"

@@ -1,9 +1,12 @@
 """Tests for app.api.v1.auth route handlers (HTTP endpoints)"""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from starlette.requests import Request
+
 from app.api.v1 import auth
-from app.core.exceptions import AuthError, ConflictError
+from app.core.exceptions import AuthError
 from app.db.user import User
 
 
@@ -29,8 +32,12 @@ def db():
 def request_mock():
     """真实 starlette Request，limiter 装饰器需要"""
     scope = {
-        "type": "http", "method": "POST", "path": "/api/v1/auth/register",
-        "headers": [], "query_string": b"", "client": ("127.0.0.1", 8000),
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/register",
+        "headers": [],
+        "query_string": b"",
+        "client": ("127.0.0.1", 8000),
     }
     return Request(scope)
 
@@ -41,7 +48,7 @@ class TestRegisterRoute:
         req = MagicMock()
         with patch("app.services.auth_service.register", new=AsyncMock(return_value=user)):
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
-                result = await auth.register(request=request_mock, req=req, db=db)
+                result = (await auth.register(request=request_mock, req=req, db=db)).model_dump()
         assert result["data"]["username"] == "tester"
 
 
@@ -53,7 +60,7 @@ class TestLoginRoute:
         req.username = "tester"
         with patch("app.services.auth_service.login", new=AsyncMock(return_value=tokens)):
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
-                result = await auth.login(request=request_mock, req=req, db=db)
+                result = (await auth.login(request=request_mock, req=req, db=db)).model_dump()
         assert result["data"]["access_token"] == "at"
 
     @pytest.mark.asyncio
@@ -77,7 +84,9 @@ class TestLoginRoute:
         """非 AppException 异常 → 不记录 fail audit"""
         req = MagicMock()
         req.username = "tester"
-        with patch("app.services.auth_service.login", new=AsyncMock(side_effect=ValueError("boom"))):
+        with patch(
+            "app.services.auth_service.login", new=AsyncMock(side_effect=ValueError("boom"))
+        ):
             with patch("app.api.v1.auth.log_audit", new=AsyncMock()) as mock_audit:
                 with pytest.raises(ValueError):
                     await auth.login(request=request_mock, req=req, db=db)
@@ -92,14 +101,14 @@ class TestRefreshRoute:
         tokens = {"access_token": "at", "refresh_token": "rt"}
         req = MagicMock()
         with patch("app.services.auth_service.refresh_token", new=AsyncMock(return_value=tokens)):
-            result = await auth.refresh(request=request_mock, req=req, db=db)
+            result = (await auth.refresh(request=request_mock, req=req, db=db)).model_dump()
         assert result["data"]["access_token"] == "at"
 
 
 class TestMeRoute:
     @pytest.mark.asyncio
-    async def test_me_returns_user(self, user):
-        result = await auth.me(user=user)
+    async def test_me_returns_user(self, user, request_mock):
+        result = (await auth.me(request=request_mock, user=user)).model_dump()
         assert result["data"]["username"] == "tester"
 
 
@@ -111,7 +120,7 @@ class TestLogoutRoute:
         request_mock.headers.get.return_value = "Bearer xxx.token.yyy"
         with patch("app.services.auth_service.add_to_blacklist", new=AsyncMock()) as mock_bl:
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
-                result = await auth.logout(user=user, request=request_mock, db=db)
+                result = (await auth.logout(user=user, request=request_mock, db=db)).model_dump()
         mock_bl.assert_awaited_once_with("xxx.token.yyy", "access")
         assert "message" in result
 
@@ -122,7 +131,7 @@ class TestLogoutRoute:
         request_mock.headers.get.return_value = ""
         with patch("app.services.auth_service.add_to_blacklist", new=AsyncMock()) as mock_bl:
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
-                result = await auth.logout(user=user, request=request_mock, db=db)
+                result = (await auth.logout(user=user, request=request_mock, db=db)).model_dump()
         mock_bl.assert_not_awaited()
         assert "message" in result
 
@@ -136,6 +145,8 @@ class TestChangePasswordRoute:
         req.new_password = "New123!@#"
         with patch("app.services.user_service.change_password", new=AsyncMock()) as mock_cp:
             with patch("app.services.audit_service.log_audit", new=AsyncMock()):
-                result = await auth.change_password(req=req, user=user, db=db, request=request_mock)
+                result = (
+                    await auth.change_password(req=req, user=user, db=db, request=request_mock)
+                ).model_dump()
         mock_cp.assert_awaited_once_with(user.id, "Old123!@#", "New123!@#", db)
         assert "message" in result

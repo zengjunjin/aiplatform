@@ -2,9 +2,11 @@
 
 Tests the cancel flag mechanism via Redis without spinning up a real LLM.
 """
-import pytest
-import json
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.services import chat_service
 
 

@@ -1,6 +1,9 @@
 """Tests for app.rag.context_manager.ContextManager"""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.rag.context_manager import ContextManager
 
 
@@ -109,6 +112,7 @@ def _get_real_tiktoken():
     """获取真实 tiktoken encoder，不可用时返回 None"""
     try:
         import tiktoken
+
         return tiktoken.get_encoding("cl100k_base")
     except Exception:
         return None
@@ -137,7 +141,7 @@ class TestTruncateToBudget:
     def test_truncate_keeps_partial_last_chunk_when_remaining_above_50(self, cm_no_tiktoken):
         """remaining > 50 时保留截断的 chunk"""
         chunks = [
-            {"content": "a" * 40},   # 10 token
+            {"content": "a" * 40},  # 10 token
             {"content": "b" * 240},  # 60 token - 超 budget=50
         ]
         result = cm_no_tiktoken._truncate_to_budget(chunks, budget=50)
@@ -148,7 +152,7 @@ class TestTruncateToBudget:
     def test_truncate_keeps_partial_when_remaining_above_threshold(self, cm_no_tiktoken):
         """remaining > 50 时保留截断的 chunk"""
         chunks = [
-            {"content": "a" * 40},    # 10 token
+            {"content": "a" * 40},  # 10 token
             {"content": "b" * 1000},  # 250 token - 超 budget=100
         ]
         result = cm_no_tiktoken._truncate_to_budget(chunks, budget=100)
@@ -256,6 +260,7 @@ class TestNeedsSummary:
         """Task 12: needs_summary 阈值与 settings.CHAT_HISTORY_KEEP_RECENT 一致"""
         from app.config import settings
         from app.rag.context_manager import context_manager
+
         # context_manager 单例使用 settings.CHAT_HISTORY_KEEP_RECENT
         threshold = settings.CHAT_HISTORY_KEEP_RECENT * 2
         assert context_manager.needs_summary([{"content": "x"}] * threshold) is False
@@ -363,4 +368,5 @@ class TestGetContextWithSummary:
 
 def test_context_manager_singleton_exists():
     from app.rag.context_manager import context_manager
+
     assert isinstance(context_manager, ContextManager)

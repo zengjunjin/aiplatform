@@ -15,12 +15,12 @@ Create Date: 2026-07-23
   本迁移仅新增用于过滤/排序的单列索引。
 - 使用 CONCURRENTLY 以避免长事务阻塞写入(PG),需在事务外执行。
 """
+
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision = '011_feedback_indexes'
-down_revision = '010_perf_indexes'
+revision = "011_feedback_indexes"
+down_revision = "010_perf_indexes"
 branch_labels = None
 depends_on = None
 
@@ -28,40 +28,50 @@ depends_on = None
 def upgrade():
     # CONCURRENTLY 不能在事务中执行
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.execute('COMMIT')
+    if bind.dialect.name == "postgresql":
+        op.execute("COMMIT")
 
     op.create_index(
-        'ix_message_feedbacks_rating',
-        'message_feedbacks',
-        ['rating'],
+        "ix_message_feedbacks_rating",
+        "message_feedbacks",
+        ["rating"],
         postgresql_concurrently=True,
     )
     op.create_index(
-        'ix_message_feedbacks_feedback_type',
-        'message_feedbacks',
-        ['feedback_type'],
+        "ix_message_feedbacks_feedback_type",
+        "message_feedbacks",
+        ["feedback_type"],
         postgresql_concurrently=True,
     )
     op.create_index(
-        'ix_message_feedbacks_created_at',
-        'message_feedbacks',
-        ['created_at'],
+        "ix_message_feedbacks_created_at",
+        "message_feedbacks",
+        ["created_at"],
         postgresql_concurrently=True,
     )
 
-    if bind.dialect.name == 'postgresql':
-        op.execute('BEGIN')
+    if bind.dialect.name == "postgresql":
+        op.execute("BEGIN")
 
 
 def downgrade():
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.execute('COMMIT')
+    if bind.dialect.name == "postgresql":
+        op.execute("COMMIT")
 
-    op.drop_index('ix_message_feedbacks_created_at', table_name='message_feedbacks', postgresql_concurrently=True)
-    op.drop_index('ix_message_feedbacks_feedback_type', table_name='message_feedbacks', postgresql_concurrently=True)
-    op.drop_index('ix_message_feedbacks_rating', table_name='message_feedbacks', postgresql_concurrently=True)
+    op.drop_index(
+        "ix_message_feedbacks_created_at",
+        table_name="message_feedbacks",
+        postgresql_concurrently=True,
+    )
+    op.drop_index(
+        "ix_message_feedbacks_feedback_type",
+        table_name="message_feedbacks",
+        postgresql_concurrently=True,
+    )
+    op.drop_index(
+        "ix_message_feedbacks_rating", table_name="message_feedbacks", postgresql_concurrently=True
+    )
 
-    if bind.dialect.name == 'postgresql':
-        op.execute('BEGIN')
+    if bind.dialect.name == "postgresql":
+        op.execute("BEGIN")

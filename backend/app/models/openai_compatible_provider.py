@@ -16,7 +16,7 @@ from app.models.base import BaseLLMProvider
 
 
 def _resolve_env_vars(value: str) -> str:
-    '''替换字符串中的 ${VAR_NAME} 为环境变量值'''
+    """替换字符串中的 ${VAR_NAME} 为环境变量值"""
     if not value:
         return value
 
@@ -31,13 +31,11 @@ def _is_retryable_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
         return status_code >= 500 or status_code == 429
-    if isinstance(exc, (httpx.NetworkError, httpx.TimeoutException, httpx.ConnectError)):
-        return True
-    return False
+    return bool(isinstance(exc, httpx.NetworkError | httpx.TimeoutException | httpx.ConnectError))
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
-    '''OpenAI 兼容 API 提供方（支持 Groq、DeepSeek、OpenRouter 等）'''
+    """OpenAI 兼容 API 提供方（支持 Groq、DeepSeek、OpenRouter 等）"""
 
     def __init__(
         self,
@@ -87,8 +85,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         """关闭底层 httpx 连接池，应用 shutdown 时调用。"""
         await self._client.aclose()
 
-    async def chat_stream(self, messages: list[dict], temperature: float = 0.7) -> AsyncIterator[str]:
-        '''流式聊天（兼容旧接口）'''
+    async def chat_stream(
+        self, messages: list[dict], temperature: float = 0.7
+    ) -> AsyncIterator[str]:
+        """流式聊天（兼容旧接口）"""
         async for token in self.chat(messages, temperature=temperature, stream=True):
             yield token
 
@@ -109,7 +109,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         stream: bool = False,
         **kwargs,
     ) -> str | AsyncIterator[str]:
-        '''发送聊天请求，支持流式和非流式'''
+        """发送聊天请求，支持流式和非流式"""
         url = f"{self._api_base}/chat/completions"
         payload = {
             "model": self._model,
@@ -128,7 +128,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         url: str,
         payload: dict,
     ) -> AsyncIterator[str]:
-        '''处理 SSE 流式响应，逐个 yield token'''
+        """处理 SSE 流式响应，逐个 yield token"""
         async with self._client.stream(
             "POST",
             url,
@@ -139,7 +139,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
-                data_str = line[len("data:"):].strip()
+                data_str = line[len("data:") :].strip()
                 if data_str == "[DONE]":
                     break
                 try:
@@ -161,7 +161,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         url: str,
         payload: dict,
     ) -> str:
-        '''处理非流式响应，返回完整文本'''
+        """处理非流式响应，返回完整文本"""
         resp = await self._client.post(url, json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
@@ -171,10 +171,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         return ""
 
     async def health_check(self) -> bool:
-        '''发送最小请求验证 API 可用性。
+        """发送最小请求验证 API 可用性。
 
         仅返回检查结果，不修改 self._healthy（由 ModelHealthChecker 根据连续失败计数统一管理）。
-        '''
+        """
         try:
             url = f"{self._api_base}/models"
             resp = await self._client.get(url, headers=self._headers())

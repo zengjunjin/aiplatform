@@ -2,19 +2,21 @@
 
 使用 mock AsyncSession 测试业务逻辑，不依赖真实 PostgreSQL。
 """
-from datetime import datetime, timezone
-import pytest
+
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services import feedback_service
-from app.core.exceptions import NotFoundError, ForbiddenError
+import pytest
+
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.chat_message import ChatMessage
 from app.db.chat_session import ChatSession
 from app.db.feedback import MessageFeedback
-from app.schemas.feedback import FeedbackCreate, FeedbackStats, FeedbackDetail
-
+from app.schemas.feedback import FeedbackCreate, FeedbackDetail, FeedbackStats
+from app.services import feedback_service
 
 # ---------- 辅助函数 ----------
+
 
 def _make_message(msg_id=10, session_id=1, content="assistant reply"):
     msg = MagicMock(spec=ChatMessage)
@@ -34,8 +36,14 @@ def _make_session(session_id=1, user_id=1, kb_id=1):
     return sess
 
 
-def _make_feedback(fb_id=100, message_id=10, user_id=1, rating=-1,
-                   feedback_type="faithfulness_issue", comment="bad"):
+def _make_feedback(
+    fb_id=100,
+    message_id=10,
+    user_id=1,
+    rating=-1,
+    feedback_type="faithfulness_issue",
+    comment="bad",
+):
     fb = MagicMock(spec=MessageFeedback)
     fb.id = fb_id
     fb.message_id = message_id
@@ -43,11 +51,12 @@ def _make_feedback(fb_id=100, message_id=10, user_id=1, rating=-1,
     fb.rating = rating
     fb.feedback_type = feedback_type
     fb.comment = comment
-    fb.created_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    fb.created_at = datetime(2026, 7, 1, tzinfo=UTC)
     return fb
 
 
 # ---------- create_feedback ----------
+
 
 class TestCreateFeedback:
     @pytest.mark.asyncio
@@ -112,6 +121,7 @@ class TestCreateFeedback:
 
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 100
+
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         req = MagicMock(spec=FeedbackCreate)
@@ -155,6 +165,7 @@ class TestCreateFeedback:
 
 # ---------- get_feedback ----------
 
+
 class TestGetFeedback:
     @pytest.mark.asyncio
     async def test_returns_feedback_when_exists(self):
@@ -176,15 +187,21 @@ class TestGetFeedback:
 
 # ---------- get_feedback_stats ----------
 
+
 class TestGetFeedbackStats:
     @pytest.mark.asyncio
     async def test_no_feedback_returns_zeros(self):
         db = AsyncMock()
         # Task 33: 合并后单 SQL 返回 total=0（函数短路返回零值）
         stats_row = MagicMock(
-            total=0, positive=0, negative=0,
-            type_faithfulness_issue=0, type_context_insufficient=0,
-            type_incompleteness=0, type_irrelevance=0, type_verbosity=0,
+            total=0,
+            positive=0,
+            negative=0,
+            type_faithfulness_issue=0,
+            type_context_insufficient=0,
+            type_incompleteness=0,
+            type_irrelevance=0,
+            type_verbosity=0,
         )
         stats_result = MagicMock()
         stats_result.one.return_value = stats_row
@@ -201,9 +218,14 @@ class TestGetFeedbackStats:
         db = AsyncMock()
         # Task 33: 合并后单 SQL 返回 total/positive/negative + 各 feedback_type 计数
         stats_row = MagicMock(
-            total=10, positive=7, negative=3,
-            type_faithfulness_issue=2, type_context_insufficient=0,
-            type_incompleteness=1, type_irrelevance=0, type_verbosity=0,
+            total=10,
+            positive=7,
+            negative=3,
+            type_faithfulness_issue=2,
+            type_context_insufficient=0,
+            type_incompleteness=1,
+            type_irrelevance=0,
+            type_verbosity=0,
         )
         stats_result = MagicMock()
         stats_result.one.return_value = stats_row
@@ -217,6 +239,7 @@ class TestGetFeedbackStats:
 
 
 # ---------- get_low_rated_feedbacks ----------
+
 
 class TestGetLowRatedFeedbacks:
     @pytest.mark.asyncio
@@ -269,7 +292,9 @@ class TestGetLowRatedFeedbacks:
         prev_result = MagicMock()
         prev_result.scalars.return_value.all.return_value = [prev_user_msg]
 
-        db.execute = AsyncMock(side_effect=[count_result, data_result, msg_result, sess_result, prev_result])
+        db.execute = AsyncMock(
+            side_effect=[count_result, data_result, msg_result, sess_result, prev_result]
+        )
 
         details, total = await feedback_service.get_low_rated_feedbacks(kb_id=5, db=db)
 
@@ -300,7 +325,9 @@ class TestGetLowRatedFeedbacks:
         prev_result = MagicMock()
         prev_result.scalars.return_value.all.return_value = []
 
-        db.execute = AsyncMock(side_effect=[count_result, data_result, msg_result, sess_result, prev_result])
+        db.execute = AsyncMock(
+            side_effect=[count_result, data_result, msg_result, sess_result, prev_result]
+        )
 
         details, total = await feedback_service.get_low_rated_feedbacks(db=db)
         assert details == []
@@ -308,6 +335,7 @@ class TestGetLowRatedFeedbacks:
 
 
 # ---------- analyze_feedback ----------
+
 
 class TestAnalyzeFeedback:
     @pytest.mark.asyncio
@@ -321,20 +349,38 @@ class TestAnalyzeFeedback:
         )
         low_rated = [
             FeedbackDetail(
-                id=1, message_id=10, rating=-1, comment="bad",
+                id=1,
+                message_id=10,
+                rating=-1,
+                comment="bad",
                 feedback_type="faithfulness_issue",
-                created_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
-                question="Q1", answer="A1", session_id=1, kb_id=1,
+                created_at=datetime(2026, 7, 1, tzinfo=UTC),
+                question="Q1",
+                answer="A1",
+                session_id=1,
+                kb_id=1,
             ),
             FeedbackDetail(
-                id=2, message_id=11, rating=-1, comment=None,
+                id=2,
+                message_id=11,
+                rating=-1,
+                comment=None,
                 feedback_type="incompleteness",
-                created_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
-                question="Q2", answer="A2", session_id=1, kb_id=1,
+                created_at=datetime(2026, 7, 1, tzinfo=UTC),
+                question="Q2",
+                answer="A2",
+                session_id=1,
+                kb_id=1,
             ),
         ]
-        with patch.object(feedback_service, "get_feedback_stats", new=AsyncMock(return_value=stats)), \
-             patch.object(feedback_service, "get_low_rated_feedbacks", new=AsyncMock(return_value=(low_rated, 2))):
+        with (
+            patch.object(feedback_service, "get_feedback_stats", new=AsyncMock(return_value=stats)),
+            patch.object(
+                feedback_service,
+                "get_low_rated_feedbacks",
+                new=AsyncMock(return_value=(low_rated, 2)),
+            ),
+        ):
             result = await feedback_service.analyze_feedback(kb_id=1, db=AsyncMock())
 
         assert result["low_rated_count"] == 2
@@ -348,10 +394,17 @@ class TestAnalyzeFeedback:
     @pytest.mark.asyncio
     async def test_no_low_rated_returns_empty_patterns(self):
         stats = FeedbackStats(
-            total_feedback=0, positive_rate=0.0, negative_rate=0.0, by_type={},
+            total_feedback=0,
+            positive_rate=0.0,
+            negative_rate=0.0,
+            by_type={},
         )
-        with patch.object(feedback_service, "get_feedback_stats", new=AsyncMock(return_value=stats)), \
-             patch.object(feedback_service, "get_low_rated_feedbacks", new=AsyncMock(return_value=([], 0))):
+        with (
+            patch.object(feedback_service, "get_feedback_stats", new=AsyncMock(return_value=stats)),
+            patch.object(
+                feedback_service, "get_low_rated_feedbacks", new=AsyncMock(return_value=([], 0))
+            ),
+        ):
             result = await feedback_service.analyze_feedback(kb_id=None, db=AsyncMock())
 
         assert result["low_rated_count"] == 0

@@ -1,4 +1,4 @@
-"""CDP UI 测试 - 登录与导航
+r"""CDP UI 测试 - 登录与导航
 
 需要 Tauri 以 CDP 端口 9223 启动：
     .\scripts\start_tauri_with_cdp.ps1
@@ -11,12 +11,13 @@
 5. 导航到知识库页面
 6. 登出
 """
+
 import os
-import time
+
 import pytest
 
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import wait_for, wait_for_dom_ready, wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -57,7 +58,7 @@ def test_login_flow(cdp):
     登录后检查 URL 是否离开 /login，若未离开则等待 60s 重试，最多 2 次。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     for attempt in range(3):  # 最多 3 次（首次 + 2 次重试）
         # 清除 localStorage 中的 token 缓存，确保跳到登录页
         cdp.evaluate("""
@@ -68,15 +69,14 @@ def test_login_flow(cdp):
         """)
         # 导航到登录页
         cdp.evaluate("window.location.hash = '#/login'")
-        time.sleep(2)
         # 等待登录表单出现
         wait_for_element(cdp, "input[type='text'], input[id*='username']", timeout=15)
         # 填写用户名（Ant Design Input 第一个通常是用户名）
         cdp.fill_input("input[type='text']:first-of-type", "admin")
-        time.sleep(0.5)
+        wait_for_element(cdp, "input[type='password']", timeout=5)
         # 填写密码
         cdp.fill_input("input[type='password']", "admin123")
-        time.sleep(0.5)
+        wait_for_element(cdp, "button[type='submit'], button.ant-btn-primary", timeout=5)
         # 点击登录按钮（Ant Design Button htmlType="submit" class="ant-btn-primary"）
         cdp.evaluate("""
             (function() {
@@ -94,23 +94,28 @@ def test_login_flow(cdp):
             })();
         """)
         # 等待跳转（登录成功后应离开 /login）
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            url = cdp.evaluate("window.location.href")
-            if url and "/login" not in url:
-                return
-            time.sleep(0.5)
+        try:
+            wait_for(
+                lambda: "/login" not in (cdp.evaluate("window.location.href") or ""),
+                timeout=10,
+                interval=0.5,
+                message="Login redirect (immediate)",
+            )
+            return
+        except TimeoutError:
+            pass
         # 仍在登录页，可能 /auth/login 被限流（429），轮询等待限流窗口过期
         if attempt < 2:
-            max_wait = 60
-            poll_interval = 2
-            elapsed = 0
-            while elapsed < max_wait:
-                url = cdp.evaluate("window.location.href")
-                if url and "/login" not in url:
-                    return
-                time.sleep(poll_interval)
-                elapsed += poll_interval
+            try:
+                wait_for(
+                    lambda: "/login" not in (cdp.evaluate("window.location.href") or ""),
+                    timeout=60,
+                    interval=2,
+                    message="Login redirect (after rate-limit window)",
+                )
+                return
+            except TimeoutError:
+                pass
     url = cdp.evaluate("window.location.href")
     assert "/login" not in url, f"Still on login page after retries: {url}"
 
@@ -121,7 +126,13 @@ def test_no_access_token_in_localstorage(cdp):
     前端 auth store 通过 partialize 只持久化 refreshToken/refreshTokenExpiresAt/user/themeMode，
     不持久化 access_token（token）以降低 token 泄露风险。
     """
-    time.sleep(1)
+    # 等待 auth store 完成持久化（access_token 不应被写入 localStorage）
+    wait_for(
+        lambda: not cdp.evaluate("localStorage.getItem('access_token')"),
+        timeout=5,
+        interval=0.3,
+        message="access_token should not persist in localStorage",
+    )
     token = cdp.evaluate("localStorage.getItem('access_token')")
     assert not token, f"access_token should not be in localStorage: {token}"
     token2 = cdp.evaluate("localStorage.getItem('token')")
@@ -131,10 +142,11 @@ def test_no_access_token_in_localstorage(cdp):
 def test_navigate_to_knowledge_bases(cdp):
     """导航到知识库页面（直接用 hash 导航，不依赖菜单项点击）"""
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_element(cdp, "button, .ant-card, .ant-empty", timeout=8)
     url = cdp.evaluate("window.location.href")
-    assert "knowledge-bases" in url or "knowledge" in url.lower(), \
-        f"Navigation to knowledge-bases failed: {url}"
+    assert (
+        "knowledge-bases" in url or "knowledge" in url.lower()
+    ), f"Navigation to knowledge-bases failed: {url}"
 
 
 def test_logout(cdp):
@@ -159,7 +171,8 @@ def test_logout(cdp):
             }
         })();
     """)
-    time.sleep(1.5)
+    # 等待 dropdown 菜单项出现（替代固定 sleep，处理动画/渲染延迟）
+    wait_for_element(cdp, ".ant-dropdown-menu-item, [role='menuitem']", timeout=5)
     # 点击登出菜单项（Ant Design Dropdown menu item）
     clicked = cdp.evaluate("""
         (function() {
@@ -183,12 +196,18 @@ def test_logout(cdp):
             window.location.hash = '#/login';
         """)
     # 等待跳转回登录页
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        url = cdp.evaluate("window.location.href")
-        if url and ("/login" in url or "login" in url.lower()):
-            return
-        time.sleep(0.5)
+    try:
+        wait_for(
+            lambda: (
+                "/login" in (cdp.evaluate("window.location.href") or "")
+                or "login" in (cdp.evaluate("window.location.href") or "").lower()
+            ),
+            timeout=10,
+            interval=0.5,
+            message="Logout redirect to login",
+        )
+        return
+    except TimeoutError:
+        pass
     url = cdp.evaluate("window.location.href")
-    assert "/login" in url or "login" in url.lower(), \
-        f"Not redirected to login after logout: {url}"
+    assert "/login" in url or "login" in url.lower(), f"Not redirected to login after logout: {url}"

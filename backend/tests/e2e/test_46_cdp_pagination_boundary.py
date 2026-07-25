@@ -18,14 +18,15 @@
 
 测试端点：GET /knowledge-bases（代表性分页 API）
 """
+
 import os
 
 import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
     login_cdp_session,
+    make_cdp_client,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
@@ -50,11 +51,12 @@ def test_page_zero_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 0, "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page=0 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page=0 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
 
 
 def test_page_negative_rejected(base_url, admin_headers):
@@ -62,11 +64,12 @@ def test_page_negative_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": -1, "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page=-1 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page=-1 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
 
 
 def test_page_oversized_returns_empty(base_url, admin_headers):
@@ -77,17 +80,15 @@ def test_page_oversized_returns_empty(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 999999, "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, (
-        f"page=999999 should return 200 with empty items, "
-        f"got {r.status_code}: {r.text[:200]}"
+        f"page=999999 should return 200 with empty items, " f"got {r.status_code}: {r.text[:200]}"
     )
     data = r.json().get("data", {})
     items = data.get("items", [])
-    assert len(items) == 0, (
-        f"page=999999 should return empty items, got {len(items)} items"
-    )
+    assert len(items) == 0, f"page=999999 should return empty items, got {len(items)} items"
 
 
 def test_page_size_zero_rejected(base_url, admin_headers):
@@ -99,11 +100,12 @@ def test_page_size_zero_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 0},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page_size=0 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page_size=0 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
 
 
 def test_page_size_negative_rejected(base_url, admin_headers):
@@ -111,11 +113,12 @@ def test_page_size_negative_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": -1},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page_size=-1 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page_size=-1 should be rejected with 400, got {r.status_code}: {r.text[:200]}"
 
 
 def test_page_size_oversized_rejected(base_url, admin_headers):
@@ -127,7 +130,8 @@ def test_page_size_oversized_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 100000},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 400, (
         f"page_size=100000 should be rejected with 400 (le=100 constraint), "
@@ -143,17 +147,15 @@ def test_page_size_at_upper_bound(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 100},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, (
-        f"page_size=100 (upper bound) should return 200, "
-        f"got {r.status_code}: {r.text[:200]}"
+        f"page_size=100 (upper bound) should return 200, " f"got {r.status_code}: {r.text[:200]}"
     )
     data = r.json().get("data", {})
     items = data.get("items", [])
-    assert len(items) <= 100, (
-        f"items count should be <= 100, got {len(items)}"
-    )
+    assert len(items) <= 100, f"items count should be <= 100, got {len(items)}"
 
 
 def test_missing_page_uses_default(base_url, admin_headers):
@@ -161,15 +163,14 @@ def test_missing_page_uses_default(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page_size": 5},  # 不传 page
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"Missing page should use default, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 200
+    ), f"Missing page should use default, got {r.status_code}: {r.text[:200]}"
     data = r.json().get("data", {})
-    assert data.get("page") == 1, (
-        f"Default page should be 1, got {data.get('page')}"
-    )
+    assert data.get("page") == 1, f"Default page should be 1, got {data.get('page')}"
 
 
 def test_missing_page_size_uses_default(base_url, admin_headers):
@@ -177,31 +178,31 @@ def test_missing_page_size_uses_default(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1},  # 不传 page_size
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"Missing page_size should use default, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 200
+    ), f"Missing page_size should use default, got {r.status_code}: {r.text[:200]}"
     data = r.json().get("data", {})
-    assert data.get("page_size") == 20, (
-        f"Default page_size should be 20, got {data.get('page_size')}"
-    )
+    assert (
+        data.get("page_size") == 20
+    ), f"Default page_size should be 20, got {data.get('page_size')}"
 
 
 def test_missing_both_pagination_params(base_url, admin_headers):
     """P6: 缺失 page 和 page_size 都使用默认值"""
     r = requests.get(
         f"{base_url}/knowledge-bases",
-        headers=admin_headers, timeout=10,  # 不传 page 和 page_size
+        headers=admin_headers,
+        timeout=10,  # 不传 page 和 page_size
     )
-    assert r.status_code == 200, (
-        f"Missing both params should use defaults, got {r.status_code}"
-    )
+    assert r.status_code == 200, f"Missing both params should use defaults, got {r.status_code}"
     data = r.json().get("data", {})
     assert data.get("page") == 1, f"Default page should be 1, got {data.get('page')}"
-    assert data.get("page_size") == 20, (
-        f"Default page_size should be 20, got {data.get('page_size')}"
-    )
+    assert (
+        data.get("page_size") == 20
+    ), f"Default page_size should be 20, got {data.get('page_size')}"
 
 
 def test_non_integer_page_rejected(base_url, admin_headers):
@@ -209,11 +210,12 @@ def test_non_integer_page_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": "abc", "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page='abc' should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page='abc' should be rejected with 400, got {r.status_code}: {r.text[:200]}"
 
 
 def test_non_integer_page_size_rejected(base_url, admin_headers):
@@ -221,8 +223,9 @@ def test_non_integer_page_size_rejected(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": "xyz"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 400, (
-        f"page_size='xyz' should be rejected with 400, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 400
+    ), f"page_size='xyz' should be rejected with 400, got {r.status_code}: {r.text[:200]}"

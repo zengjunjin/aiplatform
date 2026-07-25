@@ -19,6 +19,7 @@
 - 停止生成测试：发送消息后立即点击停止按钮，对比前后消息内容长度验证中断。
 - 模型选择器为 Ant Design Select 组件。
 """
+
 import json
 import os
 import time
@@ -27,9 +28,14 @@ import uuid
 import pytest
 import requests
 
+from tests.e2e.conftest import extract_data
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
-from tests.e2e.conftest import BASE_URL, extract_data
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -64,10 +70,10 @@ def logged_in_cdp(admin_token):
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
     client.navigate(TAURI_HOME)
-    time.sleep(1)
+    wait_for_dom_ready(client, timeout=10)
     _inject_auth_token(client, admin_token)
     client.navigate(TAURI_HOME)
-    time.sleep(3)
+    wait_for_dom_ready(client, timeout=15)
     yield client
     client.close()
 
@@ -84,9 +90,14 @@ def chat_sessions(base_url, admin_headers):
     sessions = []
     for i in range(2):
         title = f"CDP深度测试_{uuid.uuid4().hex[:6]}"
-        r = requests.post(f"{base_url}/chat/sessions", json={
-            "title": title,
-        }, headers=headers, timeout=10)
+        r = requests.post(
+            f"{base_url}/chat/sessions",
+            json={
+                "title": title,
+            },
+            headers=headers,
+            timeout=10,
+        )
         assert r.status_code == 200, f"Create chat session {i} failed: {r.text}"
         sessions.append(extract_data(r))
     return sessions
@@ -114,9 +125,9 @@ def ollama_available(base_url, admin_headers):
 def _navigate_to_chat(cdp):
     """导航到对话页并等待渲染"""
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate("window.location.hash = '#/chat'")
-    time.sleep(3)
+    wait_for_url_change(cdp, "#/chat", timeout=15)
 
 
 def _fill_textarea(cdp, text):
@@ -132,6 +143,7 @@ def _fill_textarea(cdp, text):
             textarea.dispatchEvent(new Event('input', {{bubbles: true}}));
         }})();
     """)
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
 
 
@@ -143,9 +155,9 @@ def test_chat_page_loads(logged_in_cdp, chat_sessions):
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 验证 ChatInput 的 textarea 存在
     has_input = cdp.evaluate("!!document.querySelector('textarea')")
     assert has_input, "ChatInput textarea not found"
@@ -175,15 +187,16 @@ def test_session_sider_renders(logged_in_cdp, chat_sessions):
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 验证会话列表项渲染（chat-session-item class）
     session_count = cdp.evaluate("""
         document.querySelectorAll('.chat-session-item').length
     """)
-    assert session_count and session_count >= 1, \
-        f"No session items rendered in SessionSider (count={session_count})"
+    assert (
+        session_count and session_count >= 1
+    ), f"No session items rendered in SessionSider (count={session_count})"
 
 
 def test_switch_session(logged_in_cdp, chat_sessions):
@@ -194,9 +207,9 @@ def test_switch_session(logged_in_cdp, chat_sessions):
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 点击第一个会话项
     clicked = cdp.evaluate("""
         (function() {
@@ -207,7 +220,7 @@ def test_switch_session(logged_in_cdp, chat_sessions):
         })();
     """)
     assert clicked, "No session item to click"
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     # 验证 URL 变化到 /chat/{id}
     url = cdp.evaluate("window.location.href")
     assert "/chat/" in url, f"URL did not change to session route: {url}"
@@ -224,9 +237,9 @@ def test_send_message(logged_in_cdp, chat_sessions, ollama_available):
     # 导航到第一个会话
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 输入消息
     msg = f"CDP测试消息_{uuid.uuid4().hex[:6]}"
     _fill_textarea(cdp, msg)
@@ -239,18 +252,20 @@ def test_send_message(logged_in_cdp, chat_sessions, ollama_available):
         })();
     """)
     # 等待用户消息出现（最长 30s）
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        found = cdp.evaluate(f"""
-            (function() {{
-                return Array.from(document.querySelectorAll('*'))
-                    .some(el => el.textContent.includes({json.dumps(msg)}));
-            }})();
-        """)
-        if found:
-            return
-        time.sleep(1)
-    pytest.skip(f"Sent message not visible within 30s (may be SSE timeout)")
+    try:
+        wait_for(
+            lambda: cdp.evaluate(f"""
+                (function() {{
+                    return Array.from(document.querySelectorAll('*'))
+                        .some(el => el.textContent.includes({json.dumps(msg)}));
+                }})();
+            """),
+            timeout=30,
+            interval=1,
+            message="Sent message not visible (may be SSE timeout)",
+        )
+    except TimeoutError:
+        pytest.skip("Sent message not visible within 30s (may be SSE timeout)")
 
 
 def test_regenerate_response(logged_in_cdp, chat_sessions, ollama_available):
@@ -264,9 +279,9 @@ def test_regenerate_response(logged_in_cdp, chat_sessions, ollama_available):
     # 导航到第一个会话
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 检查是否有重新生成按钮（aria-label="重新生成"）
     has_regenerate = cdp.evaluate("""
         (function() {
@@ -277,9 +292,12 @@ def test_regenerate_response(logged_in_cdp, chat_sessions, ollama_available):
     if not has_regenerate:
         pytest.skip("No regenerate button found (no assistant reply yet)")
     # 记录当前消息数
-    count_before = cdp.evaluate("""
+    count_before = (
+        cdp.evaluate("""
         document.querySelectorAll('.message-bubble-enter, [class*="message"]').length
-    """) or 0
+    """)
+        or 0
+    )
     # 点击重新生成按钮
     cdp.evaluate("""
         (function() {
@@ -289,15 +307,21 @@ def test_regenerate_response(logged_in_cdp, chat_sessions, ollama_available):
         })();
     """)
     # 等待新回复（最长 30s）
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        count_after = cdp.evaluate("""
-            document.querySelectorAll('.message-bubble-enter, [class*="message"]').length
-        """) or 0
-        if count_after > count_before:
-            return
-        time.sleep(2)
-    pytest.skip("Regenerate did not produce new reply within 30s")
+    try:
+        wait_for(
+            lambda: (
+                cdp.evaluate("""
+                document.querySelectorAll('.message-bubble-enter, [class*="message"]').length
+            """)
+                or 0
+            )
+            > count_before,
+            timeout=30,
+            interval=2,
+            message="Regenerate did not produce new reply",
+        )
+    except TimeoutError:
+        pytest.skip("Regenerate did not produce new reply within 30s")
 
 
 def test_references_drawer(logged_in_cdp, chat_sessions):
@@ -309,9 +333,9 @@ def test_references_drawer(logged_in_cdp, chat_sessions):
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 查找"查看参考来源"标签（ChatPage.parts.tsx 中的 Tag）
     has_ref_tag = cdp.evaluate("""
         (function() {
@@ -329,6 +353,7 @@ def test_references_drawer(logged_in_cdp, chat_sessions):
             if (tag) tag.click();
         })();
     """)
+    # 必要固定等待：Ant Design Drawer 抽屉动画
     time.sleep(1.5)
     # 验证 Drawer 打开
     drawer_open = cdp.evaluate("!!document.querySelector('.ant-drawer-content, .ant-drawer-open')")
@@ -345,9 +370,9 @@ def test_stop_generation(logged_in_cdp, chat_sessions, ollama_available):
     cdp = logged_in_cdp
     session_id = chat_sessions[1]["id"]
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
     # 输入消息并发送
     _fill_textarea(cdp, "请详细介绍一下人工智能的发展历史")
     cdp.evaluate("""
@@ -357,30 +382,29 @@ def test_stop_generation(logged_in_cdp, chat_sessions, ollama_available):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(2)
     # 等待停止按钮出现（streaming 状态下显示"停止"按钮）
-    deadline = time.time() + 15
-    has_stop = False
-    while time.time() < deadline:
-        has_stop = cdp.evaluate("""
-            (function() {
-                return Array.from(document.querySelectorAll('button'))
-                    .some(b => b.textContent.includes('停止'));
-            })();
-        """)
-        if has_stop:
-            break
-        time.sleep(0.5)
-    if not has_stop:
+    try:
+        wait_for(
+            lambda: cdp.evaluate("""
+                (function() {
+                    return Array.from(document.querySelectorAll('button'))
+                        .some(b => b.textContent.includes('停止'));
+                })();
+            """),
+            timeout=15,
+            interval=0.5,
+            message="Stop button did not appear",
+        )
+    except TimeoutError:
         pytest.skip("Stop button did not appear (generation may have finished too quickly)")
     # 记录停止前最后一条消息内容长度
-    len_before = cdp.evaluate("""
+    cdp.evaluate("""
         (function() {
             const msgs = document.querySelectorAll('.message-bubble-enter .ant-card, [class*="message"] .ant-card');
             if (!msgs.length) return 0;
             return msgs[msgs.length - 1].textContent.length;
         })();
-    """) or 0
+    """)
     # 点击停止按钮
     cdp.evaluate("""
         (function() {
@@ -389,43 +413,44 @@ def test_stop_generation(logged_in_cdp, chat_sessions, ollama_available):
             if (btn) btn.click();
         })();
     """)
+    # 必要固定等待：停止生成后状态稳定
     time.sleep(2)
     # 记录停止后内容长度
-    len_after = cdp.evaluate("""
+    len_after = (
+        cdp.evaluate("""
         (function() {
             const msgs = document.querySelectorAll('.message-bubble-enter .ant-card, [class*="message"] .ant-card');
             if (!msgs.length) return 0;
             return msgs[msgs.length - 1].textContent.length;
         })();
-    """) or 0
-    # 再等 2s 验证内容不再增长
+    """)
+        or 0
+    )
+    # 必要固定等待：验证停止后内容不再增长
     time.sleep(2)
-    len_final = cdp.evaluate("""
+    len_final = (
+        cdp.evaluate("""
         (function() {
             const msgs = document.querySelectorAll('.message-bubble-enter .ant-card, [class*="message"] .ant-card');
             if (!msgs.length) return 0;
             return msgs[msgs.length - 1].textContent.length;
         })();
-    """) or 0
+    """)
+        or 0
+    )
     # 验证停止后内容不再增长（允许最终长度 >= 停止后立即长度，但应等于）
-    assert len_final == len_after, \
-        f"Content still growing after stop: after={len_after}, final={len_final}"
+    assert (
+        len_final == len_after
+    ), f"Content still growing after stop: after={len_after}, final={len_final}"
 
 
 def test_model_selector(logged_in_cdp):
     """模型选择器：点击下拉，验证菜单渲染，切换模型"""
     cdp = logged_in_cdp
     _navigate_to_chat(cdp)
-    time.sleep(2)
-    # 查找模型选择器（ChatModelSelector 使用 Ant Design Select）
-    # 模型选择器在底部，包含"模型:"文本
-    has_selector = cdp.evaluate("""
-        (function() {
-            const selects = document.querySelectorAll('.ant-select');
-            return selects.length > 0;
-        })();
-    """)
-    if not has_selector:
+    try:
+        wait_for_element(cdp, ".ant-select", timeout=10)
+    except TimeoutError:
         pytest.skip("No model selector (ant-select) found on chat page")
     # 点击 Select 打开下拉
     cdp.evaluate("""
@@ -434,6 +459,7 @@ def test_model_selector(logged_in_cdp):
             if (select) select.click();
         })();
     """)
+    # 必要固定等待：Ant Design Select 下拉动画
     time.sleep(1)
     # 验证下拉选项渲染
     has_options = cdp.evaluate("""
@@ -450,19 +476,29 @@ def test_model_selector(logged_in_cdp):
             if (enabled) enabled.click();
         })();
     """)
-    time.sleep(1)
-    # 验证下拉已关闭
-    dropdown_closed = cdp.evaluate("""
-        !document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
-    """)
-    assert dropdown_closed, "Model selector dropdown did not close after selection"
+    wait_for(
+        lambda: not cdp.evaluate(
+            "document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')"
+        ),
+        timeout=5,
+        message="Model selector dropdown did not close after selection",
+    )
 
 
 def test_new_session_modal(logged_in_cdp):
     """新建会话弹窗：点击新建会话按钮，验证 NewSessionModal 渲染（KB 选择 + 标题输入）"""
     cdp = logged_in_cdp
     _navigate_to_chat(cdp)
-    time.sleep(2)
+    wait_for(
+        lambda: cdp.evaluate("""
+            (function() {
+                return Array.from(document.querySelectorAll('button'))
+                    .some(b => b.textContent.includes('新建对话'));
+            })();
+        """),
+        timeout=10,
+        message="新建对话 button not found",
+    )
     # 点击 SessionSider 的"新建对话"按钮
     cdp.evaluate("""
         (function() {
@@ -471,6 +507,7 @@ def test_new_session_modal(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
+    # 必要固定等待：Ant Design Modal 弹出动画
     time.sleep(1.5)
     # 验证 Modal 打开
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")

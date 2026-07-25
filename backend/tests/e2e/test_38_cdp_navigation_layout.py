@@ -12,13 +12,19 @@
 
 精简原则：用 evaluate 检查 DOM 不点击每个菜单。
 """
+
 import json
 import time
 
 import pytest
 
-from tests.e2e.helpers.cdp_auth import make_cdp_client, login_cdp_session
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 TAURI_HOME = "http://tauri.localhost/"
 
@@ -50,17 +56,25 @@ def test_sidebar_menu_items(logged_in_cdp):
     """
     cdp = logged_in_cdp
     wait_for_element(cdp, ".ant-menu", timeout=15)
-    menu_text = cdp.evaluate(
-        "document.querySelector('.ant-menu') ? "
-        "document.querySelector('.ant-menu').textContent : ''"
-    ) or ""
+    menu_text = (
+        cdp.evaluate(
+            "document.querySelector('.ant-menu') ? "
+            "document.querySelector('.ant-menu').textContent : ''"
+        )
+        or ""
+    )
     expected_items = [
-        "仪表盘", "对话", "知识库", "文档管理",
-        "用户管理", "反馈管理", "评估管理", "系统状态",
+        "仪表盘",
+        "对话",
+        "知识库",
+        "文档管理",
+        "用户管理",
+        "反馈管理",
+        "评估管理",
+        "系统状态",
     ]
     for item in expected_items:
-        assert item in menu_text, \
-            f"Menu item '{item}' not found in sidebar: {menu_text}"
+        assert item in menu_text, f"Menu item '{item}' not found in sidebar: {menu_text}"
 
 
 def test_sidebar_navigate(logged_in_cdp):
@@ -97,10 +111,11 @@ def test_sidebar_navigate(logged_in_cdp):
             }})();
         """)
         assert clicked, f"Menu item '{label}' not found"
-        time.sleep(1.5)
+        wait_for_url_change(cdp, route_part, timeout=5)
         url = cdp.evaluate("window.location.href") or ""
-        assert route_part in url, \
-            f"Did not navigate to {route_part} after clicking '{label}': {url}"
+        assert (
+            route_part in url
+        ), f"Did not navigate to {route_part} after clicking '{label}': {url}"
 
 
 def test_theme_toggle(logged_in_cdp):
@@ -112,9 +127,7 @@ def test_theme_toggle(logged_in_cdp):
     """
     cdp = logged_in_cdp
     # 读取切换前 data-theme
-    theme_before = cdp.evaluate(
-        "document.documentElement.getAttribute('data-theme')"
-    ) or "light"
+    theme_before = cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light"
     # 点击主题切换按钮
     cdp.evaluate("""
         (function() {
@@ -123,20 +136,27 @@ def test_theme_toggle(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1)
-    theme_after = cdp.evaluate(
-        "document.documentElement.getAttribute('data-theme')"
-    ) or "light"
-    assert theme_after != theme_before, \
-        f"Theme did not change: before={theme_before}, after={theme_after}"
+    wait_for(
+        lambda: cdp.evaluate("document.documentElement.getAttribute('data-theme')") != theme_before,
+        timeout=5,
+        message="Theme did not change after toggle",
+    )
+    theme_after = cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light"
+    assert (
+        theme_after != theme_before
+    ), f"Theme did not change: before={theme_before}, after={theme_after}"
     # 刷新验证持久化
     cdp.navigate(TAURI_HOME)
-    time.sleep(3)
-    theme_persisted = cdp.evaluate(
-        "document.documentElement.getAttribute('data-theme')"
-    ) or "light"
-    assert theme_persisted == theme_after, \
-        f"Theme not persisted: expected={theme_after}, got={theme_persisted}"
+    wait_for_dom_ready(cdp, timeout=10)
+    wait_for(
+        lambda: cdp.evaluate("document.documentElement.getAttribute('data-theme')") is not None,
+        timeout=5,
+        message="data-theme attribute not set after reload",
+    )
+    theme_persisted = cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light"
+    assert (
+        theme_persisted == theme_after
+    ), f"Theme not persisted: expected={theme_after}, got={theme_persisted}"
     # 恢复为 light 主题（避免影响后续测试）
     if theme_persisted != "light":
         cdp.evaluate("""
@@ -146,7 +166,11 @@ def test_theme_toggle(logged_in_cdp):
                 if (btn) btn.click();
             })();
         """)
-        time.sleep(1)
+        wait_for(
+            lambda: cdp.evaluate("document.documentElement.getAttribute('data-theme')") == "light",
+            timeout=5,
+            message="Theme did not restore to light",
+        )
 
 
 def test_user_avatar_menu(logged_in_cdp, admin_token):
@@ -175,30 +199,43 @@ def test_user_avatar_menu(logged_in_cdp, admin_token):
         pytest.fail("user-dropdown-trigger element not found or no bounding box")
     hx, hy = int(coords["x"]), int(coords["y"])
     # 真实 CDP 鼠标 hover（Input.dispatchMouseEvent mouseMoved）
-    cdp.send("Input.dispatchMouseEvent", {
-        "type": "mouseMoved", "x": hx, "y": hy,
-    })
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mouseMoved",
+            "x": hx,
+            "y": hy,
+        },
+    )
     # 轮询等待 Dropdown 菜单渲染（Ant Design Dropdown 异步渲染在 portal 中）
     menu_text = ""
     deadline = time.time() + 8
     while time.time() < deadline:
-        menu_text = cdp.evaluate("""
+        menu_text = (
+            cdp.evaluate("""
             (function() {
                 const items = document.querySelectorAll('.ant-dropdown-menu-item');
                 return Array.from(items).map(i => i.textContent.trim()).join(' ');
             })();
-        """) or ""
+        """)
+            or ""
+        )
         if "退出" in menu_text or "密码" in menu_text:
             break
         # 持续 hover 防止 dropdown 因 mouseout 关闭
-        cdp.send("Input.dispatchMouseEvent", {
-            "type": "mouseMoved", "x": hx, "y": hy,
-        })
-        time.sleep(0.5)
-    assert "退出登录" in menu_text, \
-        f"Logout menu item not found in avatar dropdown: {menu_text}"
-    assert "修改密码" in menu_text or "密码" in menu_text, \
-        f"Change password menu item not found: {menu_text}"
+        cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseMoved",
+                "x": hx,
+                "y": hy,
+            },
+        )
+        time.sleep(0.5)  # 轮询间隔
+    assert "退出登录" in menu_text, f"Logout menu item not found in avatar dropdown: {menu_text}"
+    assert (
+        "修改密码" in menu_text or "密码" in menu_text
+    ), f"Change password menu item not found: {menu_text}"
 
 
 def test_notification_popover(logged_in_cdp, admin_token):
@@ -211,7 +248,7 @@ def test_notification_popover(logged_in_cdp, admin_token):
     cdp = logged_in_cdp
     # 重新注入 admin token：确保 Layout 渲染 HeaderActions（含通知铃铛）。
     _reinject_admin(cdp, admin_token, "#/dashboard")
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-badge, button[aria-label]", timeout=10)
     # 查找通知铃铛按钮并获取中心坐标
     coords = cdp.evaluate("""
         (function() {
@@ -238,14 +275,26 @@ def test_notification_popover(logged_in_cdp, admin_token):
         pytest.fail("Notification bell button not found")
     bx, by = int(coords["x"]), int(coords["y"])
     # 真实 CDP 点击（Input.dispatchMouseEvent）
-    cdp.send("Input.dispatchMouseEvent", {
-        "type": "mousePressed", "x": bx, "y": by,
-        "button": "left", "clickCount": 1,
-    })
-    cdp.send("Input.dispatchMouseEvent", {
-        "type": "mouseReleased", "x": bx, "y": by,
-        "button": "left", "clickCount": 1,
-    })
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mousePressed",
+            "x": bx,
+            "y": by,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mouseReleased",
+            "x": bx,
+            "y": by,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
     # 轮询等待 popover 渲染
     deadline = time.time() + 5
     while time.time() < deadline:
@@ -254,18 +303,36 @@ def test_notification_popover(logged_in_cdp, admin_token):
         )
         if popover_open:
             break
-        time.sleep(0.5)
+        time.sleep(0.5)  # 轮询间隔
     assert popover_open, "Notification popover did not open after clicking bell"
     # 关闭 popover（点击空白处，使用 CDP 真实点击 body 区域）
-    cdp.send("Input.dispatchMouseEvent", {
-        "type": "mousePressed", "x": 1, "y": 1,
-        "button": "left", "clickCount": 1,
-    })
-    cdp.send("Input.dispatchMouseEvent", {
-        "type": "mouseReleased", "x": 1, "y": 1,
-        "button": "left", "clickCount": 1,
-    })
-    time.sleep(1)
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mousePressed",
+            "x": 1,
+            "y": 1,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mouseReleased",
+            "x": 1,
+            "y": 1,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
+    wait_for(
+        lambda: not cdp.evaluate(
+            "!!document.querySelector('.ant-popover-inner, .ant-popover-content')"
+        ),
+        timeout=5,
+        message="Notification popover did not close",
+    )
 
 
 def test_404_page(logged_in_cdp, admin_token):
@@ -303,7 +370,7 @@ def test_404_page(logged_in_cdp, admin_token):
         """)
         if has_button:
             break
-        time.sleep(0.5)
+        time.sleep(0.5)  # 轮询间隔
     assert has_button, "返回首页 button not found on 404 page"
     # 点击"返回首页"验证跳转
     cdp.evaluate("""
@@ -318,7 +385,6 @@ def test_404_page(logged_in_cdp, admin_token):
         url = cdp.evaluate("window.location.href") or ""
         if "/dashboard" in url:
             return
-        time.sleep(0.5)
+        time.sleep(0.5)  # 轮询间隔
     url = cdp.evaluate("window.location.href") or ""
-    assert "/dashboard" in url, \
-        f"Did not navigate to dashboard after clicking 返回首页: {url}"
+    assert "/dashboard" in url, f"Did not navigate to dashboard after clicking 返回首页: {url}"

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { kbApi, documentApi } from '../api';
+import { logger } from '../utils/logger';
 import type { KnowledgeBase, Document, DocumentProgress } from '../types';
 
 interface KBState {
@@ -135,9 +136,9 @@ export const useKBStore = create<KBState>((set, get) => ({
         // 组件卸载 abort 后的 CanceledError 静默停止轮询
         if (e instanceof Error && e.name === 'CanceledError') return;
         errorCount++;
-        console.error('poll progress error:', e);
+        logger.error('poll progress error:', e);
         if (errorCount >= MAX_ERRORS) {
-          console.error('poll progress: max errors reached, stopping');
+          logger.error('poll progress: max errors reached, stopping');
           // Task 49: 上报轮询失败状态, 供 UI 显示"进度获取失败, 点击重试"
           set({ pollError: true });
           return;

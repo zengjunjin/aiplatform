@@ -3,6 +3,7 @@ import json
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -11,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_user, get_current_user
 from app.config import settings
+from app.core.metrics import (
+    RAG_E2E_LATENCY,
+    RAG_LLM_TOKENS_PER_SECOND,
+    RAG_LLM_TTFT,
+    RAG_RETRIEVAL_LATENCY,
+)
 from app.core.middleware import limiter
-from app.core.metrics import RAG_E2E_LATENCY, RAG_LLM_TOKENS_PER_SECOND, RAG_LLM_TTFT, RAG_RETRIEVAL_LATENCY
 from app.core.redis_scripts import _DECR_CLEANUP_LUA, _INCR_EXPIRE_LUA
 from app.database import async_session, get_db
 from app.db.user import User
@@ -31,6 +37,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 # ---------- SSE event_stream 拆分辅助函数 (Task 12) ----------
+
 
 def _send_sse(event: dict) -> str:
     """格式化 SSE data 事件字符串（确保中文不转义）。"""
@@ -57,7 +64,10 @@ async def _save_user_msg(session_id: int, content: str, session_title: str | Non
             from sqlalchemy import select as sa_select
 
             from app.db.chat_session import ChatSession
-            result = await stream_db.execute(sa_select(ChatSession).where(ChatSession.id == session_id))
+
+            result = await stream_db.execute(
+                sa_select(ChatSession).where(ChatSession.id == session_id)
+            )
             sess = result.scalar_one_or_none()
             if sess:
                 sess.title = content[:30] + ("..." if len(content) > 30 else "")
@@ -89,7 +99,12 @@ async def _retrieve_and_rerank(query: str, kb_id: int | None) -> tuple[list, lis
     from app.rag.retriever import retriever
 
     events.append(_send_sse({"event": "searching", "chunks_found": 0}))
-    chunks = await retriever.retrieve(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
+    if settings.QUERY_EXPANSION_ENABLED:
+        from app.rag.query_rewriter import retrieve_with_expansion
+
+        chunks = await retrieve_with_expansion(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
+    else:
+        chunks = await retriever.retrieve(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
     events.append(_send_sse({"event": "searching", "chunks_found": len(chunks)}))
 
     if chunks:
@@ -98,14 +113,17 @@ async def _retrieve_and_rerank(query: str, kb_id: int | None) -> tuple[list, lis
         rerank_t0 = _time.perf_counter()
         try:
             chunks = await reranker.rerank(query, chunks, top_k=settings.RERANK_TOP_K)
-        except Exception:
-            logger.warning("Reranker failed, proceeding without reranking")
-            events.append(_send_sse({"event": "warn", "message": "重排序服务暂不可用，检索质量可能下降"}))
+        except Exception as e:
+            logger.warning(f"Reranker failed, proceeding without reranking: {e}")
+            events.append(
+                _send_sse({"event": "warn", "message": "重排序服务暂不可用，检索质量可能下降"})
+            )
             # Task 13: reranker fallback 时同样过滤低于 score 阈值的 chunks
             chunks = [
-                c for c in chunks
+                c
+                for c in chunks
                 if c.get("score") is None or c.get("score", 0) >= settings.RETRIEVAL_SCORE_THRESHOLD
-            ][:settings.RERANK_TOP_K]
+            ][: settings.RERANK_TOP_K]
         finally:
             RAG_RETRIEVAL_LATENCY.labels(stage="rerank").observe(_time.perf_counter() - rerank_t0)
 
@@ -183,22 +201,28 @@ async def _stream_llm_with_fallback(
 
     try:
         # 在第一个事件中告知用户使用的模型名称
-        yield _send_sse({
-            "event": "model",
-            "model_name": primary_llm.provider_name,
-            "display_name": primary_llm.model_name,
-        })
+        yield _send_sse(
+            {
+                "event": "model",
+                "model_name": primary_llm.provider_name,
+                "display_name": primary_llm.model_name,
+            }
+        )
         async for token in primary_llm.chat_stream(messages):
             _record_ttft(primary_llm.provider_name)
             state["full_answer"] += token
             state["token_count"] += 1
             yield _send_sse({"event": "delta", "content": token})
-            if state["token_count"] % settings.CANCEL_CHECK_INTERVAL == 0:
-                if await chat_service.is_cancelled(session_id):
-                    state["cancelled"] = True
-                    break
+            # SIM102: 合并嵌套 if（外层周期性检查 + 内层取消检查）
+            if state[
+                "token_count"
+            ] % settings.CANCEL_CHECK_INTERVAL == 0 and await chat_service.is_cancelled(session_id):
+                state["cancelled"] = True
+                break
     except Exception as e:
-        logger.warning(f"Primary provider '{primary_llm.provider_name}' failed: {e}, attempting fallback...")
+        logger.warning(
+            f"Primary provider '{primary_llm.provider_name}' failed: {e}, attempting fallback..."
+        )
         # Bug 12: 修复脏数据 - 进入 fallback 前重置 full_answer 与 token_count,
         # 避免 DB 保存 primary 部分内容 + fallback 完整内容的拼接脏数据。
         # 若 primary 已 yield 出 token, 发送 restart 事件让前端清空已显示内容
@@ -219,25 +243,33 @@ async def _stream_llm_with_fallback(
                 continue
             try:
                 logger.info(f"Fallback to provider: {fallback_llm.provider_name}")
-                yield _send_sse({
-                    "event": "model",
-                    "model_name": fallback_llm.provider_name,
-                    "display_name": fallback_llm.model_name,
-                    "fallback": True,
-                })
+                yield _send_sse(
+                    {
+                        "event": "model",
+                        "model_name": fallback_llm.provider_name,
+                        "display_name": fallback_llm.model_name,
+                        "fallback": True,
+                    }
+                )
                 async for token in fallback_llm.chat_stream(messages):
                     _record_ttft(fallback_llm.provider_name)
                     state["full_answer"] += token
                     state["token_count"] += 1
                     yield _send_sse({"event": "delta", "content": token})
-                    if state["token_count"] % settings.CANCEL_CHECK_INTERVAL == 0:
-                        if await chat_service.is_cancelled(session_id):
-                            state["cancelled"] = True
-                            break
+                    # SIM102: 合并嵌套 if（外层周期性检查 + 内层取消检查）
+                    if state[
+                        "token_count"
+                    ] % settings.CANCEL_CHECK_INTERVAL == 0 and await chat_service.is_cancelled(
+                        session_id
+                    ):
+                        state["cancelled"] = True
+                        break
                 fallback_success = True
                 break
             except Exception as fe:
-                logger.warning(f"Fallback provider '{fallback_llm.provider_name}' also failed: {fe}")
+                logger.warning(
+                    f"Fallback provider '{fallback_llm.provider_name}' also failed: {fe}"
+                )
         if not fallback_success:
             raise Exception("All LLM providers failed after fallback attempts") from e
     finally:
@@ -269,7 +301,10 @@ async def _save_assistant_msg(
     try:
         async with async_session() as stream_db:
             saved_msg = await chat_service.save_message(
-                session_id, "assistant", content, stream_db,
+                session_id,
+                "assistant",
+                content,
+                stream_db,
                 references=references,
                 token_input=token_input,
                 token_output=token_output,
@@ -283,14 +318,16 @@ async def _save_assistant_msg(
         try:
             async with async_session() as stream_db:
                 saved_msg = await chat_service.save_message(
-                    session_id, "assistant",
+                    session_id,
+                    "assistant",
                     f"[系统错误] 消息保存失败，请重试。已生成内容：\n{content[:500]}",
                     stream_db,
                     references=references,
                     latency_ms=latency_ms,
                 )
             return saved_msg.id
-        except Exception:
+        except Exception as fe:
+            logger.error(f"Fallback save also failed for session {session_id}: {fe}")
             return None
 
 
@@ -314,9 +351,7 @@ async def _sse_counter(user_id: int) -> AsyncIterator[None]:
             if count > settings.SSE_MAX_CONCURRENT:
                 # 超过上限：回滚刚才的 INCR 并拒绝
                 await redis.eval(_DECR_CLEANUP_LUA, 1, sse_key)
-                logger.warning(
-                    f"SSE concurrent limit exceeded: user={user_id} count={count}"
-                )
+                logger.warning(f"SSE concurrent limit exceeded: user={user_id} count={count}")
                 raise HTTPException(
                     status_code=429,
                     detail=f"Too many concurrent SSE connections (max {settings.SSE_MAX_CONCURRENT})",
@@ -381,8 +416,17 @@ async def _run_sse_stream(
             yield _send_sse({"event": "cancelled", "message": "生成已取消"})
             return
 
+        # Query rewrite: 消解多轮对话中的代词（仅用于检索，不影响用户原文）
+        from app.rag.query_rewriter import rewrite_query
+
+        try:
+            retrieve_query = await rewrite_query(content, history)
+        except Exception as e:
+            logger.warning(f"Query rewrite failed, using original: {e}")
+            retrieve_query = content
+
         # 2. Retrieve + rerank
-        chunks, retrieve_events = await _retrieve_and_rerank(content, kb_id)
+        chunks, retrieve_events = await _retrieve_and_rerank(retrieve_query, kb_id)
         for evt in retrieve_events:
             yield evt
 
@@ -398,7 +442,9 @@ async def _run_sse_stream(
 
         # 5. Stream LLM with fallback (state 收集 full_answer/cancelled/token_count)
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
-        async for sse_evt in _stream_llm_with_fallback(messages, llm, model_router, session_id, state):
+        async for sse_evt in _stream_llm_with_fallback(
+            messages, llm, model_router, session_id, state
+        ):
             yield sse_evt
 
         # 6. Parse references + save assistant message
@@ -410,8 +456,13 @@ async def _run_sse_stream(
         references = parse_references(full_answer, chunks) if chunks and not cancelled else []
         latency_ms = int((time.time() - start_time) * 1000)
         msg_id = await _save_assistant_msg(
-            session_id, full_answer, references, latency_ms, summary_text,
-            count_tokens(content), count_tokens(full_answer),
+            session_id,
+            full_answer,
+            references,
+            latency_ms,
+            summary_text,
+            count_tokens(content),
+            count_tokens(full_answer),
         )
         await chat_service.append_to_context(session_id, "assistant", full_answer)
 
@@ -450,8 +501,12 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
 ):
     session = await chat_service.create_session(req, user.id, db)
-    await log_audit(action="chat.session.create", user_id=user.id, request=request,
-                   details={"session_id": session.id})
+    await log_audit(
+        action="chat.session.create",
+        user_id=user.id,
+        request=request,
+        details={"session_id": session.id},
+    )
     return ok(data=SessionOut.model_validate(session).model_dump())
 
 
@@ -479,10 +534,12 @@ async def get_session(
 ):
     session = await chat_service.get_session(session_id, user.id, db)
     messages, _ = await chat_service.get_messages(session_id, user.id, db, page=1, page_size=100)
-    return ok(data={
-        "session": SessionOut.model_validate(session).model_dump(),
-        "messages": [MessageOut.model_validate(m).model_dump() for m in messages],
-    })
+    return ok(
+        data={
+            "session": SessionOut.model_validate(session).model_dump(),
+            "messages": [MessageOut.model_validate(m).model_dump() for m in messages],
+        }
+    )
 
 
 @router.put("/sessions/{session_id}")
@@ -495,8 +552,12 @@ async def update_session(
     db: AsyncSession = Depends(get_db),
 ):
     session = await chat_service.update_session(session_id, req, user.id, db)
-    await log_audit(action="chat.session.update", user_id=user.id, request=request,
-                   details={"session_id": session_id})
+    await log_audit(
+        action="chat.session.update",
+        user_id=user.id,
+        request=request,
+        details={"session_id": session_id},
+    )
     return ok(data=SessionOut.model_validate(session).model_dump())
 
 
@@ -509,8 +570,12 @@ async def delete_session(
     db: AsyncSession = Depends(get_db),
 ):
     await chat_service.delete_session(session_id, user.id, db)
-    await log_audit(action="chat.session.delete", user_id=user.id, request=request,
-                   details={"session_id": session_id})
+    await log_audit(
+        action="chat.session.delete",
+        user_id=user.id,
+        request=request,
+        details={"session_id": session_id},
+    )
     return ok(message="Deleted")
 
 
@@ -565,6 +630,7 @@ async def send_message(
         # 仅当 __aenter__ 成功后才需要 __aexit__ 释放计数器；
         # __aenter__ 自身失败（如 429，已在内部回滚 DECR）时不调用 __aexit__。
         # 成功返回路径不进入此处，__aexit__ 仍由 _run_sse_stream 的 finally 负责。
+        logger.debug(f"SSE streaming setup failed for user_id={user.id}, re-raising")
         if counter_entered:
             await counter_cm.__aexit__(None, None, None)
         raise
@@ -585,12 +651,14 @@ async def cancel_generation(
     # 验证 session 归属
     await chat_service.get_session(session_id, user.id, db)
     await chat_service.request_cancel(session_id)
-    await log_audit(action="chat.cancel", user_id=user.id, request=request,
-                   details={"session_id": session_id})
+    await log_audit(
+        action="chat.cancel", user_id=user.id, request=request, details={"session_id": session_id}
+    )
     return ok(message="Cancellation requested")
 
 
 # ---------- 反馈 API ----------
+
 
 def _parse_date_range(start_date: str | None, end_date: str | None) -> tuple:
     """将 ISO 格式字符串解析为 datetime，None 或空则返回 None。
@@ -598,7 +666,6 @@ def _parse_date_range(start_date: str | None, end_date: str | None) -> tuple:
     消除 feedback/analysis 与 feedback/low-rated 中重复的 fromisoformat 调用。
     非法 ISO 字符串抛出 400 (HTTPException) 而非泄漏 500。
     """
-    from datetime import datetime
     try:
         start = datetime.fromisoformat(start_date) if start_date else None
         end = datetime.fromisoformat(end_date) if end_date else None
@@ -609,6 +676,7 @@ def _parse_date_range(start_date: str | None, end_date: str | None) -> tuple:
             detail=f"Invalid date format (expected ISO 8601): {e}",
         ) from e
     return start, end
+
 
 @router.post("/messages/{message_id}/feedback")
 @limiter.limit("30/minute")  # Task 24: 反馈提交用更严格的限流

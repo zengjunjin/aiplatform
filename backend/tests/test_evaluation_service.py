@@ -2,16 +2,18 @@
 
 使用 mock AsyncSession 测试业务逻辑，不依赖真实 PostgreSQL / LLM / RAG。
 """
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services import evaluation_service
-from app.core.exceptions import NotFoundError
-from app.db.knowledge_base import KnowledgeBase
-from app.db.document_chunk import DocumentChunk
+import pytest
 
+from app.core.exceptions import NotFoundError
+from app.db.document_chunk import DocumentChunk
+from app.db.knowledge_base import KnowledgeBase
+from app.services import evaluation_service
 
 # ---------- 辅助函数 ----------
+
 
 def _make_kb(kb_id=1, owner_id=1, name="kb1"):
     kb = MagicMock(spec=KnowledgeBase)
@@ -53,6 +55,7 @@ def _mock_db_no_kb():
 
 # ---------- generate_test_dataset ----------
 
+
 class TestGenerateTestDataset:
     @pytest.mark.asyncio
     async def test_kb_not_found_raises(self):
@@ -76,19 +79,42 @@ class TestGenerateTestDataset:
         ]
         db = _mock_db_kb_then_chunks(kb, chunks)
 
-        # Mock _generate_question_from_chunk 返回不同问题
+        # Mock _generate_question_from_chunk 返回 dict (Task 1.5: question/question_type/difficulty)
         async def fake_gen(content):
-            return f"关于 {content[:6]} 的问题？"
+            return {
+                "question": f"关于 {content[:6]} 的问题？",
+                "question_type": "factual",
+                "difficulty": "medium",
+            }
 
-        with patch.object(evaluation_service, "_generate_question_from_chunk", new=AsyncMock(side_effect=fake_gen)):
+        fake_ground_truth = "参考答案"
+        fake_contexts = [{"content": "ctx1"}, {"content": "ctx2"}]
+
+        with (
+            patch.object(
+                evaluation_service,
+                "_generate_question_from_chunk",
+                new=AsyncMock(side_effect=fake_gen),
+            ),
+            patch.object(
+                evaluation_service,
+                "_generate_ground_truth",
+                new=AsyncMock(return_value=fake_ground_truth),
+            ),
+            patch.object(
+                evaluation_service.retriever, "retrieve", new=AsyncMock(return_value=fake_contexts)
+            ),
+        ):
             result = await evaluation_service.generate_test_dataset(kb_id=1, db=db, num_questions=5)
 
         assert len(result) == 2
         assert "question" in result[0]
         assert "ground_truth" in result[0]
         assert "contexts" in result[0]
-        assert result[0]["ground_truth"] == chunks[0].content
-        assert result[0]["contexts"] == [chunks[0].content]
+        # Task 1.5: ground_truth 由 LLM 独立生成，不再来自 chunk.content
+        assert result[0]["ground_truth"] == fake_ground_truth
+        # contexts 由 retriever 重新检索得到，与 ground_truth 不同源
+        assert result[0]["contexts"] == ["ctx1", "ctx2"]
 
     @pytest.mark.asyncio
     async def test_skips_chunks_when_question_generation_fails(self):
@@ -100,20 +126,41 @@ class TestGenerateTestDataset:
         ]
         db = _mock_db_kb_then_chunks(kb, chunks)
 
-        # 第一个 chunk 返回 None（失败），第二个返回问题，第三个抛异常
+        # 第一个 chunk 返回 None（失败），第二个返回 dict，第三个抛异常
         async def fake_gen(content):
             if "A" in content:
                 return None
             if "C" in content:
                 raise RuntimeError("LLM error")
-            return "chunk B 的问题？"
+            return {
+                "question": "chunk B 的问题？",
+                "question_type": "factual",
+                "difficulty": "medium",
+            }
 
-        with patch.object(evaluation_service, "_generate_question_from_chunk", new=AsyncMock(side_effect=fake_gen)):
+        fake_ground_truth = "参考答案"
+        fake_contexts = [{"content": "ctx1"}]
+
+        with (
+            patch.object(
+                evaluation_service,
+                "_generate_question_from_chunk",
+                new=AsyncMock(side_effect=fake_gen),
+            ),
+            patch.object(
+                evaluation_service,
+                "_generate_ground_truth",
+                new=AsyncMock(return_value=fake_ground_truth),
+            ),
+            patch.object(
+                evaluation_service.retriever, "retrieve", new=AsyncMock(return_value=fake_contexts)
+            ),
+        ):
             result = await evaluation_service.generate_test_dataset(kb_id=1, db=db)
 
         # 只有 chunk B 成功
         assert len(result) == 1
-        assert result[0]["ground_truth"] == chunks[1].content
+        assert result[0]["ground_truth"] == fake_ground_truth
 
     @pytest.mark.asyncio
     async def test_num_questions_limits_sample_size(self):
@@ -123,9 +170,30 @@ class TestGenerateTestDataset:
         db = _mock_db_kb_then_chunks(kb, chunks)
 
         async def fake_gen(content):
-            return "问题" + content
+            return {
+                "question": "问题" + content,
+                "question_type": "factual",
+                "difficulty": "medium",
+            }
 
-        with patch.object(evaluation_service, "_generate_question_from_chunk", new=AsyncMock(side_effect=fake_gen)) as mock_gen:
+        fake_ground_truth = "参考答案"
+        fake_contexts = [{"content": "ctx1"}]
+
+        with (
+            patch.object(
+                evaluation_service,
+                "_generate_question_from_chunk",
+                new=AsyncMock(side_effect=fake_gen),
+            ) as mock_gen,
+            patch.object(
+                evaluation_service,
+                "_generate_ground_truth",
+                new=AsyncMock(return_value=fake_ground_truth),
+            ),
+            patch.object(
+                evaluation_service.retriever, "retrieve", new=AsyncMock(return_value=fake_contexts)
+            ),
+        ):
             result = await evaluation_service.generate_test_dataset(kb_id=1, db=db, num_questions=3)
 
         # _generate_question_from_chunk 应只被调用 3 次
@@ -134,6 +202,7 @@ class TestGenerateTestDataset:
 
 
 # ---------- _generate_question_from_chunk ----------
+
 
 class TestGenerateQuestionFromChunk:
     @pytest.mark.asyncio
@@ -144,7 +213,12 @@ class TestGenerateQuestionFromChunk:
         with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
             result = await evaluation_service._generate_question_from_chunk("RAG 是检索增强生成。")
 
-        assert result == "什么是 RAG？"
+        # Task 1.5: 返回 dict，包含 question/question_type/difficulty
+        # 非 JSON 输入走 parse_question_response 的 fallback 分支，标签默认 factual/medium
+        assert result is not None
+        assert result["question"] == "什么是 RAG？"
+        assert result["question_type"] == "factual"
+        assert result["difficulty"] == "medium"
 
     @pytest.mark.asyncio
     async def test_question_prefix_stripped(self):
@@ -154,7 +228,11 @@ class TestGenerateQuestionFromChunk:
         with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
             result = await evaluation_service._generate_question_from_chunk("content")
 
-        assert result == "什么是 RAG？"
+        # Task 1.5: 返回 dict；sanitize_question 仍会去除 "问题：" 前缀
+        assert result is not None
+        assert result["question"] == "什么是 RAG？"
+        assert result["question_type"] == "factual"
+        assert result["difficulty"] == "medium"
 
     @pytest.mark.asyncio
     async def test_short_question_returns_none(self):
@@ -189,6 +267,7 @@ class TestGenerateQuestionFromChunk:
 
 # ---------- get_rag_answer ----------
 
+
 class TestGetRagAnswer:
     @pytest.mark.asyncio
     async def test_normal_path_returns_answer_and_contexts(self):
@@ -199,9 +278,11 @@ class TestGetRagAnswer:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="RAG 是检索增强生成。")
 
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=chunks)), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
-             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"):
+        with (
+            patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=chunks)),
+            patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
+            patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
+        ):
             answer, contexts = await evaluation_service.get_rag_answer("什么是 RAG？", kb_id=1)
 
         assert answer == "RAG 是检索增强生成。"
@@ -218,7 +299,10 @@ class TestGetRagAnswer:
 
     @pytest.mark.asyncio
     async def test_exception_returns_error_message(self):
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(side_effect=RuntimeError("retriever down"))):
+        with patch(
+            "app.rag.retriever.retriever.retrieve",
+            new=AsyncMock(side_effect=RuntimeError("retriever down")),
+        ):
             answer, contexts = await evaluation_service.get_rag_answer("query", kb_id=1)
 
         assert "评估失败" in answer
@@ -230,9 +314,11 @@ class TestGetRagAnswer:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value=None)  # LLM 返回 None
 
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=chunks)), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
-             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"):
+        with (
+            patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=chunks)),
+            patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
+            patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
+        ):
             answer, contexts = await evaluation_service.get_rag_answer("query", kb_id=1)
 
         assert answer == ""
@@ -252,9 +338,11 @@ class TestGetRagAnswer:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="answer")
 
-        with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(side_effect=fake_retrieve)), \
-             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm), \
-             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"):
+        with (
+            patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
+            patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
+        ):
             await evaluation_service.get_rag_answer("query", kb_id=1)
 
         assert captured_top_k == [settings.RETRIEVAL_TOP_K]

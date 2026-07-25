@@ -3,17 +3,22 @@
 提供创建用户、注入 token、验证 API 调用等辅助函数，
 支持双账号交叉验证场景（admin 操作 + 普通用户验证权限实效）。
 """
+
 import json
 import time
 import uuid
+
 import requests
+
 from tests.e2e.helpers.cdp_client import CdpClient
+from tests.e2e.helpers.waiters import wait_for, wait_for_dom_ready
 
 TAURI_HOME = "http://tauri.localhost/"
 
 
-def create_user_via_api(base_url: str, admin_headers: dict,
-                        username: str = None, password: str = "Test@123456") -> dict:
+def create_user_via_api(
+    base_url: str, admin_headers: dict, username: str = None, password: str = "Test@123456"
+) -> dict:
     """通过 API 创建普通用户并登录，返回用户信息 + token。
 
     Args:
@@ -29,19 +34,27 @@ def create_user_via_api(base_url: str, admin_headers: dict,
         username = f"e2e_cdp_{uuid.uuid4().hex[:8]}"
     email = f"{username}@test.com"
 
-    r = requests.post(f"{base_url}/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password,
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/register",
+        json={
+            "username": username,
+            "email": email,
+            "password": password,
+        },
+        timeout=10,
+    )
     if r.status_code != 200:
         raise RuntimeError(f"Register user failed: {r.status_code} {r.text}")
     user_data = r.json().get("data", r.json())
 
-    r2 = requests.post(f"{base_url}/auth/login", json={
-        "username": username,
-        "password": password,
-    }, timeout=10)
+    r2 = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": username,
+            "password": password,
+        },
+        timeout=10,
+    )
     if r2.status_code != 200:
         raise RuntimeError(f"Login user failed: {r2.status_code} {r2.text}")
     token_data = r2.json().get("data", r2.json())
@@ -92,7 +105,7 @@ def login_cdp_session(cdp: CdpClient, token_data: dict, route: str = "#/dashboar
     def _inject_and_reload():
         # 导航到 tauri 根域，确保可访问 localStorage（跨域时 localStorage 隔离）
         cdp.navigate(TAURI_HOME)
-        time.sleep(1)
+        wait_for_dom_ready(cdp, timeout=5)
         cdp.evaluate(f"""
             try {{
                 localStorage.setItem('rag-auth', JSON.stringify({auth_json}));
@@ -106,10 +119,17 @@ def login_cdp_session(cdp: CdpClient, token_data: dict, route: str = "#/dashboar
         # → Page.reload 时 URL 已变成 #/dashboard，目标路由丢失。
         # 正确流程：先 reload 让 store rehydrate 新 token，再设置 hash 导航到目标路由。
         cdp.send("Page.reload")
+        # reload 后需等待整页加载完成；readyState 轮询在 reload 提交瞬间可能读到
+        # 旧页面的 "complete"，无法可靠轮询，保留固定等待确保 rehydrate 完成。
         time.sleep(3)
         # reload 后 store 已 rehydrate 新用户，安全设置 hash 导航到目标路由
         cdp.evaluate(f"window.location.hash = {json.dumps(route)}")
-        time.sleep(2)
+        wait_for(
+            lambda: route in (cdp.evaluate("window.location.hash") or ""),
+            timeout=5,
+            interval=0.3,
+            message=f"hash route set to {route}",
+        )
 
     _inject_and_reload()
     # 验证登录是否成功：hash 不应包含 'login'。
@@ -123,7 +143,7 @@ def logout_cdp_session(cdp: CdpClient) -> None:
     """清除 localStorage 中的 rag-auth，导航到登录页。"""
     cdp.evaluate("localStorage.removeItem('rag-auth')")
     cdp.navigate(TAURI_HOME + "#/login")
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=5)
 
 
 def switch_cdp_user(cdp: CdpClient, new_token_data: dict, route: str = "#/dashboard") -> None:
@@ -138,8 +158,9 @@ def switch_cdp_user(cdp: CdpClient, new_token_data: dict, route: str = "#/dashbo
     login_cdp_session(cdp, new_token_data, route)
 
 
-def verify_api_call(url: str, method: str = "GET", token: str = None,
-                    expected_status: int = None, **kwargs) -> requests.Response:
+def verify_api_call(
+    url: str, method: str = "GET", token: str = None, expected_status: int = None, **kwargs
+) -> requests.Response:
     """用指定 token 调用 API，可选验证状态码。
 
     Args:
@@ -157,14 +178,16 @@ def verify_api_call(url: str, method: str = "GET", token: str = None,
         headers["Authorization"] = f"Bearer {token}"
     r = requests.request(method, url, headers=headers, timeout=10, **kwargs)
     if expected_status is not None:
-        assert r.status_code == expected_status, \
-            f"API {method} {url} expected {expected_status}, got {r.status_code}: {r.text[:200]}"
+        assert (
+            r.status_code == expected_status
+        ), f"API {method} {url} expected {expected_status}, got {r.status_code}: {r.text[:200]}"
     return r
 
 
 def make_cdp_client(cdp_port: int = 9223) -> CdpClient:
     """创建并连接 CDP 客户端，连接失败时 pytest.skip。"""
     import pytest
+
     client = CdpClient(cdp_port=cdp_port)
     try:
         client.connect(timeout=30)

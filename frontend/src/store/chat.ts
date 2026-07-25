@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { chatApi, streamChat, feedbackApi } from '../api';
 import { globalT } from '../i18n';
+import { logger } from '../utils/logger';
 import type { ChatSession, Message, MessageWithRefs, Reference, MessageFeedback } from '../types';
 
 // 本地临时消息 ID 生成器: 使用负数避免与服务器返回的正数 ID 冲突
@@ -407,13 +408,13 @@ if (import.meta.env.DEV) {
       const byId = state.messagesById[sessionId] || {};
       const byIdKeyCount = Object.keys(byId).length;
       if (order.length !== byIdKeyCount) {
-        console.error(
+        logger.error(
           `[chat store invariant] session ${sessionId}: messageOrder.length (${order.length}) !== messagesById key count (${byIdKeyCount})`,
         );
       }
       for (const id of order) {
         if (!(id in byId)) {
-          console.error(
+          logger.error(
             `[chat store invariant] session ${sessionId}: id ${id} in messageOrder but missing from messagesById`,
           );
         }

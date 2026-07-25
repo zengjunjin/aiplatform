@@ -3,32 +3,31 @@
 通过 http://localhost:9223/json 获取 WebView2 调试端点，
 然后建立 WebSocket 连接，发送 CDP 命令。
 """
+
+import base64
+import contextlib
 import json
 import time
-import base64
+
 import requests
 import websocket  # websocket-client
-from typing import Optional
 
 
 class CdpClient:
     def __init__(self, cdp_port: int = 9223, host: str = "localhost"):
         self.cdp_port = cdp_port
         self.host = host
-        self.ws: Optional[websocket.WebSocket] = None
+        self.ws: websocket.WebSocket | None = None
         self.msg_id = 0
-        self.target_id: Optional[str] = None
+        self.target_id: str | None = None
 
     def connect(self, timeout: int = 10) -> None:
         """连接到 Tauri WebView2"""
         # 1. 获取调试目标列表
-        r = requests.get(f"http://{self.host}:{self.cdp_port}/json",
-                         timeout=timeout)
+        r = requests.get(f"http://{self.host}:{self.cdp_port}/json", timeout=timeout)
         r.raise_for_status()
         targets = r.json()
-        page_target = next(
-            (t for t in targets if t.get("type") == "page"), None
-        )
+        page_target = next((t for t in targets if t.get("type") == "page"), None)
         if not page_target:
             raise RuntimeError(f"No page target found in CDP: {targets}")
         self.target_id = page_target["id"]
@@ -37,9 +36,7 @@ class CdpClient:
         # 2. 建立 WebSocket 连接
         # suppress_origin=True: 不发送 Origin 头，避免 Edge/Chromium 的
         # --remote-allow-origins 检查导致 403 Forbidden（新版 WebView2 安全限制）
-        self.ws = websocket.create_connection(
-            ws_url, timeout=timeout, suppress_origin=True
-        )
+        self.ws = websocket.create_connection(ws_url, timeout=timeout, suppress_origin=True)
         # 3. 启用必要的域
         self.send("Page.enable")
         self.send("Runtime.enable")
@@ -74,9 +71,7 @@ class CdpClient:
 
     def evaluate(self, expression: str, await_promise: bool = False):
         """执行 JavaScript 并返回结果"""
-        params = {"expression": expression,
-                  "returnByValue": True,
-                  "awaitPromise": await_promise}
+        params = {"expression": expression, "returnByValue": True, "awaitPromise": await_promise}
         result = self.send("Runtime.evaluate", params)
         value = result.get("result", {})
         if value.get("subtype") == "error":
@@ -85,33 +80,56 @@ class CdpClient:
 
     def click(self, x: int, y: int) -> None:
         """在指定坐标点击"""
-        self.send("Input.dispatchMouseEvent", {
-            "type": "mousePressed", "x": x, "y": y,
-            "button": "left", "clickCount": 1,
-        })
-        self.send("Input.dispatchMouseEvent", {
-            "type": "mouseReleased", "x": x, "y": y,
-            "button": "left", "clickCount": 1,
-        })
+        self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mousePressed",
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
+        self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseReleased",
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
 
     def type_text(self, text: str) -> None:
         """输入文本（逐字符）"""
         for ch in text:
-            self.send("Input.dispatchKeyEvent", {
-                "type": "keyDown", "text": ch,
-            })
-            self.send("Input.dispatchKeyEvent", {
-                "type": "keyUp", "text": ch,
-            })
+            self.send(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "keyDown",
+                    "text": ch,
+                },
+            )
+            self.send(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "keyUp",
+                    "text": ch,
+                },
+            )
 
     def query_selector(self, selector: str) -> str:
         """通过 CSS 选择器查找元素，返回 box model"""
         result = self.send("DOM.getDocument", {"depth": 0})
         root_node = result["root"]
-        node_result = self.send("DOM.querySelector", {
-            "nodeId": root_node["nodeId"],
-            "selector": selector,
-        })
+        node_result = self.send(
+            "DOM.querySelector",
+            {
+                "nodeId": root_node["nodeId"],
+                "selector": selector,
+            },
+        )
         node_id = node_result.get("nodeId", 0)
         if not node_id:
             raise RuntimeError(f"Element not found: {selector}")
@@ -152,8 +170,6 @@ class CdpClient:
 
     def close(self) -> None:
         if self.ws:
-            try:
+            with contextlib.suppress(Exception):
                 self.ws.close()
-            except Exception:
-                pass
             self.ws = None

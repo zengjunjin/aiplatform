@@ -11,43 +11,43 @@ from app.models.reranker_provider import LocalBgeRerankerProvider
 
 
 class ModelRegistry:
-    '''模型注册表 — 管理所有 LLM Provider 实例'''
+    """模型注册表 — 管理所有 LLM Provider 实例"""
 
     _providers: dict[str, BaseLLMProvider] = {}
     _initialized: bool = False
 
     @classmethod
     def register(cls, provider: BaseLLMProvider) -> None:
-        '''注册一个 Provider 实例'''
+        """注册一个 Provider 实例"""
         cls._providers[provider.provider_name] = provider
 
     @classmethod
     def get(cls, name: str) -> BaseLLMProvider:
-        '''按名称获取 Provider'''
+        """按名称获取 Provider"""
         if name not in cls._providers:
             raise ValueError(f"Provider '{name}' not found in registry")
         return cls._providers[name]
 
     @classmethod
     def list_all(cls) -> list[str]:
-        '''列出所有已注册的 Provider 名称'''
+        """列出所有已注册的 Provider 名称"""
         return list(cls._providers.keys())
 
     @classmethod
     def get_available(cls) -> list[BaseLLMProvider]:
-        '''获取所有健康的 Provider'''
+        """获取所有健康的 Provider"""
         return [p for p in cls._providers.values() if p.is_healthy]
 
     @classmethod
     async def close_all(cls) -> None:
-        '''关闭所有已注册 Provider 的底层连接（httpx 连接池等），应用 shutdown 时调用。'''
+        """关闭所有已注册 Provider 的底层连接（httpx 连接池等），应用 shutdown 时调用。"""
         if not cls._providers:
             return
         results = await asyncio.gather(
             *[p.close() for p in cls._providers.values()],
             return_exceptions=True,
         )
-        for name, result in zip(cls._providers.keys(), results):
+        for name, result in zip(cls._providers.keys(), results, strict=False):
             if isinstance(result, Exception):
                 logger.warning(f"Error closing provider '{name}': {result}")
         cls._providers.clear()
@@ -55,7 +55,7 @@ class ModelRegistry:
 
     @classmethod
     def init_from_config(cls) -> None:
-        '''从 settings.LLM_PROVIDERS 配置初始化所有 Provider'''
+        """从 settings.LLM_PROVIDERS 配置初始化所有 Provider"""
         if cls._initialized:
             return
         cls._initialized = True
@@ -96,7 +96,7 @@ class ModelRegistry:
 
 
 class ModelFactory:
-    '''根据配置创建 provider 实例（保持向后兼容）'''
+    """根据配置创建 provider 实例（保持向后兼容）"""
 
     _llm: BaseLLMProvider | None = None
     _embedding: BaseEmbeddingProvider | None = None
@@ -134,7 +134,7 @@ class ModelFactory:
 
     @staticmethod
     async def close_all() -> None:
-        '''关闭所有由 ModelFactory 持有的 Provider 单例的底层连接，应用 shutdown 时调用。'''
+        """关闭所有由 ModelFactory 持有的 Provider 单例的底层连接，应用 shutdown 时调用。"""
         targets: list[BaseLLMProvider | BaseEmbeddingProvider | BaseRerankerProvider] = []
         if ModelFactory._llm is not None:
             targets.append(ModelFactory._llm)
@@ -153,7 +153,7 @@ class ModelFactory:
             *[t.close() for t in targets],
             return_exceptions=True,
         )
-        for target, result in zip(targets, results):
+        for target, result in zip(targets, results, strict=False):
             if isinstance(result, Exception):
                 logger.warning(f"Error closing {type(target).__name__}: {result}")
         ModelFactory._llm = None

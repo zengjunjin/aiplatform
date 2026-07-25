@@ -4,9 +4,20 @@ Encapsulates RAGAS evaluate() call, loads evaluation datasets,
 runs RAG pipeline for each question, computes four metrics,
 and persists results to the database.
 """
+
 import asyncio
+import json
+import re
+import statistics
 
 from loguru import logger
+from ragas import evaluate
+from ragas.metrics import (
+    answer_relevancy,
+    context_precision,
+    context_recall,
+    faithfulness,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,21 +25,26 @@ from app.config import settings
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.services.evaluation_service import get_rag_answer
 
-
 # Task 1.7: 问题生成公共常量与函数（消除 evaluation_task / evaluation_service 重复）
 _QUESTION_PREFIXES = ["问题：", "Question:", "Q:", "问："]
 
 
 def build_question_prompt(content: str) -> str:
-    """构建从文本生成问题的 LLM prompt（公共函数，消除复制粘贴）。"""
+    """构建从文本生成问题的 LLM prompt（公共函数，消除复制粘贴）。
+
+    Task 1.5: prompt 改为要求 LLM 返回 JSON，同时打标 question_type 和 difficulty。
+    """
     return (
         "你是一个问答数据集生成助手。请根据以下文本内容，生成一个可以用该文本回答的问题。\n\n"
+        "请返回 JSON 格式，包含以下字段：\n"
+        '- "question": 问题内容（中文，具体明确，答案可直接从文本中找到）\n'
+        '- "question_type": 问题类型，可选值 "factual"（事实型）/"reasoning"（推理型）/"multi_hop"（多跳型）\n'
+        '- "difficulty": 难度，可选值 "easy"/"medium"/"hard"\n\n'
         "规则：\n"
-        "1. 问题应该具体、明确，答案可以直接从文本中找到\n"
-        "2. 只返回问题本身，不要添加任何其他内容\n"
-        "3. 问题应该用中文\n\n"
+        "1. 只返回 JSON，不要添加任何其他内容\n"
+        "2. 问题应该用中文\n\n"
         f"文本内容：\n{content[:1500]}\n\n"
-        "问题："
+        "JSON："
     )
 
 
@@ -37,10 +53,59 @@ def sanitize_question(q: str) -> str | None:
     question = (q or "").strip()
     for prefix in _QUESTION_PREFIXES:
         if question.startswith(prefix):
-            question = question[len(prefix):].strip()
+            question = question[len(prefix) :].strip()
     if len(question) < 5:
         return None
     return question
+
+
+def parse_question_response(response: str) -> dict | None:
+    """解析 LLM 返回的 JSON，提取 question/question_type/difficulty。
+
+    Task 1.5: 配合 build_question_prompt 的 JSON 输出格式。
+
+    JSON 解析失败时 fallback 到 question_type="factual", difficulty="medium"。
+    返回 dict: {"question": str, "question_type": str, "difficulty": str}，
+    问题为空或过短返回 None。
+    """
+    if not response or not response.strip():
+        return None
+
+    text = response.strip()
+    # 去除可能的 markdown 代码块包裹
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        data = json.loads(text)
+        question = sanitize_question(data.get("question") or "")
+        if question is None:
+            return None
+
+        question_type = data.get("question_type", "factual")
+        difficulty = data.get("difficulty", "medium")
+        # 校验枚举值，非法值 fallback
+        if question_type not in ("factual", "reasoning", "multi_hop"):
+            question_type = "factual"
+        if difficulty not in ("easy", "medium", "hard"):
+            difficulty = "medium"
+
+        return {
+            "question": question,
+            "question_type": question_type,
+            "difficulty": difficulty,
+        }
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # JSON 解析失败：尝试用旧方式提取问题，fallback 标签
+        question = sanitize_question(response)
+        if question is None:
+            return None
+        return {
+            "question": question,
+            "question_type": "factual",
+            "difficulty": "medium",
+        }
 
 
 async def _eval_single_question(
@@ -140,10 +205,12 @@ async def run_evaluation(
         if r["success"]:
             successful_metrics.append(metrics)
 
-        logger.info(f"Evaluated question {idx + 1}/{len(dataset)}: "
-                    f"success={r['success']}, "
-                    f"faithfulness={metrics.get('faithfulness')}, "
-                    f"answer_relevancy={metrics.get('answer_relevancy')}")
+        logger.info(
+            f"Evaluated question {idx + 1}/{len(dataset)}: "
+            f"success={r['success']}, "
+            f"faithfulness={metrics.get('faithfulness')}, "
+            f"answer_relevancy={metrics.get('answer_relevancy')}"
+        )
 
         # 增量提交: 每 EVAL_INCREMENTAL_COMMIT_BATCH 个问题提交一次, 避免全部结果丢失
         if (idx + 1) % settings.EVAL_INCREMENTAL_COMMIT_BATCH == 0:
@@ -179,96 +246,57 @@ async def _compute_ragas_metrics(
 ) -> dict[str, float | None]:
     """Compute RAGAS metrics for a single question-answer pair.
 
-    Uses the ragas library if available, otherwise falls back to
-    heuristic-based scoring.
+    Requires the ragas library to be installed; ImportError propagates.
     """
-    try:
-        from datasets import Dataset
-        from ragas import evaluate
-        from ragas.metrics import (
-            answer_relevancy,
-            context_precision,
-            context_recall,
-            faithfulness,
-        )
+    from datasets import Dataset
 
-        # Build a single-row dataset
-        ds = Dataset.from_dict({
+    # Build a single-row dataset
+    ds = Dataset.from_dict(
+        {
             "question": [question],
             "answer": [answer],
             "contexts": [contexts],
             "ground_truth": [ground_truth],
-        })
+        }
+    )
 
-        result = evaluate(
-            ds,
-            metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
-        )
+    result = evaluate(
+        ds,
+        metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
+    )
 
-        metrics = {}
-        for key in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
-            val = result.get(key)
-            if val is not None:
-                try:
-                    metrics[key] = float(val[0]) if hasattr(val, '__getitem__') else float(val)
-                except (TypeError, ValueError, IndexError):
-                    metrics[key] = None
+    metrics = {}
+    for key in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
+        val = result.get(key)
+        if val is not None:
+            try:
+                metrics[key] = float(val[0]) if hasattr(val, "__getitem__") else float(val)
+            except (TypeError, ValueError, IndexError):
+                metrics[key] = None
 
-        return metrics
-
-    except ImportError:
-        logger.warning("ragas library not available, using heuristic fallback")
-        return _heuristic_metrics(question, answer, contexts, ground_truth)
-    except Exception as e:
-        logger.warning(f"RAGAS evaluation failed: {e}, using heuristic fallback")
-        return _heuristic_metrics(question, answer, contexts, ground_truth)
+    return metrics
 
 
-def _heuristic_metrics(
-    question: str,
-    answer: str,
-    contexts: list[str],
-    ground_truth: str,
-) -> dict[str, float | None]:
-    """Heuristic-based metric computation when RAGAS is unavailable.
+def _percentile(values: list[float], p: float) -> float:
+    """计算百分位数（纯 Python 实现，不依赖 numpy）。
 
-    These are approximate scores based on simple text overlap heuristics.
+    使用线性插值法：排序后取 k = (n-1) * p/100 的位置，
+    在相邻两个值之间做线性插值。
     """
-    import re
-
-    def _word_overlap(a: str, b: str) -> float:
-        if not a or not b:
-            return 0.0
-        words_a = set(re.findall(r'\w+', a.lower()))
-        words_b = set(re.findall(r'\w+', b.lower()))
-        if not words_b:
-            return 0.0
-        return len(words_a & words_b) / len(words_b)
-
-    combined_contexts = " ".join(contexts) if contexts else ""
-
-    # Faithfulness: how much of the answer is supported by contexts
-    faith = _word_overlap(answer, combined_contexts) if combined_contexts else None
-
-    # Answer relevancy: how relevant is the answer to the question
-    rel = _word_overlap(answer, question) if question else None
-
-    # Context precision: how much of the retrieved contexts is relevant
-    cp = _word_overlap(combined_contexts, ground_truth) if combined_contexts and ground_truth else None
-
-    # Context recall: how much of ground_truth is covered by contexts
-    cr = _word_overlap(ground_truth, combined_contexts) if combined_contexts and ground_truth else None
-
-    return {
-        "faithfulness": round(faith, 4) if faith is not None else None,
-        "answer_relevancy": round(rel, 4) if rel is not None else None,
-        "context_precision": round(cp, 4) if cp is not None else None,
-        "context_recall": round(cr, 4) if cr is not None else None,
-    }
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    k = (len(sorted_vals) - 1) * p / 100
+    f = int(k)
+    c = f + 1 if f + 1 < len(sorted_vals) else f
+    return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
 
 
-def aggregate_metrics(results: list[dict]) -> dict[str, float]:
-    """Aggregate individual metrics into averages.
+def aggregate_metrics(results: list[dict]) -> dict[str, dict[str, float]]:
+    """Aggregate individual metrics into distribution statistics.
+
+    返回每个指标的分布统计：mean / p50 / p95 / min / max / std。
+    空列表返回全 0 的分布字典。
 
     Shared by both the async :func:`run_evaluation` pipeline and the
     synchronous Celery task :mod:`app.tasks.evaluation_task`.
@@ -277,10 +305,26 @@ def aggregate_metrics(results: list[dict]) -> dict[str, float]:
     aggregated = {}
 
     for key in keys:
-        values = [r.get(key) for r in results if r.get(key) is not None]
+        # mypy: r.get(key) 推断为 Any | None，列表推导式不会因 if 条件收窄类型，
+        # 用 cast 显式声明为 list[float]（运行时已过滤 None）。
+        values: list[float] = [r.get(key) for r in results if r.get(key) is not None]  # type: ignore[assignment]
         if values:
-            aggregated[key] = round(sum(values) / len(values), 4)
+            aggregated[key] = {
+                "mean": round(statistics.mean(values), 4),
+                "p50": round(statistics.median(values), 4),
+                "p95": round(_percentile(values, 95), 4),
+                "min": round(min(values), 4),
+                "max": round(max(values), 4),
+                "std": round(statistics.stdev(values), 4) if len(values) > 1 else 0.0,
+            }
         else:
-            aggregated[key] = 0.0
+            aggregated[key] = {
+                "mean": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "std": 0.0,
+            }
 
     return aggregated

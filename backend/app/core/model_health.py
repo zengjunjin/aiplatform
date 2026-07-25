@@ -1,6 +1,7 @@
 """Provider 健康检查器 - 定时检查所有注册 Provider 的健康状态"""
 
 import asyncio
+import contextlib
 
 from loguru import logger
 
@@ -42,10 +43,8 @@ class ModelHealthChecker:
         self._running = False
         if self._task and not self._task.done():
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("ModelHealthChecker stopped")
 
     async def _run_loop(self):
@@ -76,7 +75,7 @@ class ModelHealthChecker:
                     provider.health_check(), timeout=self.CHECK_TIMEOUT
                 )
                 return name, bool(healthy), None
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return name, False, f"timeout after {self.CHECK_TIMEOUT}s"
             except Exception as e:
                 return name, False, str(e)
@@ -107,8 +106,7 @@ class ModelHealthChecker:
                 failures = self._failure_counts[name]
                 logger.warning(
                     f"Provider '{name}' health check failed "
-                    f"({failures}/{self.MAX_FAILURES})"
-                    + (f": {error}" if error else "")
+                    f"({failures}/{self.MAX_FAILURES})" + (f": {error}" if error else "")
                 )
                 if failures >= self.MAX_FAILURES:
                     provider._healthy = False

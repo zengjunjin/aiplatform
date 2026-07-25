@@ -99,7 +99,9 @@ async def create_feedback(
         is_create = False  # 重试为更新，审计日志记 update
         await db.commit()
     await db.refresh(feedback)
-    logger.info(f"Feedback created/updated: message_id={message_id} user={user_id} rating={req.rating}")
+    logger.info(
+        f"Feedback created/updated: message_id={message_id} user={user_id} rating={req.rating}"
+    )
 
     # 记录审计日志：区分新增与更新
     audit_action = "chat.feedback.create" if is_create else "chat.feedback.update"
@@ -144,12 +146,8 @@ async def get_feedback_stats(
     # 使用 FILTER (WHERE ...) 聚合 positive/negative 及各 feedback_type 计数。
     stats_q = select(
         func.count(MessageFeedback.id).label("total"),
-        func.count(MessageFeedback.id).filter(
-            MessageFeedback.rating == 1
-        ).label("positive"),
-        func.count(MessageFeedback.id).filter(
-            MessageFeedback.rating == -1
-        ).label("negative"),
+        func.count(MessageFeedback.id).filter(MessageFeedback.rating == 1).label("positive"),
+        func.count(MessageFeedback.id).filter(MessageFeedback.rating == -1).label("negative"),
         *[
             func.count(MessageFeedback.id)
             .filter(MessageFeedback.feedback_type == ft)
@@ -159,8 +157,7 @@ async def get_feedback_stats(
     )
     if kb_id is not None:
         stats_q = (
-            stats_q
-            .join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
+            stats_q.join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)
             .where(ChatSession.kb_id == kb_id)
         )
@@ -180,9 +177,7 @@ async def get_feedback_stats(
 
     # 从单 SQL 结果中提取 by_type（跳过计数为 0 的类型，与原 GROUP BY 行为一致）
     by_type = {
-        ft: count
-        for ft in FEEDBACK_TYPES
-        if (count := getattr(stats_row, f"type_{ft}") or 0)
+        ft: count for ft in FEEDBACK_TYPES if (count := getattr(stats_row, f"type_{ft}") or 0)
     }
 
     return FeedbackStats(
@@ -204,16 +199,12 @@ async def _batch_load_message_contexts(
         return {}, {}, {}
 
     # Batch fetch messages
-    msg_result = await db.execute(
-        select(ChatMessage).where(ChatMessage.id.in_(message_ids))
-    )
+    msg_result = await db.execute(select(ChatMessage).where(ChatMessage.id.in_(message_ids)))
     messages_map = {m.id: m for m in msg_result.scalars().all()}
 
     # Batch fetch sessions
     session_ids = list({m.session_id for m in messages_map.values()})
-    session_result = await db.execute(
-        select(ChatSession).where(ChatSession.id.in_(session_ids))
-    )
+    session_result = await db.execute(select(ChatSession).where(ChatSession.id.in_(session_ids)))
     sessions_map = {s.id: s for s in session_result.scalars().all()}
 
     # Batch fetch previous user message for each assistant message
@@ -276,10 +267,7 @@ async def get_low_rated_feedbacks(
 ) -> tuple[list[FeedbackDetail], int]:
     """获取低分反馈列表（用于分析）"""
     # 查询负反馈
-    query = (
-        select(MessageFeedback)
-        .where(MessageFeedback.rating == -1)
-    )
+    query = select(MessageFeedback).where(MessageFeedback.rating == -1)
 
     if start_date:
         query = query.where(MessageFeedback.created_at >= start_date)
@@ -291,8 +279,7 @@ async def get_low_rated_feedbacks(
     # 按知识库过滤
     if kb_id is not None:
         query = (
-            query
-            .join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
+            query.join(ChatMessage, MessageFeedback.message_id == ChatMessage.id)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)
             .where(ChatSession.kb_id == kb_id)
         )
@@ -312,11 +299,14 @@ async def get_low_rated_feedbacks(
 
     # Batch load contexts + build details
     message_ids = [fb.message_id for fb in feedbacks]
-    messages_map, sessions_map, user_msgs_by_session = await _batch_load_message_contexts(message_ids, db)
+    messages_map, sessions_map, user_msgs_by_session = await _batch_load_message_contexts(
+        message_ids, db
+    )
 
     details = [
         _build_feedback_detail(
-            fb, messages_map[fb.message_id],
+            fb,
+            messages_map[fb.message_id],
             sessions_map.get(messages_map[fb.message_id].session_id),
             user_msgs_by_session.get(messages_map[fb.message_id].session_id, []),
         )
@@ -352,11 +342,11 @@ async def analyze_feedback(
     # 识别失败模式
     patterns = {
         "context_insufficient": 0,  # 上下文覆盖不足
-        "retrieval_bias": 0,        # 检索偏差
-        "faithfulness_issue": 0,    # 忠实度问题（幻觉）
-        "incompleteness": 0,        # 完整性不足
-        "irrelevance": 0,           # 不相关
-        "verbosity": 0,             # 冗长/简短
+        "retrieval_bias": 0,  # 检索偏差
+        "faithfulness_issue": 0,  # 忠实度问题（幻觉）
+        "incompleteness": 0,  # 完整性不足
+        "irrelevance": 0,  # 不相关
+        "verbosity": 0,  # 冗长/简短
     }
 
     # Task 37: 用 Counter 替代 if/elif 计数，更简洁且与 FEEDBACK_TYPES 保持一致。
@@ -368,25 +358,17 @@ async def analyze_feedback(
     # 生成优化建议
     suggestions = []
     if patterns["faithfulness_issue"] > 0:
-        suggestions.append(
-            "幻觉问题: 建议在 Prompt 中强调「仅基于提供的上下文回答，不要编造信息」"
-        )
+        suggestions.append("幻觉问题: 建议在 Prompt 中强调「仅基于提供的上下文回答，不要编造信息」")
     if patterns["context_insufficient"] > 0:
         suggestions.append(
             "准确性问题: 建议增加检索结果数量或调整 chunk 大小，确保相关上下文被充分检索"
         )
     if patterns["incompleteness"] > 0:
-        suggestions.append(
-            "完整性问题: 建议在 Prompt 中要求「请全面覆盖上下文中的所有关键信息」"
-        )
+        suggestions.append("完整性问题: 建议在 Prompt 中要求「请全面覆盖上下文中的所有关键信息」")
     if patterns["irrelevance"] > 0:
-        suggestions.append(
-            "相关性问题: 建议优化 reranker 阈值或调整检索策略"
-        )
+        suggestions.append("相关性问题: 建议优化 reranker 阈值或调整检索策略")
     if patterns["verbosity"] > 0:
-        suggestions.append(
-            "回答长度问题: 建议在 Prompt 中明确指定的回答长度要求"
-        )
+        suggestions.append("回答长度问题: 建议在 Prompt 中明确指定的回答长度要求")
 
     return {
         "period": {

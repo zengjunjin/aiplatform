@@ -15,14 +15,21 @@
 精简原则：KB 详情页流程连续完成，不回头刷新。KB id / doc id 通过
 module 级共享 dict 在用例间传递。上传文档用 API（CDP 无法模拟文件选择）。
 """
+
 import io
 import os
 import time
 import uuid
+
 import pytest
 import requests
 
-from tests.e2e.helpers.cdp_auth import make_cdp_client, login_cdp_session
+from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -47,7 +54,7 @@ def test_create_kb_via_ui(logged_in_cdp):
     _state["kb_name"] = kb_name
     # 确保在 KB 列表页
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_url_change(cdp, "#/knowledge-bases", timeout=10)
     # 点击"新建知识库"按钮（优先按文本查找，fallback ant-btn-primary）
     cdp.evaluate("""
         (function() {
@@ -57,7 +64,7 @@ def test_create_kb_via_ui(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     assert modal_open, "Create KB modal did not open"
     # 填写 KB 名称
@@ -72,6 +79,7 @@ def test_create_kb_via_ui(logged_in_cdp):
             input.dispatchEvent(new Event('input', {{bubbles: true}}));
         }})();
     """)
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     # 点击确定
     cdp.evaluate("""
@@ -81,17 +89,15 @@ def test_create_kb_via_ui(logged_in_cdp):
         })();
     """)
     # 等待 KB 创建并出现在列表
-    deadline = time.time() + 10
-    found = False
-    while time.time() < deadline:
-        found = cdp.evaluate(f"""
+    wait_for(
+        lambda: cdp.evaluate(f"""
             Array.from(document.querySelectorAll('*'))
                 .some(el => el.textContent.includes({repr(kb_name)}))
-        """)
-        if found:
-            break
-        time.sleep(1)
-    assert found, f"KB '{kb_name}' not found in list after creation"
+        """),
+        timeout=10,
+        interval=1,
+        message=f"KB '{kb_name}' not found in list after creation",
+    )
 
 
 def test_enter_kb_detail(logged_in_cdp, base_url, admin_headers):
@@ -100,8 +106,10 @@ def test_enter_kb_detail(logged_in_cdp, base_url, admin_headers):
     kb_name = _state["kb_name"]
     # 通过 API 获取 KB id（比 UI 解析更可靠）
     r = requests.get(
-        f"{base_url}/knowledge-bases", params={"page": 1, "page_size": 50},
-        headers=admin_headers, timeout=10,
+        f"{base_url}/knowledge-bases",
+        params={"page": 1, "page_size": 50},
+        headers=admin_headers,
+        timeout=10,
     )
     items = r.json().get("data", {}).get("items", [])
     kb = next((k for k in items if k["name"] == kb_name), None)
@@ -116,12 +124,12 @@ def test_enter_kb_detail(logged_in_cdp, base_url, admin_headers):
             if (target) target.click();
         }})();
     """)
-    time.sleep(2.5)
+    wait_for_url_change(cdp, f"#/knowledge-bases/{kb['id']}", timeout=10)
     # 验证 URL 跳转
     hash_val = cdp.evaluate("window.location.hash")
-    assert hash_val and f"#/knowledge-bases/{kb['id']}" in hash_val, (
-        f"Did not navigate to KB detail, hash={hash_val}, expected kb_id={kb['id']}"
-    )
+    assert (
+        hash_val and f"#/knowledge-bases/{kb['id']}" in hash_val
+    ), f"Did not navigate to KB detail, hash={hash_val}, expected kb_id={kb['id']}"
     # 验证文档列表渲染（表格或空状态）
     rendered = cdp.evaluate("""
         !!document.querySelector('.ant-table') ||
@@ -142,7 +150,7 @@ def test_upload_document(logged_in_cdp, base_url, admin_headers):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证 Modal 打开 + Upload.Dragger 存在
     dragger = cdp.evaluate("!!document.querySelector('.ant-modal .ant-upload-drag')")
     assert dragger, "Upload Modal / Dragger not found"
@@ -153,14 +161,21 @@ def test_upload_document(logged_in_cdp, base_url, admin_headers):
             if (close) close.click();
         })();
     """)
-    time.sleep(1)
+    wait_for(
+        lambda: not cdp.evaluate("!!document.querySelector('.ant-modal-content')"),
+        timeout=5,
+        message="Upload modal did not close",
+    )
     # 用 API 上传文档（生成内存文件，避免依赖外部 test_doc.txt）
     doc_content = ("这是 CDP 生命周期测试文档内容。\n" * 10).encode("utf-8")
     files = {"file": ("test_doc.txt", io.BytesIO(doc_content), "text/plain")}
     data = {"kb_id": str(kb_id)}
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data=data, headers=admin_headers, timeout=60,
+        files=files,
+        data=data,
+        headers=admin_headers,
+        timeout=60,
     )
     assert r.status_code == 200, f"Upload doc failed: {r.text}"
     doc_id = r.json().get("data", {}).get("document_id")
@@ -169,23 +184,28 @@ def test_upload_document(logged_in_cdp, base_url, admin_headers):
     # 用 API 确认文档存在（避免 UI 渲染时序问题导致误判）
     r_check = requests.get(
         f"{base_url}/documents/{doc_id}",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r_check.status_code == 200, (
-        f"Uploaded document {doc_id} not found via API: {r_check.status_code}"
-    )
+    assert (
+        r_check.status_code == 200
+    ), f"Uploaded document {doc_id} not found via API: {r_check.status_code}"
     # 刷新页面验证文档出现在表格中（轮询等待表格渲染）
     cdp.navigate(TAURI_HOME + f"#/knowledge-bases/{kb_id}")
-    deadline = time.time() + 15
-    doc_in_table = False
-    while time.time() < deadline:
-        time.sleep(1)
-        doc_in_table = cdp.evaluate("""
-            Array.from(document.querySelectorAll('.ant-table td'))
-                .some(td => td.textContent.includes('test_doc.txt'))
-        """)
-        if doc_in_table:
-            break
+    wait_for_url_change(cdp, f"#/knowledge-bases/{kb_id}", timeout=10)
+    try:
+        wait_for(
+            lambda: cdp.evaluate("""
+                Array.from(document.querySelectorAll('.ant-table td'))
+                    .some(td => td.textContent.includes('test_doc.txt'))
+            """),
+            timeout=15,
+            interval=1,
+            message="Document not in UI table after refresh",
+        )
+        doc_in_table = True
+    except TimeoutError:
+        doc_in_table = False
     if not doc_in_table:
         # 诊断：打印表格实际内容 + 当前 URL + 是否有 ant-table
         diag = cdp.evaluate("""
@@ -206,19 +226,22 @@ def test_upload_document(logged_in_cdp, base_url, admin_headers):
         # API 已确认文档存在，UI 渲染时序问题可接受（不阻塞后续测试）
         # 但仍记录失败：通过 pytest.skip 而非 fail，避免阻塞 test_wait_parse_done
         import warnings
+
         warnings.warn(
-            f"Document not in UI table after refresh (API verified). Diag: {diag}"
+            f"Document not in UI table after refresh (API verified). Diag: {diag}",
+            stacklevel=2,
         )
 
 
 def test_wait_parse_done(logged_in_cdp, base_url, admin_headers):
     """等待解析完成：轮询文档状态，最多 60s，验证变为 done。Qdrant 未运行时 skip"""
     import socket
+
     # 检查 Qdrant 是否运行（6333 端口），未运行则 skip（文档解析依赖 Qdrant 向量存储）
     try:
         sock = socket.create_connection(("localhost", 6333), timeout=2)
         sock.close()
-    except (socket.error, ConnectionRefusedError):
+    except (OSError, ConnectionRefusedError):
         pytest.skip("Qdrant not running (port 6333), document parse cannot complete")
     cdp = logged_in_cdp
     doc_id = _state["doc_id"]
@@ -228,7 +251,8 @@ def test_wait_parse_done(logged_in_cdp, base_url, admin_headers):
     while time.time() < deadline:
         r = requests.get(
             f"{base_url}/documents/{doc_id}",
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         if r.status_code == 200:
             doc = r.json().get("data", {})
@@ -236,17 +260,14 @@ def test_wait_parse_done(logged_in_cdp, base_url, admin_headers):
             if final_status == "done":
                 break
             if final_status == "failed":
-                pytest.fail(
-                    f"Document parse failed: {doc.get('error_message')}"
-                )
+                pytest.fail(f"Document parse failed: {doc.get('error_message')}")
+        # 必要固定等待：API 轮询间隔
         time.sleep(2)
-    assert final_status == "done", (
-        f"Document not done within 60s, last status={final_status}"
-    )
+    assert final_status == "done", f"Document not done within 60s, last status={final_status}"
     # 刷新页面让 UI 反映最新状态
     kb_id = _state["kb_id"]
     cdp.navigate(TAURI_HOME + f"#/knowledge-bases/{kb_id}")
-    time.sleep(2)
+    wait_for_url_change(cdp, f"#/knowledge-bases/{kb_id}", timeout=10)
 
 
 def test_preview_document(logged_in_cdp):
@@ -260,7 +281,7 @@ def test_preview_document(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证 Modal 打开
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     assert modal_open, "Preview modal did not open"
@@ -280,7 +301,11 @@ def test_preview_document(logged_in_cdp):
             if (close) close.click();
         })();
     """)
-    time.sleep(1)
+    wait_for(
+        lambda: not cdp.evaluate("!!document.querySelector('.ant-modal-content')"),
+        timeout=5,
+        message="Preview modal did not close",
+    )
 
 
 def test_edit_kb_info(logged_in_cdp):
@@ -296,7 +321,7 @@ def test_edit_kb_info(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     assert modal_open, "Edit KB modal did not open"
     # 修改名称（先清空再填入新名称）
@@ -313,6 +338,7 @@ def test_edit_kb_info(logged_in_cdp):
             input.dispatchEvent(new Event('input', {{bubbles: true}}));
         }})();
     """)
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     # 点击保存（okText="保存"）
     cdp.evaluate("""
@@ -321,13 +347,15 @@ def test_edit_kb_info(logged_in_cdp):
             if (ok) ok.click();
         })();
     """)
-    time.sleep(2)
     # 验证标题/面包屑更新
-    found = cdp.evaluate(f"""
-        Array.from(document.querySelectorAll('*'))
-            .some(el => el.textContent.includes({repr(new_name)}))
-    """)
-    assert found, f"Edited KB name '{new_name}' not found in page after save"
+    wait_for(
+        lambda: cdp.evaluate(f"""
+            Array.from(document.querySelectorAll('*'))
+                .some(el => el.textContent.includes({repr(new_name)}))
+        """),
+        timeout=10,
+        message=f"Edited KB name '{new_name}' not found in page after save",
+    )
 
 
 def test_delete_document(logged_in_cdp):
@@ -344,7 +372,7 @@ def test_delete_document(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-popconfirm, .ant-popover", timeout=5)
     # 确认 Popconfirm
     cdp.evaluate("""
         (function() {
@@ -354,13 +382,15 @@ def test_delete_document(logged_in_cdp):
             if (ok) ok.click();
         })();
     """)
-    time.sleep(2)
     # 验证文档已从列表移除
-    doc_exists = cdp.evaluate("""
-        Array.from(document.querySelectorAll('.ant-table td'))
-            .some(td => td.textContent.includes('test_doc.txt'))
-    """)
-    assert not doc_exists, "Document still in table after deletion"
+    wait_for(
+        lambda: not cdp.evaluate("""
+            Array.from(document.querySelectorAll('.ant-table td'))
+                .some(td => td.textContent.includes('test_doc.txt'))
+        """),
+        timeout=10,
+        message="Document still in table after deletion",
+    )
 
 
 def test_delete_kb(logged_in_cdp):
@@ -369,7 +399,7 @@ def test_delete_kb(logged_in_cdp):
     kb_name = _state["kb_name"]
     # 返回 KB 列表
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_url_change(cdp, "#/knowledge-bases", timeout=10)
     # 在 KB 卡片/列表项内查找删除按钮并点击
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -387,7 +417,7 @@ def test_delete_kb(logged_in_cdp):
     """)
     if not clicked:
         pytest.skip(f"Delete button not found for KB '{kb_name}'")
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-popconfirm, .ant-popover", timeout=5)
     # 确认 Popconfirm
     cdp.evaluate("""
         (function() {
@@ -397,10 +427,12 @@ def test_delete_kb(logged_in_cdp):
             if (ok) ok.click();
         })();
     """)
-    time.sleep(2)
     # 验证 KB 已从列表移除
-    found = cdp.evaluate(f"""
-        Array.from(document.querySelectorAll('*'))
-            .some(el => el.textContent.includes({repr(kb_name)}))
-    """)
-    assert not found, f"KB '{kb_name}' still in list after deletion"
+    wait_for(
+        lambda: not cdp.evaluate(f"""
+            Array.from(document.querySelectorAll('*'))
+                .some(el => el.textContent.includes({repr(kb_name)}))
+        """),
+        timeout=10,
+        message=f"KB '{kb_name}' still in list after deletion",
+    )

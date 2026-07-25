@@ -1,6 +1,9 @@
 """Tests for app.tasks.metrics_collector"""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.tasks import metrics_collector
 
 
@@ -12,9 +15,7 @@ class TestUpdateBusinessMetrics:
         fake_db = AsyncMock()
         # Task 35: 合并后 db.execute 第一次返回 counts 行，第二次返回 KB 分组
         counts_result = MagicMock()
-        counts_result.one.return_value = MagicMock(
-            user_count=5, doc_count=10, session_count=3
-        )
+        counts_result.one.return_value = MagicMock(user_count=5, doc_count=10, session_count=3)
         # db.execute 返回按 KB 分组的文档数：KB#1=4, KB#2=6
         kb_result = MagicMock()
         kb_result.all.return_value = [(1, 4), (2, 6)]
@@ -26,10 +27,12 @@ class TestUpdateBusinessMetrics:
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session
 
-            with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
-                 patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS") as mock_docs, \
-                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS") as mock_sessions, \
-                 patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT") as mock_doc_count:
+            with (
+                patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users,
+                patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS") as mock_docs,
+                patch("app.tasks.metrics_collector.ACTIVE_SESSIONS") as mock_sessions,
+                patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT") as mock_doc_count,
+            ):
                 await metrics_collector.update_business_metrics()
 
         mock_users.set.assert_called_once_with(5)
@@ -61,10 +64,12 @@ class TestUpdateBusinessMetrics:
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session
 
-            with patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users, \
-                 patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"), \
-                 patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"), \
-                 patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT"):
+            with (
+                patch("app.tasks.metrics_collector.TOTAL_USERS") as mock_users,
+                patch("app.tasks.metrics_collector.TOTAL_DOCUMENTS"),
+                patch("app.tasks.metrics_collector.ACTIVE_SESSIONS"),
+                patch("app.tasks.metrics_collector.RAG_DOCUMENT_COUNT"),
+            ):
                 await metrics_collector.update_business_metrics()
         mock_users.set.assert_called_once_with(0)
 
@@ -93,9 +98,11 @@ class TestUpdateDbPoolMetrics:
 
         with patch("app.tasks.metrics_collector.engine") as mock_engine:
             mock_engine.pool = fake_pool
-            with patch("app.tasks.metrics_collector.DB_POOL_SIZE") as mock_size, \
-                 patch("app.tasks.metrics_collector.DB_POOL_IDLE") as mock_idle, \
-                 patch("app.tasks.metrics_collector.DB_POOL_IN_USE") as mock_inuse:
+            with (
+                patch("app.tasks.metrics_collector.DB_POOL_SIZE") as mock_size,
+                patch("app.tasks.metrics_collector.DB_POOL_IDLE") as mock_idle,
+                patch("app.tasks.metrics_collector.DB_POOL_IN_USE") as mock_inuse,
+            ):
                 metrics_collector.update_db_pool_metrics()
 
         mock_size.set.assert_called_once_with(10)
@@ -132,9 +139,13 @@ class TestMetricsCollectorLoop:
             if sleep_calls[0] >= 1:
                 raise KeyboardInterrupt()  # 跳出 while True
 
-        with patch.object(metrics_collector, "update_business_metrics", side_effect=fake_update_business), \
-             patch.object(metrics_collector, "update_db_pool_metrics", side_effect=fake_update_pool), \
-             patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep):
+        with (
+            patch.object(
+                metrics_collector, "update_business_metrics", side_effect=fake_update_business
+            ),
+            patch.object(metrics_collector, "update_db_pool_metrics", side_effect=fake_update_pool),
+            patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep),
+        ):
             with pytest.raises(KeyboardInterrupt):
                 await metrics_collector.metrics_collector_loop(interval=60)
 
@@ -158,10 +169,14 @@ class TestMetricsCollectorLoop:
             if sleep_count[0] >= 1:
                 raise KeyboardInterrupt()
 
-        with patch.object(metrics_collector, "update_business_metrics", side_effect=fake_update_business), \
-             patch.object(metrics_collector, "update_db_pool_metrics"), \
-             patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep), \
-             patch("app.tasks.metrics_collector.logger"):
+        with (
+            patch.object(
+                metrics_collector, "update_business_metrics", side_effect=fake_update_business
+            ),
+            patch.object(metrics_collector, "update_db_pool_metrics"),
+            patch("app.tasks.metrics_collector.asyncio.sleep", side_effect=fake_sleep),
+            patch("app.tasks.metrics_collector.logger"),
+        ):
             with pytest.raises(KeyboardInterrupt):
                 await metrics_collector.metrics_collector_loop(interval=60)
         # 第一次抛异常但 loop 继续，sleep 后才退出

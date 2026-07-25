@@ -9,22 +9,23 @@ server_default=now()), 便于按时间排序与审计。
 
 使用 server_default 让现有行自动填充当前时间, 满足 NOT NULL 约束。
 """
-from alembic import op
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '023_evaluation_result_created_at'
-down_revision = '022_eval_created_by_cascade'
+revision = "023_evaluation_result_created_at"
+down_revision = "022_eval_created_by_cascade"
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     op.add_column(
-        'evaluation_results',
+        "evaluation_results",
         sa.Column(
-            'created_at',
+            "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -33,4 +34,4 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_column('evaluation_results', 'created_at')
+    op.drop_column("evaluation_results", "created_at")

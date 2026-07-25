@@ -15,6 +15,8 @@
 API 权限验证用 verify_api_call。AdminRoute 重定向验证: 导航后检查
 window.location.hash 是否为 /#/dashboard。
 """
+
+import contextlib
 import time
 import uuid
 
@@ -22,9 +24,9 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
+    login_cdp_session,
+    make_cdp_client,
     verify_api_call,
 )
 from tests.e2e.helpers.waiters import wait_for_element
@@ -64,21 +66,25 @@ def user_a_kb(base_url, cdp_user_a):
     """用户 A 创建的 KB，用于隔离测试。"""
     token = cdp_user_a["user"]["access_token"]
     kb_name = f"UserA_KB_{uuid.uuid4().hex[:8]}"
-    r = requests.post(f"{base_url}/knowledge-bases", json={
-        "name": kb_name,
-        "description": "用户 A 隔离测试 KB",
-    }, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+    r = requests.post(
+        f"{base_url}/knowledge-bases",
+        json={
+            "name": kb_name,
+            "description": "用户 A 隔离测试 KB",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
     assert r.status_code == 200, f"Create KB failed: {r.text}"
     kb = r.json().get("data", r.json())
     yield kb
     # 清理
-    try:
+    with contextlib.suppress(Exception):
         requests.delete(
             f"{base_url}/knowledge-bases/{kb['id']}",
-            headers={"Authorization": f"Bearer {token}"}, timeout=5,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
         )
-    except Exception:
-        pass
 
 
 def test_normal_user_no_admin_menu(cdp_user_a):
@@ -90,14 +96,18 @@ def test_normal_user_no_admin_menu(cdp_user_a):
     """
     cdp = cdp_user_a["client"]
     wait_for_element(cdp, ".ant-menu", timeout=15)
-    menu_text = cdp.evaluate(
-        "document.querySelector('.ant-menu') ? "
-        "document.querySelector('.ant-menu').textContent : ''"
-    ) or ""
+    menu_text = (
+        cdp.evaluate(
+            "document.querySelector('.ant-menu') ? "
+            "document.querySelector('.ant-menu').textContent : ''"
+        )
+        or ""
+    )
     admin_menus = ["用户管理", "反馈管理", "评估管理", "系统状态"]
     for item in admin_menus:
-        assert item not in menu_text, \
-            f"Admin menu '{item}' should not be visible for normal user: {menu_text}"
+        assert (
+            item not in menu_text
+        ), f"Admin menu '{item}' should not be visible for normal user: {menu_text}"
 
 
 def test_normal_user_access_users_redirected(cdp_user_a):
@@ -115,8 +125,9 @@ def test_normal_user_access_users_redirected(cdp_user_a):
             return
         time.sleep(0.5)
     hash_val = cdp.evaluate("window.location.hash") or ""
-    assert "dashboard" in hash_val, \
-        f"Normal user should be redirected from /#/users to /#/dashboard, hash={hash_val}"
+    assert (
+        "dashboard" in hash_val
+    ), f"Normal user should be redirected from /#/users to /#/dashboard, hash={hash_val}"
 
 
 def test_normal_user_access_users_api_403(cdp_user_a, base_url):
@@ -127,8 +138,10 @@ def test_normal_user_access_users_api_403(cdp_user_a, base_url):
     """
     token = cdp_user_a["user"]["access_token"]
     verify_api_call(
-        f"{base_url}/users", "GET",
-        token=token, expected_status=403,
+        f"{base_url}/users",
+        "GET",
+        token=token,
+        expected_status=403,
     )
 
 
@@ -143,13 +156,15 @@ def test_kb_isolation(cdp_user_a, cdp_user_b, user_a_kb, base_url):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 100},
-        headers={"Authorization": f"Bearer {token_b}"}, timeout=10,
+        headers={"Authorization": f"Bearer {token_b}"},
+        timeout=10,
     )
     assert r.status_code == 200, f"User B list KB failed: {r.text}"
     kb_list = r.json().get("data", r.json()).get("items", [])
     kb_ids = [k["id"] for k in kb_list]
-    assert user_a_kb["id"] not in kb_ids, \
-        f"User B should not see User A's KB {user_a_kb['id']}, but found in list: {kb_ids}"
+    assert (
+        user_a_kb["id"] not in kb_ids
+    ), f"User B should not see User A's KB {user_a_kb['id']}, but found in list: {kb_ids}"
 
 
 def test_kb_isolation_api(cdp_user_b, user_a_kb, base_url):
@@ -160,8 +175,10 @@ def test_kb_isolation_api(cdp_user_b, user_a_kb, base_url):
     """
     token = cdp_user_b["user"]["access_token"]
     verify_api_call(
-        f"{base_url}/knowledge-bases/{user_a_kb['id']}", "GET",
-        token=token, expected_status=403,
+        f"{base_url}/knowledge-bases/{user_a_kb['id']}",
+        "GET",
+        token=token,
+        expected_status=403,
     )
 
 
@@ -173,8 +190,10 @@ def test_normal_user_cannot_delete_others_kb(cdp_user_b, user_a_kb, base_url):
     """
     token = cdp_user_b["user"]["access_token"]
     verify_api_call(
-        f"{base_url}/knowledge-bases/{user_a_kb['id']}", "DELETE",
-        token=token, expected_status=403,
+        f"{base_url}/knowledge-bases/{user_a_kb['id']}",
+        "DELETE",
+        token=token,
+        expected_status=403,
     )
 
 
@@ -196,11 +215,14 @@ def test_system_admin_only(cdp_user_a, base_url):
         if "dashboard" in hash_val:
             break
         time.sleep(0.5)
-    assert "dashboard" in hash_val, \
-        f"Normal user should be redirected from /#/system to /#/dashboard, hash={hash_val}"
+    assert (
+        "dashboard" in hash_val
+    ), f"Normal user should be redirected from /#/system to /#/dashboard, hash={hash_val}"
     # API 权限验证
     token = cdp_user_a["user"]["access_token"]
     verify_api_call(
-        f"{base_url}/system/status", "GET",
-        token=token, expected_status=403,
+        f"{base_url}/system/status",
+        "GET",
+        token=token,
+        expected_status=403,
     )

@@ -82,13 +82,15 @@ async def _register_event_handlers():
 # 进程内消息频率计数（仅在 Redis 不可用时使用，不具备跨进程能力）
 # Task 50: 使用 OrderedDict 实现 LRU，避免长期运行后内存无限增长
 _inproc_rate_counters: OrderedDict[str, list[float]] = OrderedDict()
-# Task 40: LRU 上限迁移到 config.py，原位置引用 settings
-_INPROC_RATE_LRU_MAX = settings.WEBSOCKET_INPROC_RATE_LRU_MAX
 
 
 def _trim_inproc_counters() -> None:
-    """LRU 淘汰：超过上限时移除最久未访问的 user_id 计数。"""
-    while len(_inproc_rate_counters) > _INPROC_RATE_LRU_MAX:
+    """LRU 淘汰：超过上限时移除最久未访问的 user_id 计数。
+
+    Task 4.3: 运行时直接从 settings 读取 LRU 上限，配置变更无需重启即可在下一次请求时生效。
+    """
+    lru_max = settings.WEBSOCKET_INPROC_RATE_LRU_MAX
+    while len(_inproc_rate_counters) > lru_max:
         _inproc_rate_counters.popitem(last=False)
 
 
@@ -127,7 +129,7 @@ async def _heartbeat(websocket: WebSocket, state: dict) -> None:
                 pong_event.wait(), timeout=settings.WEBSOCKET_HEARTBEAT_PONG_TIMEOUT
             )
             got_pong = True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             got_pong = False
         if got_pong:
             missed = 0
@@ -253,22 +255,21 @@ async def websocket_endpoint(websocket: WebSocket):
     heartbeat_task = asyncio.create_task(_heartbeat(websocket, heartbeat_state))
     try:
         # 发送欢迎消息
-        await websocket.send_json({
-            "type": "connected",
-            "message": "WebSocket connected",
-            "user_id": user_id,
-        })
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "message": "WebSocket connected",
+                "user_id": user_id,
+            }
+        )
 
         # 循环接收消息（保持连接活跃，处理 ping/pong）
         while True:
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=recv_timeout
-                )
-            except asyncio.TimeoutError:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=recv_timeout)
+            except TimeoutError:
                 logger.warning(
-                    f"WebSocket ping timeout: user_id={user_id} "
-                    f"({recv_timeout}s no message)"
+                    f"WebSocket ping timeout: user_id={user_id} " f"({recv_timeout}s no message)"
                 )
                 try:
                     await websocket.close(code=4006, reason="Ping timeout")

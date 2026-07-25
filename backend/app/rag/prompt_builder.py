@@ -5,6 +5,7 @@ Task 10: Prompt 模板版本化管理
 - 启动时加载到内存缓存，支持热加载
 - DB 不可用时 fallback 到默认值，避免启动失败
 """
+
 import threading
 
 from loguru import logger
@@ -58,6 +59,7 @@ class _PromptCache:
         try:
             if db is None:
                 from app.database import async_session
+
                 async with async_session() as session:
                     await self._load_from_db(session)
             else:
@@ -72,22 +74,29 @@ class _PromptCache:
     async def _load_from_db(self, session) -> None:
         """从 DB 加载 active system_prompt 模板。"""
         result = await session.execute(
-            select(PromptTemplate).where(
+            select(PromptTemplate)
+            .where(
                 PromptTemplate.name == SYSTEM_PROMPT_NAME,
                 PromptTemplate.is_active.is_(True),
-            ).order_by(PromptTemplate.created_at.desc()).limit(1)
+            )
+            .order_by(PromptTemplate.created_at.desc())
+            .limit(1)
         )
         template = result.scalar_one_or_none()
         with self._lock:
             if template:
                 self._content = template.content
                 self._version = template.version
-                logger.info(f"Loaded prompt template '{SYSTEM_PROMPT_NAME}' version '{template.version}' from DB")
+                logger.info(
+                    f"Loaded prompt template '{SYSTEM_PROMPT_NAME}' version '{template.version}' from DB"
+                )
             else:
                 # DB 中无记录 → 使用默认值
                 self._content = DEFAULT_SYSTEM_PROMPT
                 self._version = DEFAULT_PROMPT_VERSION
-                logger.info(f"No active prompt template in DB, using default version '{DEFAULT_PROMPT_VERSION}'")
+                logger.info(
+                    f"No active prompt template in DB, using default version '{DEFAULT_PROMPT_VERSION}'"
+                )
             self._loaded = True
 
     def reload_sync(self, content: str, version: str) -> None:
@@ -125,7 +134,7 @@ async def load_prompt_templates(db=None) -> None:
 
 
 def build_rag_prompt(query: str, chunks: list[dict]) -> str:
-    '''构造带引用标记的 RAG prompt'''
+    """构造带引用标记的 RAG prompt"""
     parts = ["【文档片段】"]
     for i, chunk in enumerate(chunks, 1):
         filename = chunk.get("filename", "未知文档")
@@ -145,7 +154,7 @@ def build_context_messages(
     current_query: str,
     summary: str | None = None,
 ) -> list[dict]:
-    '''构造完整的 messages 列表'''
+    """构造完整的 messages 列表"""
     messages = [{"role": "system", "content": system_prompt}]
     if summary:
         messages.append({"role": "system", "content": f"【对话历史摘要】\n{summary}"})

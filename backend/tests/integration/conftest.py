@@ -7,15 +7,16 @@
 - 所有 async fixture 为 function-scoped, 确保在同一函数级事件循环中运行
 - 中间件使用纯 ASGI 实现（非 BaseHTTPMiddleware），避免 call_next 跨 loop 问题
 """
-import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from httpx import AsyncClient, ASGITransport
 
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+import app.database as db_mod
+import app.redis_client as redis_client_mod
 from app.config import settings
 from app.main import app
-import app.redis_client as redis_client_mod
-import app.database as db_mod
 
 # test_doc_management.py 和 test_all_api.py 是独立脚本（模块顶层调用 sys.exit
 # 或使用 urllib.request + main() 函数），不是 pytest 测试模块。
@@ -72,6 +73,7 @@ def _flush_redis_sync():
     使用独立的同步 Redis 连接, 不依赖 async test_redis。
     """
     import redis as redis_lib
+
     client = redis_lib.Redis(
         host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=15, decode_responses=True
     )
@@ -82,6 +84,7 @@ def _flush_redis_sync():
 def _reset_limiter():
     """重置 slowapi limiter 的 MemoryStorage 计数，避免测试间限流状态残留。"""
     from app.core.middleware import limiter
+
     limiter.reset()
 
 
@@ -95,6 +98,7 @@ async def _rebuild_async_engine():
     old_session = db_mod.async_session
 
     from sqlalchemy.pool import NullPool
+
     new_engine = create_async_engine(
         settings.database_url_async,
         echo=False,
@@ -121,9 +125,11 @@ async def _rebuild_async_engine():
 async def test_redis(_rebuild_async_engine):
     """每个测试函数创建独立的 async Redis client, 绑定到当前函数级事件循环。"""
     import redis as redis_lib
+
     test_redis_client = redis_lib.asyncio.from_url(
         f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/15",
-        encoding="utf-8", decode_responses=True,
+        encoding="utf-8",
+        decode_responses=True,
     )
     await test_redis_client.flushdb()
 

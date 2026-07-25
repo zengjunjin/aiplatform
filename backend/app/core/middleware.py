@@ -4,7 +4,7 @@ import re
 import sys
 import time
 import uuid
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -41,9 +41,7 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
 def _configure_stdlib_logging() -> None:
@@ -97,6 +95,7 @@ def _log_patcher(record: dict) -> None:
                 span_id = f"{ctx.span_id:016x}"
     except Exception:
         # opentelemetry 未安装或运行时异常时不影响日志输出
+        # 注意：此处不能用 logger.debug，否则会触发 _log_patcher 递归（logger.debug → patcher → logger.debug → ...）
         pass
     record["extra"]["trace_id"] = trace_id
     record["extra"]["span_id"] = span_id
@@ -120,9 +119,7 @@ def _redact_filter(record: dict) -> bool:
     其他字段保持不变。返回 True 表示日志继续输出。
     """
     if record.get("message"):
-        record["message"] = _SENSITIVE_PATTERNS.sub(
-            r'\1=***REDACTED***', record["message"]
-        )
+        record["message"] = _SENSITIVE_PATTERNS.sub(r"\1=***REDACTED***", record["message"])
     return True
 
 
@@ -144,13 +141,14 @@ def _rate_limit_key(request: Request) -> str:
         token = auth[7:].strip()
         try:
             from app.core.security import decode_token
+
             payload = decode_token(token)
             if payload:
                 sub = payload.get("sub") or payload.get("user_id")
                 if sub:
                     return f"user:{sub}"
-        except Exception:
-            pass  # 验证失败 fallback 到 IP
+        except Exception as e:
+            logger.debug(f"Token decode failed, fallback to IP: {e}")  # 验证失败 fallback 到 IP
     return get_remote_address(request)
 
 
@@ -163,12 +161,67 @@ limiter = Limiter(
 )
 
 
+def _calculate_retry_after(exc: RateLimitExceeded) -> int:
+    """从限流异常动态计算 Retry-After 秒数。
+
+    slowapi 的 RateLimitExceeded 异常本身不直接携带 reset_time / retry_after，
+    但其 limit 属性包含 RateLimitItem（如 RateLimitItemPerMinute），可通过
+    get_expiry() 获取限流窗口大小（秒）。据此计算当前窗口内剩余等待秒数
+    （固定窗口对齐到 epoch 边界: remaining = W - (now % W)）。
+
+    所有分支均失败时回退到默认 60 秒，保证 429 响应始终有效。
+    """
+    # 1. 兼容未来版本: 若异常直接携带 retry_after / reset_time
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after:
+        return max(1, int(retry_after))
+    reset_time = getattr(exc, "reset_time", None)
+    if reset_time is not None:
+        try:
+            from datetime import datetime
+
+            if isinstance(reset_time, datetime):
+                remaining = (reset_time - datetime.now()).total_seconds()
+            else:
+                # 假设为 epoch 时间戳（秒）
+                remaining = float(reset_time) - time.time()
+            return max(1, int(remaining))
+        except Exception as e:
+            # reset_time 解析失败时回退到窗口大小计算；记录原因便于排查
+            logger.debug(f"Retry-After reset_time parse failed: {e}")
+
+    # 2. 根据限流规则窗口大小计算剩余秒数
+    #    exc.limit -> Limit wrapper, exc.limit.limit -> RateLimitItem
+    #    RateLimitItem.get_expiry() 返回窗口大小（如 60/minute -> 60s）
+    try:
+        limit_wrapper = getattr(exc, "limit", None)
+        if limit_wrapper is not None:
+            rate_limit_item = getattr(limit_wrapper, "limit", None)
+            if rate_limit_item is not None:
+                window_seconds = rate_limit_item.get_expiry()
+                if window_seconds > 0:
+                    # 固定窗口对齐到 epoch 边界: remaining = W - (now % W)
+                    remaining = window_seconds - int(time.time()) % window_seconds
+                    return max(1, remaining)
+    except Exception as e:
+        logger.debug(f"Retry-After window calc failed: {e}")
+
+    # 3. 默认值
+    return 60
+
+
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     from app.core.errors import ErrorCode, get_error_message
+
+    retry_after = _calculate_retry_after(exc)
     return JSONResponse(
         status_code=429,
-        content={"code": ErrorCode.RATE_LIMITED, "message": get_error_message(ErrorCode.RATE_LIMITED), "data": None},
-        headers={"Retry-After": "60"},
+        content={
+            "code": ErrorCode.RATE_LIMITED,
+            "message": get_error_message(ErrorCode.RATE_LIMITED),
+            "data": None,
+        },
+        headers={"Retry-After": str(retry_after)},
     )
 
 
@@ -204,9 +257,7 @@ class RequestLogMiddleware:
         token = request_id_var.set(request_id)
         status_code: int | None = None
         try:
-            logger.info(
-                f"[{request_id}] {method} {path} from {client_ip} - start"
-            )
+            logger.info(f"[{request_id}] {method} {path} from {client_ip} - start")
 
             async def send_wrapper(message: dict) -> None:
                 nonlocal status_code
@@ -222,9 +273,7 @@ class RequestLogMiddleware:
             await self.app(scope, receive, send_wrapper)
 
             process_time = (time.time() - start_time) * 1000
-            logger.info(
-                f"[{request_id}] {method} {path} {status_code} - {process_time:.2f}ms"
-            )
+            logger.info(f"[{request_id}] {method} {path} {status_code} - {process_time:.2f}ms")
         finally:
             request_id_var.reset(token)
 
@@ -235,7 +284,7 @@ class PrometheusMiddleware:
     使用纯 ASGI 实现（而非 BaseHTTPMiddleware）以避免跨事件循环问题。
     """
 
-    EXCLUDE_PATHS = {"/metrics", "/health", "/healthz", "/readyz", "/internal/metrics"}
+    EXCLUDE_PATHS = {"/metrics", "/healthz", "/readyz", "/internal/metrics"}
 
     def __init__(self, app: Callable[..., Awaitable[None]]):
         self.app = app
@@ -272,6 +321,7 @@ class PrometheusMiddleware:
         start_time = time.time()
         status_code: str | None = None
         try:
+
             async def send_wrapper(message: dict) -> None:
                 nonlocal status_code
                 if message["type"] == "http.response.start":
@@ -281,9 +331,7 @@ class PrometheusMiddleware:
             await self.app(scope, receive, send_wrapper)
 
             if status_code is not None:
-                REQUEST_TOTAL.labels(
-                    method=method, path=metric_path, status_code=status_code
-                ).inc()
+                REQUEST_TOTAL.labels(method=method, path=metric_path, status_code=status_code).inc()
                 latency = time.time() - start_time
                 REQUEST_LATENCY.labels(method=method, path=metric_path).observe(latency)
         finally:

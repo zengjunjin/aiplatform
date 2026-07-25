@@ -13,7 +13,6 @@ from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
-
 # Task 2.3: 文档状态到进度百分比的映射（统一魔法数字，消除 documents.py 内联 status_map）
 STATUS_PROGRESS: dict[str, int] = {
     "pending": 0,
@@ -29,7 +28,9 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    kb_id = Column(BigInteger, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True)
+    kb_id = Column(
+        BigInteger, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     uploader_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)
@@ -41,11 +42,11 @@ class Document(Base):
     error_message = Column(Text, nullable=True)
     deleted_at = Column(DateTime, nullable=True, default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("kb_id", "file_hash", name="uq_doc_kb_hash"),
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    __table_args__ = (UniqueConstraint("kb_id", "file_hash", name="uq_doc_kb_hash"),)
 
     kb = relationship("KnowledgeBase", backref="documents")
     uploader = relationship("User", backref="uploaded_docs")

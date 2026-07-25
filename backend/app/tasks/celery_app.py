@@ -68,6 +68,13 @@ celery_app.conf.beat_schedule = {
             "expires": 3600,  # 任务过期时间 1 小时
         },
     },
+    "scheduled-evaluation-daily": {
+        "task": "scheduled_evaluation_task",
+        "schedule": crontab(hour=2, minute=0),  # 每日 02:00 (Asia/Shanghai)
+        "options": {
+            "expires": 3600,  # 任务过期时间 1 小时
+        },
+    },
 }
 
 celery_app.autodiscover_tasks(["app.tasks"])
@@ -101,9 +108,11 @@ def close_eventbus(**kwargs):
 
 async def _do_eventbus_init():
     from app.core.events import EventBus
+
     await EventBus.init()
 
 
 async def _do_eventbus_close():
     from app.core.events import EventBus
+
     await EventBus.close()

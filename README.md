@@ -198,10 +198,11 @@ npm run dev         # 仅 Web 模式
 ### 对话
 - `GET /api/v1/chat/sessions` - 会话列表
 - `POST /api/v1/chat/sessions` - 创建会话
-- `POST /api/v1/chat/send` - 发送消息（流式 SSE）
+- `POST /api/v1/chat/sessions/{session_id}/messages` - 发送消息（流式 SSE）
 
 ### 系统
-- `GET /health` - 健康检查
+- `GET /healthz` - 存活探针 (liveness)
+- `GET /readyz` - 就绪探针 (readiness)
 - `GET /api/v1/system/status` - 系统状态（需管理员）
 
 ## 项目结构
@@ -216,58 +217,87 @@ aiplatform/
 │   │   │       ├── auth.py
 │   │   │       ├── chat.py
 │   │   │       ├── documents.py
+│   │   │       ├── evaluation.py
 │   │   │       ├── knowledge_bases.py
 │   │   │       ├── router.py
 │   │   │       ├── system.py
-│   │   │       └── users.py
+│   │   │       ├── users.py
+│   │   │       └── ws.py
 │   │   ├── core/             # 核心模块
+│   │   │   ├── cache.py
+│   │   │   ├── errors.py
+│   │   │   ├── evaluation.py
+│   │   │   ├── events.py
 │   │   │   ├── exceptions.py
-│   │   │   ├── generation_manager.py
+│   │   │   ├── health_checks.py
+│   │   │   ├── metrics.py
 │   │   │   ├── middleware.py
+│   │   │   ├── model_health.py
+│   │   │   ├── model_router.py
+│   │   │   ├── notification_manager.py
+│   │   │   ├── prompt_optimizer.py
+│   │   │   ├── redis_scripts.py
 │   │   │   └── security.py
 │   │   ├── db/               # 数据库模型
+│   │   │   ├── audit_log.py
 │   │   │   ├── base.py
 │   │   │   ├── chat_message.py
 │   │   │   ├── chat_session.py
 │   │   │   ├── document.py
 │   │   │   ├── document_chunk.py
+│   │   │   ├── evaluation.py
+│   │   │   ├── feedback.py
 │   │   │   ├── knowledge_base.py
+│   │   │   ├── prompt_template.py
+│   │   │   ├── sync_session.py
 │   │   │   └── user.py
 │   │   ├── models/           # 模型工厂 / Provider
 │   │   │   ├── base.py
-│   │   │   ├── factory.py
 │   │   │   ├── cached_embedding.py
+│   │   │   ├── factory.py
 │   │   │   ├── ollama_provider.py
+│   │   │   ├── openai_compatible_provider.py
 │   │   │   └── reranker_provider.py
 │   │   ├── parsers/          # 文档解析
 │   │   │   ├── base.py
-│   │   │   ├── pdf_parser.py
+│   │   │   ├── chunker.py
 │   │   │   ├── docx_parser.py
 │   │   │   ├── markdown_parser.py
-│   │   │   ├── text_parser.py
-│   │   │   └── chunker.py
+│   │   │   ├── pdf_parser.py
+│   │   │   ├── text_like_parser.py
+│   │   │   └── text_parser.py
 │   │   ├── rag/              # RAG 核心
-│   │   │   ├── retriever.py
 │   │   │   ├── bm25.py
-│   │   │   ├── reranker.py
+│   │   │   ├── context_manager.py
 │   │   │   ├── prompt_builder.py
+│   │   │   ├── query_rewriter.py
 │   │   │   ├── reference_parser.py
-│   │   │   └── context_manager.py
+│   │   │   ├── reranker.py
+│   │   │   └── retriever.py
 │   │   ├── schemas/          # Pydantic 请求/响应模型
 │   │   │   ├── auth.py
 │   │   │   ├── chat.py
+│   │   │   ├── common.py
 │   │   │   ├── document.py
+│   │   │   ├── feedback.py
 │   │   │   ├── kb.py
 │   │   │   └── user.py
 │   │   ├── services/         # 业务服务
+│   │   │   ├── audit_service.py
 │   │   │   ├── auth_service.py
 │   │   │   ├── chat_service.py
-│   │   │   ├── user_service.py
+│   │   │   ├── document_service.py
+│   │   │   ├── evaluation_service.py
+│   │   │   ├── feedback_service.py
 │   │   │   ├── kb_service.py
-│   │   │   └── document_service.py
+│   │   │   └── user_service.py
 │   │   ├── tasks/            # 异步任务 (Celery)
 │   │   │   ├── celery_app.py
-│   │   │   └── document_task.py
+│   │   │   ├── document_task.py
+│   │   │   ├── evaluation_task.py
+│   │   │   ├── feedback_analysis_task.py
+│   │   │   ├── metrics_collector.py
+│   │   │   └── scheduled_evaluation.py
 │   │   ├── utils/            # 工具
 │   │   │   ├── storage.py
 │   │   │   └── token_counter.py
@@ -301,13 +331,15 @@ cd backend
 poetry run pytest tests/ -v --cov=app
 ```
 
-核心模块覆盖率:
+核心模块覆盖率（最新基线：后端总覆盖率 82.08%，前端 branches 覆盖率 60%+，2026-07-25 CI 全量回归 后端 873 passed / 0 failed，前端 466 passed / 0 failed）:
 - `app.core.security`: 100%
-- `app.rag.prompt_builder`: 100%
+- `app.rag.prompt_builder`: 97%
 - `app.rag.reference_parser`: 100%
 - `app.parsers.base`: 100%
-- `app.rag.bm25`: 86%
-- `app.parsers.chunker`: 85%
+- `app.parsers.chunker`: 90%
+- `app.rag.bm25`: 83%
+- `app.services.user_service`: 100%
+- `app.services.chat_service`: 98%
 
 ## 配置说明
 

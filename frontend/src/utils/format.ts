@@ -87,7 +87,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     }
-  } catch {}
+  } catch {
+    // clipboard API 不可用，回退到 textarea 方案
+  }
   // Fallback
   try {
     const textarea = document.createElement('textarea');

@@ -5,11 +5,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FeedbackCreate(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     rating: int = Field(..., ge=-1, le=1, description="1 点赞, -1 点踩")
     comment: str | None = Field(None, max_length=500)
-    feedback_type: Literal["faithfulness_issue", "context_insufficient", "incompleteness", "irrelevance", "verbosity"] | None = None
+    feedback_type: (
+        Literal[
+            "faithfulness_issue",
+            "context_insufficient",
+            "incompleteness",
+            "irrelevance",
+            "verbosity",
+        ]
+        | None
+    ) = None
 
 
 class FeedbackOut(BaseModel):
@@ -21,8 +30,7 @@ class FeedbackOut(BaseModel):
     feedback_type: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FeedbackStats(BaseModel):
@@ -44,5 +52,4 @@ class FeedbackDetail(BaseModel):
     session_id: int
     kb_id: int | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -7,7 +7,7 @@ Covers:
 - decode_token rejects tokens with wrong iss.
 - decode_token rejects tokens with wrong aud.
 """
-import pytest
+
 from jwt import encode
 
 from app.config import settings

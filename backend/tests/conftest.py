@@ -5,8 +5,31 @@ pytest-asyncio 0.23+ 与 Python 3.12 下，自定义 event_loop 已弃用且会�
 "There is no current event loop in thread 'MainThread'" 错误。
 asyncio_mode = auto（见 pyproject.toml）会自动管理事件循环。
 """
-import pytest
+
+# pyarrow 兼容性 patch：datasets 2.14.x 依赖 pa.PyExtensionType，
+# 但 pyarrow 15+ 移除了该属性（改用 pa.ExtensionType）。
+# 在 import datasets/ragas 之前 patch，避免 AttributeError 导致测试收集失败。
+import contextlib
+
+import pyarrow as _pa
+
+if not hasattr(_pa, "PyExtensionType"):
+    _pa.PyExtensionType = _pa.ExtensionType
+
+# ragas 兼容性 patch：ragas 0.2.x 依赖 langchain_community.chat_models.vertexai.ChatVertexAI，
+# 但新版 langchain_community 已移除该模块（迁移到 langchain-google-vertexai 独立包）。
+# 注入 mock 模块避免 ImportError，使 ragas 能正常 import（测试环境不实际调用 VertexAI）。
+import sys as _sys
+from unittest.mock import MagicMock as _MagicMock
+
+if "langchain_community.chat_models.vertexai" not in _sys.modules:
+    _mock_vertexai = _MagicMock()
+    _mock_vertexai.ChatVertexAI = _MagicMock
+    _sys.modules["langchain_community.chat_models.vertexai"] = _mock_vertexai
+
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from starlette.requests import Request
 
 # test_auth_full_flow.py 是独立脚本（模块顶层调用 requests + sys.exit），
@@ -104,32 +127,84 @@ def make_auth_db():
         db = make_auth_db(user=fake_user)  # execute 返回该 user
         db = make_auth_db(user=None)       # execute 返回 None
     """
+
     def _make(user=None):
         db = AsyncMock()
         scalar = user if user is not None else None
-        db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=lambda: scalar)
-        )
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: scalar))
         return db
+
     return _make
 
 
 @pytest.fixture
 def make_user():
-    """Factory fixture to create test user dicts."""
+    """Factory fixture to create test user mocks (MagicMock with spec=User).
+
+    替代各测试文件中重复的 _make_user 辅助函数，统一字段默认值。
+    返回 MagicMock(spec=User)，按需覆盖字段。
+    """
+    from app.db.user import User
+
     def _make_user(
         user_id: int = 1,
-        username: str = "testuser",
+        username: str = "tester",
+        email: str = "t@example.com",
         role: str = "user",
-        email: str = "test@example.com",
+        is_active: bool = True,
+        password_hash: str = "hash",
     ):
-        return {
-            "id": user_id,
-            "username": username,
-            "role": role,
-            "email": email,
-        }
+        u = MagicMock(spec=User)
+        u.id = user_id
+        u.username = username
+        u.email = email
+        u.role = role
+        u.is_active = is_active
+        u.password_hash = password_hash
+        u.created_at = MagicMock()
+        u.created_at.isoformat.return_value = "2026-01-01T00:00:00"
+        return u
+
     return _make_user
+
+
+@pytest.fixture
+def make_db():
+    """Factory fixture to create mock AsyncSession.
+
+    替代 test_document_service.py 和 test_kb_permissions.py 中的 _make_db。
+    支持两种模式：
+    - KB 模式: make_db(kb=some_kb) → execute 返回 scalar_one_or_none=kb
+    - Document 模式: make_db(doc_count=N, existing_doc=...) → 两次 execute
+    """
+
+    def _make_db(
+        kb=None,
+        doc_count=0,
+        existing_doc=None,
+        commit_side_effect=None,
+    ):
+        db = AsyncMock()
+        if kb is not None:
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = kb
+            db.execute.return_value = result
+        else:
+            count_result = MagicMock()
+            count_result.scalar_one.return_value = doc_count
+            existing_result = MagicMock()
+            existing_result.scalar_one_or_none.return_value = existing_doc
+            db.execute = AsyncMock(side_effect=[count_result, existing_result])
+            if commit_side_effect:
+                db.commit = AsyncMock(side_effect=commit_side_effect)
+
+            async def fake_refresh(obj, *args, **kwargs):
+                obj.id = 99
+
+            db.refresh = AsyncMock(side_effect=fake_refresh)
+        return db
+
+    return _make_db
 
 
 @pytest.fixture
@@ -163,14 +238,13 @@ def _reset_limiter_storage():
     第 61 次同 key 调用会失败）。autouse=True 自动应用于所有测试。
     """
     from app.core.middleware import limiter
+
     storage = limiter._storage
     # MemoryStorage.reset() 清空计数器和过期时间表
     reset = getattr(storage, "reset", None)
     if reset is not None:
-        try:
+        with contextlib.suppress(Exception):
             reset()
-        except Exception:
-            pass
     yield
 
 
@@ -184,8 +258,11 @@ def mock_sse_common():
     如需覆盖某个公共 patch（如 is_cancelled=True），在测试内用 with patch(...) 覆盖。
     """
     from unittest.mock import patch
+
     patches = [
-        patch("app.services.chat_service.save_message", new=AsyncMock(return_value=MagicMock(id=99))),
+        patch(
+            "app.services.chat_service.save_message", new=AsyncMock(return_value=MagicMock(id=99))
+        ),
         patch("app.services.chat_service.append_to_context", new=AsyncMock()),
         patch("app.services.chat_service.get_history_context", new=AsyncMock(return_value=[])),
         patch("app.services.chat_service.is_cancelled", new=AsyncMock(return_value=False)),
@@ -198,4 +275,3 @@ def mock_sse_common():
     yield
     for p in patches:
         p.stop()
-

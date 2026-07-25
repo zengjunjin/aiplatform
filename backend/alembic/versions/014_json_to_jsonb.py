@@ -13,12 +13,13 @@ Create Date: 2026-07-23
 
 注: evaluation_runs 表无 dataset 列; evaluation_results.contexts 暂不在本迁移范围。
 """
-from alembic import op
+
 import sqlalchemy as sa
 
+from alembic import op
 
-revision = '014_json_to_jsonb'
-down_revision = '013_audit_log_user_fk'
+revision = "014_json_to_jsonb"
+down_revision = "013_audit_log_user_fk"
 branch_labels = None
 depends_on = None
 
@@ -26,21 +27,25 @@ depends_on = None
 def upgrade():
     # PostgreSQL specific: alter column types to JSONB
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.alter_column('audit_logs', 'details',
-                        type_=sa.dialects.postgresql.JSONB(astext_type=sa.Text()),
-                        postgresql_using='details::jsonb')
-        op.alter_column('evaluation_runs', 'metrics',
-                        type_=sa.dialects.postgresql.JSONB(astext_type=sa.Text()),
-                        postgresql_using='metrics::jsonb')
+    if bind.dialect.name == "postgresql":
+        op.alter_column(
+            "audit_logs",
+            "details",
+            type_=sa.dialects.postgresql.JSONB(astext_type=sa.Text()),
+            postgresql_using="details::jsonb",
+        )
+        op.alter_column(
+            "evaluation_runs",
+            "metrics",
+            type_=sa.dialects.postgresql.JSONB(astext_type=sa.Text()),
+            postgresql_using="metrics::jsonb",
+        )
 
 
 def downgrade():
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.alter_column('evaluation_runs', 'metrics',
-                        type_=sa.JSON(),
-                        postgresql_using='metrics::json')
-        op.alter_column('audit_logs', 'details',
-                        type_=sa.JSON(),
-                        postgresql_using='details::json')
+    if bind.dialect.name == "postgresql":
+        op.alter_column(
+            "evaluation_runs", "metrics", type_=sa.JSON(), postgresql_using="metrics::json"
+        )
+        op.alter_column("audit_logs", "details", type_=sa.JSON(), postgresql_using="details::json")

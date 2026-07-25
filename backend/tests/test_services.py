@@ -2,16 +2,19 @@
 
 使用 mock AsyncSession 测试业务逻辑，不依赖真实 PostgreSQL。
 """
-import time
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.services import kb_service, document_service
-from app.core.exceptions import NotFoundError, ForbiddenError, AppException
-from app.db.knowledge_base import KnowledgeBase
-from app.db.document import Document
 
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.core.exceptions import AppException, ForbiddenError, NotFoundError
+from app.db.document import Document
+from app.db.knowledge_base import KnowledgeBase
+from app.services import document_service, kb_service
 
 # ---------- kb_service 测试 ----------
+
 
 def _make_kb(kb_id=1, owner_id=1, name="kb1"):
     kb = MagicMock(spec=KnowledgeBase)
@@ -63,6 +66,7 @@ class TestCreateKb:
 
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 99
+
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         result = await kb_service.create_kb(req, user_id=1, db=db)
@@ -142,6 +146,7 @@ class TestDeleteKb:
     async def test_delete_kb_calls_all_cleanup_steps(self):
         """Task 29: delete_kb 发布 KB_DELETED 事件，外部资源清理由订阅者处理。"""
         from app.core.events import EventBus
+
         kb = _make_kb()
         db = AsyncMock()
         # get_kb_for_read → execute(scalar_one_or_none)；后续 delete 语句 → execute
@@ -151,8 +156,10 @@ class TestDeleteKb:
         # doc_count / chunk_count 统计
         db.scalar = AsyncMock(side_effect=[2, 5])
 
-        with patch("app.services.kb_service.EventBus.publish", new=AsyncMock()) as mock_publish, \
-             patch("app.services.kb_service.log_audit", new=AsyncMock()):
+        with (
+            patch("app.services.kb_service.EventBus.publish", new=AsyncMock()) as mock_publish,
+            patch("app.services.kb_service.log_audit", new=AsyncMock()),
+        ):
             await kb_service.delete_kb(kb_id=1, user_id=1, db=db)
         # 验证发布 KB_DELETED 事件（外部清理由 document_service 订阅者处理）
         mock_publish.assert_awaited_once()
@@ -167,9 +174,14 @@ class TestDeleteKb:
     @pytest.mark.asyncio
     async def test_delete_kb_continues_on_qdrant_failure(self):
         """Task 29: _on_kb_deleted 容错 — Qdrant 删除失败仍清理 BM25/storage。"""
-        with patch("app.rag.retriever.retriever.delete_collection", new=MagicMock(side_effect=Exception("qdrant down"))), \
-             patch("app.rag.bm25.bm25_store.delete", new=AsyncMock()) as mock_bm25, \
-             patch("app.utils.storage.delete_kb_dir") as mock_storage:
+        with (
+            patch(
+                "app.rag.retriever.retriever.delete_collection",
+                new=MagicMock(side_effect=Exception("qdrant down")),
+            ),
+            patch("app.rag.bm25.bm25_store.delete", new=AsyncMock()) as mock_bm25,
+            patch("app.utils.storage.delete_kb_dir") as mock_storage,
+        ):
             # _on_kb_deleted 不应抛异常，Qdrant 失败后继续清理其他资源
             await document_service._on_kb_deleted({"kb_id": 1, "doc_count": 0, "chunk_count": 0})
         # BM25 和 storage 仍被清理
@@ -202,6 +214,7 @@ class TestGetKbStats:
 
 # ---------- document_service 测试 ----------
 
+
 class TestUploadDocument:
     @pytest.mark.asyncio
     async def test_upload_document_creates_record(self):
@@ -209,14 +222,21 @@ class TestUploadDocument:
 
         新的 upload_document(file, kb_id, user, db) 完整业务封装在 test_document_service.py 中测试。
         """
+
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 10
+
         db = AsyncMock()
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         result = await document_service.create_document_record(
-            kb_id=1, user_id=1, filename="a.md",
-            file_path="/tmp/a.md", file_type="md", file_size=100, db=db,
+            kb_id=1,
+            user_id=1,
+            filename="a.md",
+            file_path="/tmp/a.md",
+            file_type="md",
+            file_size=100,
+            db=db,
         )
         assert result.id == 10
         assert result.filename == "a.md"
@@ -260,7 +280,10 @@ class TestUpdateDocument:
         with patch.object(document_service, "get_document", new=AsyncMock(return_value=doc)):
             db = AsyncMock()
             result = await document_service.update_document(
-                doc_id=10, req=req, user_id=1, db=db,
+                doc_id=10,
+                req=req,
+                user_id=1,
+                db=db,
             )
         assert result.filename == "new.md"
         db.commit.assert_awaited_once()
@@ -271,7 +294,9 @@ class TestReparseDocument:
     async def test_reparse_done_status_allowed(self):
         """status=done → 允许重解析, 返回 (doc, task) 元组"""
         doc = _make_doc(status="done")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             with patch("app.tasks.document_task.parse_document_task") as mock_task:
                 db = AsyncMock()
                 # Mock sa_update result: rowcount=1 表示更新成功
@@ -293,7 +318,9 @@ class TestReparseDocument:
     async def test_reparse_failed_status_allowed(self):
         """status=failed → 允许重解析"""
         doc = _make_doc(status="failed")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             with patch("app.tasks.document_task.parse_document_task"):
                 db = AsyncMock()
                 mock_result = MagicMock(rowcount=1)
@@ -312,7 +339,9 @@ class TestReparseDocument:
     async def test_reparse_parsing_status_rejected(self):
         """status=parsing → 409 拒绝"""
         doc = _make_doc(status="parsing")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             db = AsyncMock()
             with pytest.raises(AppException) as exc_info:
                 await document_service.reparse_document(doc_id=10, user_id=1, db=db)
@@ -321,7 +350,9 @@ class TestReparseDocument:
     @pytest.mark.asyncio
     async def test_reparse_chunking_status_rejected(self):
         doc = _make_doc(status="chunking")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             db = AsyncMock()
             with pytest.raises(AppException) as exc_info:
                 await document_service.reparse_document(doc_id=10, user_id=1, db=db)
@@ -330,7 +361,9 @@ class TestReparseDocument:
     @pytest.mark.asyncio
     async def test_reparse_embedding_status_rejected(self):
         doc = _make_doc(status="embedding")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             db = AsyncMock()
             with pytest.raises(AppException) as exc_info:
                 await document_service.reparse_document(doc_id=10, user_id=1, db=db)
@@ -340,7 +373,9 @@ class TestReparseDocument:
     async def test_reparse_concurrent_trigger_raises_conflict(self):
         """Task 5 SubTask 5.2: 乐观锁 rowcount=0 (并发触发) → ConflictError, 不重复入队"""
         doc = _make_doc(status="done")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             with patch("app.tasks.document_task.parse_document_task") as mock_task:
                 db = AsyncMock()
                 # sa_update 返回 rowcount=0 表示状态已被并发请求修改
@@ -357,7 +392,9 @@ class TestReparseDocument:
         """Task 5: reparse_document 返回 (doc, task) 元组"""
         doc = _make_doc(status="done")
         fake_task = MagicMock(id="task-xyz")
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
             with patch("app.tasks.document_task.parse_document_task") as mock_task:
                 mock_task.delay.return_value = fake_task
                 db = AsyncMock()
@@ -381,11 +418,15 @@ class TestDeleteDocument:
     @pytest.mark.asyncio
     async def test_delete_document_calls_all_cleanup(self):
         doc = _make_doc(doc_id=10, kb_id=1)
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
-            with patch("app.rag.retriever.retriever.delete_by_doc_id") as mock_qdrant, \
-                 patch("app.rag.bm25.bm25_store.remove_document", new=AsyncMock()) as mock_bm25, \
-                 patch.object(document_service, "get_kb_dir") as mock_kb_dir, \
-                 patch.object(document_service, "delete_file") as mock_delete_file:
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
+            with (
+                patch("app.rag.retriever.retriever.delete_by_doc_id") as mock_qdrant,
+                patch("app.rag.bm25.bm25_store.remove_document", new=AsyncMock()) as mock_bm25,
+                patch.object(document_service, "get_kb_dir") as mock_kb_dir,
+                patch.object(document_service, "delete_file") as mock_delete_file,
+            ):
                 # mock kb_dir.iterdir()
                 fake_file = MagicMock()
                 fake_file.name = "10_abc.md"
@@ -409,11 +450,18 @@ class TestDeleteDocument:
     async def test_delete_document_continues_on_qdrant_failure(self):
         """Qdrant 删除失败 → 继续删除其他"""
         doc = _make_doc(doc_id=10, kb_id=1)
-        with patch.object(document_service, "get_document_for_write", new=AsyncMock(return_value=doc)):
-            with patch("app.rag.retriever.retriever.delete_by_doc_id", side_effect=Exception("qdrant down")), \
-                 patch("app.rag.bm25.bm25_store.remove_document", new=AsyncMock()) as mock_bm25, \
-                 patch.object(document_service, "get_kb_dir"), \
-                 patch.object(document_service, "delete_file"):
+        with patch.object(
+            document_service, "get_document_for_write", new=AsyncMock(return_value=doc)
+        ):
+            with (
+                patch(
+                    "app.rag.retriever.retriever.delete_by_doc_id",
+                    side_effect=Exception("qdrant down"),
+                ),
+                patch("app.rag.bm25.bm25_store.remove_document", new=AsyncMock()) as mock_bm25,
+                patch.object(document_service, "get_kb_dir"),
+                patch.object(document_service, "delete_file"),
+            ):
                 db = AsyncMock()
                 # Mock kb with concrete doc_count/chunk_count for max() arithmetic
                 mock_kb = MagicMock()

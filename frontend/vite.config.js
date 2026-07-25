@@ -31,7 +31,11 @@ export default defineConfig({
                 target: 'http://localhost:8000',
                 changeOrigin: true,
             },
-            '/health': {
+            '/healthz': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
+            '/readyz': {
                 target: 'http://localhost:8000',
                 changeOrigin: true,
             },

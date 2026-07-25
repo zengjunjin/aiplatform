@@ -27,13 +27,12 @@
     # 峰值测试 (需要设置 spawn-rate 和 users)
     locust -f tests/performance/locustfile.py --host=http://localhost:8000 PeakLoadTest
 """
-import json
+
 import os
 import random
 import string
-import time
-from locust import HttpUser, task, between, tag, constant, LoadTestShape
 
+from locust import HttpUser, LoadTestShape, between, tag, task
 
 # 压测用户密码，可通过环境变量 PERF_TEST_PASSWORD 覆盖（CI 注入 secret）
 _TEST_PASSWORD = os.getenv("PERF_TEST_PASSWORD", "Test@123456")
@@ -243,7 +242,10 @@ class RetrievalLoadTest(_UserCleanupMixin, HttpUser):
             # 创建知识库
             kb_resp = self.client.post(
                 "/api/v1/knowledge-bases",
-                json={"name": f"retrieval_bench_{_random_string(8)}", "description": "retrieval load test"},
+                json={
+                    "name": f"retrieval_bench_{_random_string(8)}",
+                    "description": "retrieval load test",
+                },
                 headers=self.headers,
             )
             if kb_resp.status_code == 200:
@@ -260,7 +262,6 @@ class RetrievalLoadTest(_UserCleanupMixin, HttpUser):
         """检索请求：模拟用户搜索知识库。"""
         if not self.headers or not self.kb_id:
             return
-        question = random.choice(RETRIEVAL_QUESTIONS)
         self.client.get(
             f"/api/v1/knowledge-bases/{self.kb_id}",
             headers=self.headers,
@@ -332,7 +333,10 @@ class StreamingChatUser(_UserCleanupMixin, HttpUser):
             # 创建知识库
             kb_resp = self.client.post(
                 "/api/v1/knowledge-bases",
-                json={"name": f"stream_kb_{_random_string(8)}", "description": "streaming chat test"},
+                json={
+                    "name": f"stream_kb_{_random_string(8)}",
+                    "description": "streaming chat test",
+                },
                 headers=self.headers,
             )
             self.kb_id = kb_resp.json()["data"]["id"] if kb_resp.status_code == 200 else None
@@ -343,7 +347,9 @@ class StreamingChatUser(_UserCleanupMixin, HttpUser):
                 json={"title": f"Stream Session {_random_string(6)}", "kb_id": self.kb_id},
                 headers=self.headers,
             )
-            self.session_id = session_resp.json()["data"]["id"] if session_resp.status_code == 200 else None
+            self.session_id = (
+                session_resp.json()["data"]["id"] if session_resp.status_code == 200 else None
+            )
         else:
             self.headers = {}
             self.session_id = None
@@ -456,7 +462,9 @@ class MixedLoadTest(_UserCleanupMixin, HttpUser):
                 json={"title": f"Mixed Session {_random_string(6)}", "kb_id": self.kb_id},
                 headers=self.headers,
             )
-            self.session_id = session_resp.json()["data"]["id"] if session_resp.status_code == 200 else None
+            self.session_id = (
+                session_resp.json()["data"]["id"] if session_resp.status_code == 200 else None
+            )
         else:
             self.headers = {}
             self.session_id = None
@@ -556,11 +564,11 @@ class PeakLoadShape(LoadTestShape):
     """
 
     stages = [
-        {"duration": 60, "users": 50, "spawn_rate": 5},     # 预热
-        {"duration": 120, "users": 200, "spawn_rate": 15},   # 增长到峰值
-        {"duration": 180, "users": 200, "spawn_rate": 5},    # 峰值维持
-        {"duration": 240, "users": 50, "spawn_rate": 15},    # 回落
-        {"duration": 300, "users": 50, "spawn_rate": 5},     # 恢复
+        {"duration": 60, "users": 50, "spawn_rate": 5},  # 预热
+        {"duration": 120, "users": 200, "spawn_rate": 15},  # 增长到峰值
+        {"duration": 180, "users": 200, "spawn_rate": 5},  # 峰值维持
+        {"duration": 240, "users": 50, "spawn_rate": 15},  # 回落
+        {"duration": 300, "users": 50, "spawn_rate": 5},  # 恢复
     ]
 
     def tick(self):

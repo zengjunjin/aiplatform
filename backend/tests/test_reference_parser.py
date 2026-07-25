@@ -1,7 +1,6 @@
 """Unit tests for rag.reference_parser module."""
-import pytest
-from app.rag.reference_parser import parse_references, strip_citations
 
+from app.rag.reference_parser import parse_references, strip_citations
 
 SAMPLE_CHUNKS = [
     {"chunk_id": 1, "doc_id": 10, "filename": "doc1.pdf", "content": "First chunk content here"},

@@ -4,6 +4,7 @@ Sets HF_ENDPOINT to the Chinese mirror (hf-mirror.com) so the model
 can be downloaded without accessing huggingface.co directly (which is
 often unreachable from mainland China).
 """
+
 import asyncio
 import os
 
@@ -33,6 +34,7 @@ class LocalBgeRerankerProvider(BaseRerankerProvider):
     def _load_model_sync(self):
         """Synchronous model loading (runs in thread pool)."""
         from sentence_transformers import CrossEncoder
+
         logger.info(f"Loading reranker model: {self._model_name}")
         model = CrossEncoder(self._model_name)
         logger.info(f"Reranker model loaded: {self._model_name}")
@@ -84,8 +86,9 @@ class LocalBgeRerankerProvider(BaseRerankerProvider):
         ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
         return ranked[:top_k]
 
-    async def rerank(self, query: str, documents: list[str],
-                     top_k: int = 5) -> list[tuple[int, float]]:
+    async def rerank(
+        self, query: str, documents: list[str], top_k: int = 5
+    ) -> list[tuple[int, float]]:
         if not documents:
             return []
         await self._ensure_model()

@@ -102,6 +102,7 @@ export default function ChatPage() {
       // 模型列表加载失败不影响聊天功能
     });
     return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅初始化时检查 selectedModel，避免每次切换模型重新拉取
   }, [fetchSessions, fetchKBs]);
 
   // localStorage 写入下沉到独立 useEffect，避免 onChange 中重复写入
@@ -151,6 +152,7 @@ export default function ChatPage() {
     if (lastMsg) {
       scrollToBottom();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅依赖 length 变化触发滚动，无需整个数组
   }, [sessionMsgs.length, scrollToBottom]);
 
   // 当 streaming 时, 用 IntersectionObserver 监听底部哨兵: 哨兵离开视口说明内容增长超过视口,

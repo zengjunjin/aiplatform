@@ -1,22 +1,15 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
-import sys
 import os
+import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import settings
 from app.db.base import Base
-from app.db.user import User
-from app.db.knowledge_base import KnowledgeBase
-from app.db.document import Document
-from app.db.document_chunk import DocumentChunk
-from app.db.chat_session import ChatSession
-from app.db.chat_message import ChatMessage
-from app.db.evaluation import EvaluationRun, EvaluationResult
-from app.db.feedback import MessageFeedback
-from app.db.prompt_template import PromptTemplate  # Task 10: prompt 模板版本化
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)
@@ -46,9 +39,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
 

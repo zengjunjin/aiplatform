@@ -22,7 +22,9 @@ async def _invalidate_user_cache(user_id: int) -> None:
         logger.warning(f"Failed to invalidate user cache for user:{user_id}: {e}")
 
 
-async def list_users(db: AsyncSession, page: int = 1, page_size: int = 20) -> tuple[list[User], int]:
+async def list_users(
+    db: AsyncSession, page: int = 1, page_size: int = 20
+) -> tuple[list[User], int]:
     count_result = await db.execute(select(func.count()).select_from(User))
     total = count_result.scalar_one()
 
@@ -79,9 +81,7 @@ async def search_users(db: AsyncSession, query: str, limit: int = 10) -> list[di
     escaped = _escape_like(query)
     pattern = f"%{escaped}%"
     result = await db.execute(
-        select(User.id, User.username)
-        .where(User.username.ilike(pattern, escape="\\"))
-        .limit(limit)
+        select(User.id, User.username).where(User.username.ilike(pattern, escape="\\")).limit(limit)
     )
     rows = result.all()
     return [{"id": row[0], "username": row[1]} for row in rows]
@@ -89,12 +89,14 @@ async def search_users(db: AsyncSession, query: str, limit: int = 10) -> list[di
 
 async def change_password(user_id: int, old_pwd: str, new_pwd: str, db: AsyncSession) -> None:
     from app.services.auth_service import validate_password_strength
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise NotFoundError("User not found")
     if not verify_password(old_pwd, user.password_hash):
         from app.core.exceptions import AppException
+
         raise AppException(code=400, message="Old password is incorrect")
     validate_password_strength(new_pwd)
     user.password_hash = hash_password(new_pwd)

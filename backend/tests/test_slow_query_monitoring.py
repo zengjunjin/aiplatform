@@ -7,10 +7,9 @@
 - engine connect_args 设置了 statement_timeout=30000
 - config.py 新增 DB_POOL_TIMEOUT = 10
 """
+
 import time
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.config import settings
 
@@ -31,7 +30,9 @@ class TestDatabaseEchoRemoved:
     def test_database_module_does_not_pass_echo_to_engine(self):
         """create_async_engine 调用不应包含 echo= 参数"""
         import inspect
+
         from app import database
+
         src = inspect.getsource(database)
         # 截取 create_async_engine( 调用片段（到闭合括号前）
         start = src.find("engine = create_async_engine(")
@@ -49,6 +50,7 @@ class TestSlowQueryEventListener:
         """验证 before_cursor_execute / after_cursor_execute 已注册到 Engine 类"""
         from sqlalchemy import event
         from sqlalchemy.engine import Engine
+
         from app.database import _after_cursor_execute, _before_cursor_execute
 
         # event.contains 需要 (target, event_name, fn) 三参数
@@ -93,7 +95,9 @@ class TestStatementTimeout:
     def test_engine_has_statement_timeout(self):
         """验证 async engine 的 connect_args 包含 statement_timeout=30000"""
         import inspect
+
         from app import database
+
         src = inspect.getsource(database)
         assert "statement_timeout" in src
         assert "30000" in src
@@ -101,7 +105,9 @@ class TestStatementTimeout:
     def test_engine_pool_timeout_set(self):
         """验证 engine 创建时传入了 pool_timeout=settings.DB_POOL_TIMEOUT"""
         import inspect
+
         from app import database
+
         src = inspect.getsource(database)
         assert "pool_timeout=settings.DB_POOL_TIMEOUT" in src
 
@@ -113,6 +119,7 @@ class TestSyncEngineAlsoListens:
         """验证 sync_engine 实例也注册了慢查询回调（监听 Engine 类即覆盖所有实例）"""
         from sqlalchemy import event
         from sqlalchemy.engine import Engine
+
         from app.database import _after_cursor_execute, _before_cursor_execute
 
         # 由于监听的是 Engine 类（不是实例），所有 Engine 实例（包括 sync_engine）

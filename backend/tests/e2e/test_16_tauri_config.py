@@ -12,14 +12,18 @@
 7. CSP 不允许 'unsafe-eval'
 8. release 目录配置与源一致（如存在）
 """
+
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 # backend/tests/e2e/test_16_tauri_config.py -> 项目根目录
 ROOT = Path(__file__).parent.parent.parent.parent
 TAURI_CONF_PATH = ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
-RELEASE_CONF_PATH = ROOT / "release" / "RAG知识库平台" / "frontend" / "src-tauri" / "tauri.conf.json"
+RELEASE_CONF_PATH = (
+    ROOT / "release" / "RAG知识库平台" / "frontend" / "src-tauri" / "tauri.conf.json"
+)
 
 
 @pytest.fixture(scope="module")
@@ -38,9 +42,9 @@ def test_tauri_conf_exists():
 def test_no_remote_debugging_9222(tauri_conf):
     """不包含 --remote-debugging-port=9222（RCE 风险）"""
     args = tauri_conf["app"]["windows"][0].get("additionalBrowserArgs", "")
-    assert "--remote-debugging-port=9222" not in args, (
-        "additionalBrowserArgs must NOT contain --remote-debugging-port=9222 (RCE risk)"
-    )
+    assert (
+        "--remote-debugging-port=9222" not in args
+    ), "additionalBrowserArgs must NOT contain --remote-debugging-port=9222 (RCE risk)"
 
 
 def test_allow_insecure_content_present(tauri_conf):
@@ -59,33 +63,29 @@ def test_allow_insecure_content_present(tauri_conf):
 
 def test_with_global_tauri_false(tauri_conf):
     """withGlobalTauri 为 false（减少 XSS 攻击面）"""
-    assert tauri_conf["app"]["withGlobalTauri"] is False, (
-        "withGlobalTauri must be false (XSS surface reduction)"
-    )
+    assert (
+        tauri_conf["app"]["withGlobalTauri"] is False
+    ), "withGlobalTauri must be false (XSS surface reduction)"
 
 
 def test_csp_allows_localhost_8000(tauri_conf):
     """CSP connect-src 允许 localhost:8000"""
     csp = tauri_conf["app"]["security"].get("csp", "")
-    assert "localhost:8000" in csp, (
-        f"CSP must allow localhost:8000 in connect-src. Current CSP: {csp}"
-    )
+    assert (
+        "localhost:8000" in csp
+    ), f"CSP must allow localhost:8000 in connect-src. Current CSP: {csp}"
 
 
 def test_csp_blocks_unsafe_eval(tauri_conf):
     """CSP 不允许 'unsafe-eval'（防 eval 注入）"""
     csp = tauri_conf["app"]["security"].get("csp", "")
-    assert "'unsafe-eval'" not in csp, (
-        f"CSP must NOT allow 'unsafe-eval'. Current CSP: {csp}"
-    )
+    assert "'unsafe-eval'" not in csp, f"CSP must NOT allow 'unsafe-eval'. Current CSP: {csp}"
 
 
 def test_csp_has_default_src_self(tauri_conf):
     """CSP default-src 为 'self'（默认限制同源）"""
     csp = tauri_conf["app"]["security"].get("csp", "")
-    assert "default-src 'self'" in csp, (
-        f"CSP should have default-src 'self'. Current CSP: {csp}"
-    )
+    assert "default-src 'self'" in csp, f"CSP should have default-src 'self'. Current CSP: {csp}"
 
 
 def test_release_tauri_conf_matches(tauri_conf):
@@ -93,6 +93,4 @@ def test_release_tauri_conf_matches(tauri_conf):
     if not RELEASE_CONF_PATH.exists():
         pytest.skip(f"Release config not found: {RELEASE_CONF_PATH}")
     rel_conf = json.loads(RELEASE_CONF_PATH.read_text(encoding="utf-8"))
-    assert rel_conf == tauri_conf, (
-        "Release tauri.conf.json differs from source"
-    )
+    assert rel_conf == tauri_conf, "Release tauri.conf.json differs from source"

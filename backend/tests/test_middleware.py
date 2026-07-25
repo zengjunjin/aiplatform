@@ -1,8 +1,14 @@
 """Tests for app.core.middleware: RequestLogMiddleware + PrometheusMiddleware"""
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.core.middleware import RequestLogMiddleware, PrometheusMiddleware, rate_limit_exceeded_handler
+
+from app.core.middleware import (
+    PrometheusMiddleware,
+    RequestLogMiddleware,
+    rate_limit_exceeded_handler,
+)
 
 
 def _make_request(method="GET", path="/api/v1/test", client_ip="127.0.0.1"):
@@ -121,12 +127,12 @@ class TestPrometheusMiddleware:
         """正常请求 → REQUEST_TOTAL + REQUEST_LATENCY 记录"""
         middleware = PrometheusMiddleware(app=None)
 
-        with patch("app.core.middleware.REQUEST_TOTAL") as mock_total, \
-             patch("app.core.middleware.REQUEST_LATENCY") as mock_latency, \
-             patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress:
-            await _run_middleware(
-                middleware, method="GET", path="/api/v1/docs", status_code=200
-            )
+        with (
+            patch("app.core.middleware.REQUEST_TOTAL") as mock_total,
+            patch("app.core.middleware.REQUEST_LATENCY") as mock_latency,
+            patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress,
+        ):
+            await _run_middleware(middleware, method="GET", path="/api/v1/docs", status_code=200)
 
         assert mock_inprogress.inc.call_count >= 1
         assert mock_inprogress.dec.call_count >= 1
@@ -136,12 +142,14 @@ class TestPrometheusMiddleware:
 
     @pytest.mark.asyncio
     async def test_dispatch_excludes_metrics_and_health_paths(self):
-        """/metrics 和 /health 路径跳过 Prometheus 统计"""
+        """/metrics 和 /healthz 路径跳过 Prometheus 统计"""
         middleware = PrometheusMiddleware(app=None)
 
-        for excluded in ["/metrics", "/health"]:
-            with patch("app.core.middleware.REQUEST_TOTAL") as mock_total, \
-                 patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress:
+        for excluded in ["/metrics", "/healthz"]:
+            with (
+                patch("app.core.middleware.REQUEST_TOTAL") as mock_total,
+                patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress,
+            ):
                 captured = await _run_middleware(middleware, path=excluded)
                 # EXCLUDE_PATHS 路径不统计
                 mock_total.labels.assert_not_called()
@@ -154,9 +162,11 @@ class TestPrometheusMiddleware:
         """即使 inner app 抛异常，REQUEST_IN_PROGRESS 仍要 dec"""
         middleware = PrometheusMiddleware(app=None)
 
-        with patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress, \
-             patch("app.core.middleware.REQUEST_TOTAL"), \
-             patch("app.core.middleware.REQUEST_LATENCY"):
+        with (
+            patch("app.core.middleware.REQUEST_IN_PROGRESS") as mock_inprogress,
+            patch("app.core.middleware.REQUEST_TOTAL"),
+            patch("app.core.middleware.REQUEST_LATENCY"),
+        ):
             with pytest.raises(RuntimeError):
                 await _run_middleware(
                     middleware, path="/api/v1/error", raise_exc=RuntimeError("oops")
@@ -171,6 +181,7 @@ class TestRateLimitExceededHandler:
     async def test_rate_limit_handler_returns_429(self):
         """限流触发 → 429 + Retry-After header"""
         from slowapi.errors import RateLimitExceeded
+
         # RateLimitExceeded 构造复杂，用 mock 替代
         exc = MagicMock(spec=RateLimitExceeded)
         request = _make_request(path="/api/v1/auth/login")
@@ -179,8 +190,10 @@ class TestRateLimitExceededHandler:
         assert response.status_code == 429
         assert response.headers["Retry-After"] == "60"
         import json
+
         body = json.loads(response.body)
         from app.core.errors import ErrorCode
+
         assert body["code"] == ErrorCode.RATE_LIMITED
 
 
@@ -188,11 +201,13 @@ class TestLimiterInstance:
     def test_limiter_exists(self):
         """limiter 单例已导出"""
         from app.core.middleware import limiter
+
         assert limiter is not None
 
     def test_limiter_key_func_uses_remote_address(self):
         """limiter 的 key_func 应基于 remote address"""
         from app.core.middleware import limiter
+
         # 构造一个 request
         request = MagicMock()
         request.client = MagicMock(host="1.2.3.4")
@@ -206,6 +221,7 @@ class TestRateLimitKeyFunc:
     def test_no_auth_header_falls_back_to_ip(self):
         """无 Authorization header → 使用 IP"""
         from app.core.middleware import _rate_limit_key
+
         request = MagicMock()
         request.headers = {}
         request.client = MagicMock(host="203.0.113.5")
@@ -215,6 +231,7 @@ class TestRateLimitKeyFunc:
     def test_invalid_bearer_token_falls_back_to_ip(self):
         """无效 Bearer token → fallback 到 IP（验证签名防伪造）"""
         from app.core.middleware import _rate_limit_key
+
         request = MagicMock()
         request.headers = {"authorization": "Bearer invalid.token.here"}
         request.client = MagicMock(host="198.51.100.7")
@@ -226,6 +243,7 @@ class TestRateLimitKeyFunc:
         """有效 JWT 的 sub 字段应作为 key（避免共享 IP 用户互相影响）"""
         from app.core.middleware import _rate_limit_key
         from app.core.security import create_access_token
+
         # 真实签发一个 token: subject 即 user_id
         token = create_access_token(subject="42")
         request = MagicMock()
@@ -283,6 +301,7 @@ class TestRouteRateLimits:
     def test_all_expected_routes_have_limits(self):
         """所有期望的路由都已注册到 limiter._route_limits"""
         from app.core.middleware import limiter
+
         registered = set(limiter._route_limits.keys())
         missing = set(self.EXPECTED_LIMITS.keys()) - registered
         assert not missing, f"缺少限流配置的路由: {missing}"
@@ -290,6 +309,7 @@ class TestRouteRateLimits:
     def test_each_route_has_expected_limit_value(self):
         """每个路由的 limit 值与预期一致"""
         from app.core.middleware import limiter
+
         mismatches = []
         for route_name, expected_limit in self.EXPECTED_LIMITS.items():
             limits = limiter._route_limits.get(route_name, [])
@@ -305,6 +325,7 @@ class TestRouteRateLimits:
     def test_high_cost_endpoints_have_stricter_limits(self):
         """高消耗端点应有比默认 60/minute 更严格的限制"""
         from app.core.middleware import limiter
+
         # documents/upload: 10/hour (预先存在, 不应被破坏)
         upload_limits = limiter._route_limits.get("app.api.v1.documents.upload_document", [])
         assert upload_limits and str(upload_limits[0].limit) == "10 per 1 hour"
@@ -321,6 +342,7 @@ class TestRouteRateLimits:
     def test_default_limit_count(self):
         """应有 26 个路由注册限流（5 个路由文件覆盖的所有端点）"""
         from app.core.middleware import limiter
+
         # users:4 + kb:8 + documents:7 + evaluation:5 + system:2 = 26
         assert len(limiter._route_limits) >= 26
 
@@ -332,6 +354,7 @@ class TestRateLimitEnforcement:
     def _make_request_with_unique_ip(self):
         """工厂: 创建使用指定 IP 的 Request, 用于隔离测试间的限流计数"""
         from starlette.requests import Request
+
         def _make(ip: str = "127.0.0.1", path: str = "/api/v1/test"):
             scope = {
                 "type": "http",
@@ -342,6 +365,7 @@ class TestRateLimitEnforcement:
                 "client": (ip, 8000),
             }
             return Request(scope)
+
         return _make
 
     @pytest.mark.asyncio
@@ -351,8 +375,8 @@ class TestRateLimitEnforcement:
         注意: slowapi 在同一 Request 对象上只检查一次（_rate_limiting_complete 标志）,
         所以每个调用必须使用新的 Request 对象。
         """
-        from slowapi.errors import RateLimitExceeded
         from slowapi import Limiter
+        from slowapi.errors import RateLimitExceeded
         from slowapi.util import get_remote_address
 
         # 使用独立 limiter 避免污染全局状态
@@ -392,9 +416,9 @@ class TestRateLimitEnforcement:
     @pytest.mark.asyncio
     async def test_rate_limit_isolated_by_user_id(self, _make_request_with_unique_ip):
         """不同 user_id 的限流计数应独立（JWT sub 优先于 IP 的核心价值）"""
+
         from app.core.middleware import _rate_limit_key
         from app.core.security import create_access_token
-        from starlette.requests import Request
 
         # 验证两个不同 user_id 生成不同的限流 key
         token1 = create_access_token(subject="100")
@@ -435,8 +459,12 @@ class TestLogPatcherTraceId:
         mock_span.get_span_context.return_value = mock_ctx
 
         record = {"extra": {}, "message": "test"}
-        with patch("opentelemetry.trace.get_current_span", return_value=mock_span), \
-             patch("opentelemetry.trace.INVALID_SPAN", mock_span):
+        # INVALID_SPAN 必须 patch 为与 mock_span 不同的对象，
+        # 否则 `span is not INVALID_SPAN` 判断为 False，trace_id 不会被注入
+        with (
+            patch("opentelemetry.trace.get_current_span", return_value=mock_span),
+            patch("opentelemetry.trace.INVALID_SPAN", MagicMock()),
+        ):
             _log_patcher(record)
 
         # trace_id 应为 32 位十六进制
@@ -455,8 +483,10 @@ class TestLogPatcherTraceId:
         record = {"extra": {}, "message": "test"}
         # mock get_current_span 返回 INVALID_SPAN
         invalid_span = MagicMock()
-        with patch("opentelemetry.trace.get_current_span", return_value=invalid_span), \
-             patch("opentelemetry.trace.INVALID_SPAN", invalid_span):
+        with (
+            patch("opentelemetry.trace.get_current_span", return_value=invalid_span),
+            patch("opentelemetry.trace.INVALID_SPAN", invalid_span),
+        ):
             _log_patcher(record)
 
         assert record["extra"]["trace_id"] == ""
@@ -471,6 +501,7 @@ class TestLogPatcherTraceId:
         # 由于 _log_patcher 内部用 from opentelemetry.trace import ...，
         # 我们 patch sys.modules 让 opentelemetry.trace 不可用
         import sys
+
         original = sys.modules.get("opentelemetry.trace")
         sys.modules["opentelemetry.trace"] = None  # 触发 ImportError
         try:
@@ -534,7 +565,7 @@ class TestLogRedactFilter:
         """secret 字段值应被替换"""
         from app.core.middleware import _redact_filter
 
-        record = {"message": "jwt secret=\"mysecret\" loaded"}
+        record = {"message": 'jwt secret="mysecret" loaded'}
         result = _redact_filter(record)
         assert result is True
         assert "mysecret" not in record["message"]

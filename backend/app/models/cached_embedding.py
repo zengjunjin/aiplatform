@@ -9,10 +9,12 @@ Task 14: 添加 Prometheus 指标监控缓存命中率
 - EMBEDDING_CACHE_MISSES: cache miss 计数
 - EMBEDDING_CACHE_ERRORS: Redis 连接/解码错误计数
 """
+
 import hashlib
 import json
 
 import redis.asyncio as redis_async
+from loguru import logger
 
 from app.config import settings
 from app.core.metrics import EMBEDDING_CACHE_ERRORS, EMBEDDING_CACHE_HITS, EMBEDDING_CACHE_MISSES
@@ -40,9 +42,10 @@ class CachedEmbeddingProvider(BaseEmbeddingProvider):
                     decode_responses=True,
                 )
                 await self._redis.ping()
-            except Exception:
+            except Exception as e:
                 # Task 14: Redis 连接失败 → 记录 error 指标
                 EMBEDDING_CACHE_ERRORS.inc()
+                logger.warning(f"Embedding cache redis init failed: {e}")
                 self._redis = None
         return self._redis
 
@@ -89,7 +92,7 @@ class CachedEmbeddingProvider(BaseEmbeddingProvider):
             miss_results = await self.inner.embed(miss_texts)
             # Store in cache
             pipe = redis.pipeline()
-            for idx, emb in zip(miss_indices, miss_results):
+            for idx, emb in zip(miss_indices, miss_results, strict=False):
                 results[idx] = emb
                 pipe.setex(cache_keys[idx], self._cache_ttl, json.dumps(emb))
             await pipe.execute()

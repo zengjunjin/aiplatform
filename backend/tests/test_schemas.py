@@ -11,6 +11,7 @@
 - feedback.py: FeedbackCreate
 - document.py: DocumentUpdate
 """
+
 import pytest
 from pydantic import ValidationError
 
@@ -129,9 +130,7 @@ def test_document_update_rejects_extra_field():
 # 正向用例:正常字段仍可正常构造
 # ------------------------------------------------------------------
 def test_register_request_valid_input():
-    req = RegisterRequest(
-        username="alice", email="alice@example.com", password="secret123"
-    )
+    req = RegisterRequest(username="alice", email="alice@example.com", password="secret123")
     assert req.username == "alice"
 
 

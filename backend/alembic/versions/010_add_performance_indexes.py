@@ -18,8 +18,8 @@ Create Date: 2026-07-21
 - knowledge_bases.owner_id 单列索引 idx_kb_owner 已存在,本复合索引服务于
   "按 owner_id 过滤并按 name 检索/排序"的查询路径。
 """
-from alembic import op
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "010_perf_indexes"
@@ -31,8 +31,8 @@ depends_on = None
 def upgrade() -> None:
     # CONCURRENTLY 不能在事务中执行
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.execute('COMMIT')
+    if bind.dialect.name == "postgresql":
+        op.execute("COMMIT")
 
     # documents.uploader_id 索引
     op.create_index(
@@ -75,21 +75,29 @@ def upgrade() -> None:
         postgresql_concurrently=True,
     )
 
-    if bind.dialect.name == 'postgresql':
-        op.execute('BEGIN')
+    if bind.dialect.name == "postgresql":
+        op.execute("BEGIN")
 
 
 def downgrade() -> None:
     # CONCURRENTLY 不能在事务中执行
     bind = op.get_bind()
-    if bind.dialect.name == 'postgresql':
-        op.execute('COMMIT')
+    if bind.dialect.name == "postgresql":
+        op.execute("COMMIT")
 
-    op.drop_index("ix_knowledge_bases_owner_name", table_name="knowledge_bases", postgresql_concurrently=True)
-    op.drop_index("ix_chat_messages_session_created", table_name="chat_messages", postgresql_concurrently=True)
-    op.drop_index("ix_chat_sessions_kb_id", table_name="chat_sessions", postgresql_concurrently=True)
-    op.drop_index("ix_document_chunks_vector_id", table_name="document_chunks", postgresql_concurrently=True)
+    op.drop_index(
+        "ix_knowledge_bases_owner_name", table_name="knowledge_bases", postgresql_concurrently=True
+    )
+    op.drop_index(
+        "ix_chat_messages_session_created", table_name="chat_messages", postgresql_concurrently=True
+    )
+    op.drop_index(
+        "ix_chat_sessions_kb_id", table_name="chat_sessions", postgresql_concurrently=True
+    )
+    op.drop_index(
+        "ix_document_chunks_vector_id", table_name="document_chunks", postgresql_concurrently=True
+    )
     op.drop_index("ix_documents_uploader_id", table_name="documents", postgresql_concurrently=True)
 
-    if bind.dialect.name == 'postgresql':
-        op.execute('BEGIN')
+    if bind.dialect.name == "postgresql":
+        op.execute("BEGIN")

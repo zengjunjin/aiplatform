@@ -17,6 +17,7 @@
 后端使用 SQLAlchemy ORM + 参数化查询，SQL 注入应被天然防护。
 本测试验证这一假设是否成立。
 """
+
 import os
 import uuid
 
@@ -24,8 +25,8 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
     login_cdp_session,
+    make_cdp_client,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
@@ -63,7 +64,8 @@ def test_sql_injection_in_kb_name(base_url, admin_headers, payload):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name, "description": "SQL 注入测试"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     # 应返回 200（成功创建）或 400/422（输入校验拒绝）
     # 不应返回 500（数据库错误）
@@ -79,19 +81,21 @@ def test_sql_injection_in_kb_name(base_url, admin_headers, payload):
             # 验证 KB 被正确创建且 name 未被篡改
             r_get = requests.get(
                 f"{base_url}/knowledge-bases/{kb_id}",
-                headers=admin_headers, timeout=10,
+                headers=admin_headers,
+                timeout=10,
             )
             assert r_get.status_code == 200
             retrieved_name = r_get.json().get("data", {}).get("name", "")
             # name 应包含原始 payload（作为普通字符串）
-            assert payload in retrieved_name, (
-                f"Payload '{payload}' not preserved in KB name: '{retrieved_name}'"
-            )
+            assert (
+                payload in retrieved_name
+            ), f"Payload '{payload}' not preserved in KB name: '{retrieved_name}'"
         finally:
             # 清理
             requests.delete(
                 f"{base_url}/knowledge-bases/{kb_id}",
-                headers=admin_headers, timeout=5,
+                headers=admin_headers,
+                timeout=5,
             )
 
 
@@ -108,7 +112,8 @@ def test_sql_injection_no_data_leak(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200
     kb_id = r.json().get("data", {}).get("id")
@@ -118,7 +123,8 @@ def test_sql_injection_no_data_leak(base_url, admin_headers):
         r_list = requests.get(
             f"{base_url}/knowledge-bases",
             params={"page": 1, "page_size": 5},
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         assert r_list.status_code == 200
         data = r_list.json().get("data", {})
@@ -127,18 +133,16 @@ def test_sql_injection_no_data_leak(base_url, admin_headers):
 
         # 验证返回的 items 数量不超过 page_size
         assert len(items) <= 5, (
-            f"SQL injection may have leaked data: got {len(items)} items "
-            f"(expected <= 5)"
+            f"SQL injection may have leaked data: got {len(items)} items " f"(expected <= 5)"
         )
 
         # 验证 total 是合理数字（不是全表 count 错误的巨大数字）
-        assert isinstance(total, int) and total >= 1, (
-            f"Unexpected total: {total}"
-        )
+        assert isinstance(total, int) and total >= 1, f"Unexpected total: {total}"
     finally:
         requests.delete(
             f"{base_url}/knowledge-bases/{kb_id}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
 
 
@@ -159,12 +163,12 @@ def test_special_chars_in_kb_name(base_url, admin_headers):
         r = requests.post(
             f"{base_url}/knowledge-bases",
             json={"name": name},
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         # 应成功创建或被校验拒绝，不应 500
         assert r.status_code in (200, 400, 422), (
-            f"Special char name '{name}' caused status {r.status_code}: "
-            f"{r.text[:200]}"
+            f"Special char name '{name}' caused status {r.status_code}: " f"{r.text[:200]}"
         )
 
         if r.status_code == 200:
@@ -172,7 +176,8 @@ def test_special_chars_in_kb_name(base_url, admin_headers):
             # 清理
             requests.delete(
                 f"{base_url}/knowledge-bases/{kb_id}",
-                headers=admin_headers, timeout=5,
+                headers=admin_headers,
+                timeout=5,
             )
 
 
@@ -185,19 +190,23 @@ def test_oversized_kb_name(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": long_name},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     # 应被校验拒绝（400/422），或成功创建（200，如果数据库支持）
     # 不应返回 500
-    assert r.status_code in (200, 400, 422), (
-        f"Oversized name caused status {r.status_code}: {r.text[:200]}"
-    )
+    assert r.status_code in (
+        200,
+        400,
+        422,
+    ), f"Oversized name caused status {r.status_code}: {r.text[:200]}"
 
     if r.status_code == 200:
         kb_id = r.json().get("data", {}).get("id")
         requests.delete(
             f"{base_url}/knowledge-bases/{kb_id}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
 
 
@@ -209,12 +218,14 @@ def test_empty_kb_name(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": ""},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     # 空字符串应被校验拒绝
-    assert r.status_code in (400, 422), (
-        f"Empty name should be rejected, got {r.status_code}: {r.text[:200]}"
-    )
+    assert r.status_code in (
+        400,
+        422,
+    ), f"Empty name should be rejected, got {r.status_code}: {r.text[:200]}"
 
 
 def test_missing_kb_name_field(base_url, admin_headers):
@@ -225,9 +236,11 @@ def test_missing_kb_name_field(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"description": "no name field"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     # 缺失必填字段应被校验拒绝
-    assert r.status_code in (400, 422), (
-        f"Missing name field should be rejected, got {r.status_code}: {r.text[:200]}"
-    )
+    assert r.status_code in (
+        400,
+        422,
+    ), f"Missing name field should be rejected, got {r.status_code}: {r.text[:200]}"

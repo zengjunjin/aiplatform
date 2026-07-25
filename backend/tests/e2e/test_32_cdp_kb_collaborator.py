@@ -22,17 +22,20 @@
 4. 升级为 admin，用户 A 验证可删文档、可管理协作者、不可删 KB
 5. 移除协作者，用户 A 验证不可见 + API 403
 """
+
+import contextlib
 import io
 import os
 import time
 import uuid
+
 import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
+    login_cdp_session,
+    make_cdp_client,
     verify_api_call,
 )
 
@@ -66,18 +69,18 @@ def shared_kb(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name, "description": "协作者权限测试"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Create shared KB failed: {r.text}"
     kb = r.json().get("data", r.json())
     yield kb
-    try:
+    with contextlib.suppress(Exception):
         requests.delete(
             f"{base_url}/knowledge-bases/{kb['id']}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
-    except Exception:
-        pass
 
 
 def _refresh_user_a(cdp_user_a, route="#/knowledge-bases"):
@@ -99,11 +102,10 @@ def _set_collaborator(base_url, admin_headers, kb_id, user_id, permission):
     r = requests.post(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators",
         json={"user_id": user_id, "permission": permission},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"Set collaborator ({permission}) failed: {r.status_code} {r.text}"
-    )
+    assert r.status_code == 200, f"Set collaborator ({permission}) failed: {r.status_code} {r.text}"
 
 
 def _upload_doc_via_api(base_url, token, kb_id, filename="collab_test.txt", content=None):
@@ -117,7 +119,8 @@ def _upload_doc_via_api(base_url, token, kb_id, filename="collab_test.txt", cont
     files = {"file": (filename, io.BytesIO(content), "text/plain")}
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data={"kb_id": str(kb_id)},
+        files=files,
+        data={"kb_id": str(kb_id)},
         headers={"Authorization": f"Bearer {token}"},
         timeout=60,
     )
@@ -210,17 +213,15 @@ def test_read_permission_boundary(cdp_user_a, shared_kb, base_url):
     headers_a = {"Authorization": f"Bearer {user_a_token}"}
     # 先用 API 验证用户 A 可以访问共享 KB（后端 list_kbs 包含协作者共享的 KB）
     r_list = requests.get(
-        f"{base_url}/knowledge-bases", params={"page": 1, "page_size": 50},
-        headers=headers_a, timeout=10,
+        f"{base_url}/knowledge-bases",
+        params={"page": 1, "page_size": 50},
+        headers=headers_a,
+        timeout=10,
     )
-    assert r_list.status_code == 200, (
-        f"User A list KBs failed: {r_list.status_code}"
-    )
+    assert r_list.status_code == 200, f"User A list KBs failed: {r_list.status_code}"
     items = r_list.json().get("data", {}).get("items", [])
     kb_found_api = any(k["id"] == kb_id for k in items)
-    assert kb_found_api, (
-        f"Shared KB '{kb_name}' (id={kb_id}) not in user A's KB list via API"
-    )
+    assert kb_found_api, f"Shared KB '{kb_name}' (id={kb_id}) not in user A's KB list via API"
     # 刷新用户 A 的 KB 列表
     _refresh_user_a(cdp_user_a)
     # ① KB 列表可见（UI 轮询，若不可见接受 API 验证作为 fallback）
@@ -261,7 +262,6 @@ def test_upgrade_to_write(cdp_user_a, shared_kb, base_url, admin_headers):
     API 权限边界，不验证 UI 按钮状态。
     """
     user_a = cdp_user_a["user"]
-    client = cdp_user_a["client"]
     user_a_id = user_a["user"]["id"]
     kb_id = shared_kb["id"]
     # admin 升级权限为 write
@@ -269,9 +269,7 @@ def test_upgrade_to_write(cdp_user_a, shared_kb, base_url, admin_headers):
     # 用户 A 刷新
     _refresh_user_a(cdp_user_a, route=f"#/knowledge-bases/{kb_id}")
     # ① 上传文档 API 返回 200
-    status, _doc_id = _upload_doc_via_api(
-        base_url, user_a["access_token"], kb_id, "write_test.txt"
-    )
+    status, _doc_id = _upload_doc_via_api(base_url, user_a["access_token"], kb_id, "write_test.txt")
     assert status == 200, f"Upload should succeed for write user, got {status}"
     # ② 删除 KB API 返回 403（write 不可删 KB）
     verify_api_call(
@@ -306,12 +304,8 @@ def test_upgrade_to_admin(cdp_user_a, shared_kb, base_url, admin_headers):
     # 用户 A 刷新
     _refresh_user_a(cdp_user_a, route=f"#/knowledge-bases/{kb_id}")
     # 用户 A 上传一个文档用于删除测试
-    status, doc_id = _upload_doc_via_api(
-        base_url, user_a["access_token"], kb_id, "admin_test.txt"
-    )
-    assert status == 200 and doc_id, (
-        f"Upload as admin failed: status={status}, doc_id={doc_id}"
-    )
+    status, doc_id = _upload_doc_via_api(base_url, user_a["access_token"], kb_id, "admin_test.txt")
+    assert status == 200 and doc_id, f"Upload as admin failed: status={status}, doc_id={doc_id}"
     # 等待文档解析完成（删除 API 拒绝正在处理的文档）
     done = _wait_doc_done(base_url, user_a["access_token"], doc_id, timeout=40)
     if not done:
@@ -325,9 +319,9 @@ def test_upgrade_to_admin(cdp_user_a, shared_kb, base_url, admin_headers):
     )
     # ② 协作者管理按钮可点击
     btn_state = _collab_btn_state(client)
-    assert btn_state == 'enabled', (
-        f"Collaborator button should be enabled for admin user, got: {btn_state}"
-    )
+    assert (
+        btn_state == "enabled"
+    ), f"Collaborator button should be enabled for admin user, got: {btn_state}"
     # ③ admin 协作者可以管理协作者（GET /collaborators 返回 200，证明权限通过）
     # 不用 POST 测试：POST /collaborators 用自己作为 target 会触发
     # "Cannot add yourself" 业务错误（403），无法区分权限错误和业务错误。
@@ -355,7 +349,8 @@ def test_remove_collaborator(cdp_user_a, shared_kb, base_url, admin_headers):
     # admin 移除协作者
     r = requests.delete(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators/{user_a_id}",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Remove collaborator failed: {r.text}"
     # 用户 A 刷新 KB 列表

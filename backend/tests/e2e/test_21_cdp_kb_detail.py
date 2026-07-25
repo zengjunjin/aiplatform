@@ -18,21 +18,26 @@
 - 协作者添加/移除通过 API 操作，UI 验证列表更新。
 - 测试数据保留不清理。
 """
+
 import json
 import os
 import time
 import uuid
+
 import pytest
 import requests
 
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-TEST_DOC_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "integration", "test_doc.txt"
-)
+TEST_DOC_PATH = os.path.join(os.path.dirname(__file__), "..", "integration", "test_doc.txt")
 
 
 def _inject_auth_token(cdp, admin_token):
@@ -67,10 +72,10 @@ def logged_in_cdp(admin_token):
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
     client.navigate(TAURI_HOME)
-    time.sleep(1)
+    wait_for_dom_ready(client, timeout=10)
     _inject_auth_token(client, admin_token)
     client.navigate(TAURI_HOME)
-    time.sleep(3)
+    wait_for_dom_ready(client, timeout=15)
     yield client
     client.close()
 
@@ -80,10 +85,15 @@ def cdp_test_kb(admin_token, base_url):
     """通过 API 创建测试 KB（module scope，所有测试共享）"""
     kb_name = f"CDP_Detail_KB_{uuid.uuid4().hex[:8]}"
     headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
-    r = requests.post(f"{base_url}/knowledge-bases", json={
-        "name": kb_name,
-        "description": "CDP 详情页测试知识库",
-    }, headers=headers, timeout=10)
+    r = requests.post(
+        f"{base_url}/knowledge-bases",
+        json={
+            "name": kb_name,
+            "description": "CDP 详情页测试知识库",
+        },
+        headers=headers,
+        timeout=10,
+    )
     assert r.status_code == 200, f"Create KB failed: {r.text}"
     return r.json()["data"]
 
@@ -97,15 +107,17 @@ def cdp_kb_doc(admin_token, base_url, cdp_test_kb):
         data = {"kb_id": str(cdp_test_kb["id"])}
         r = requests.post(
             f"{base_url}/documents/upload",
-            files=files, data=data, headers=headers, timeout=60,
+            files=files,
+            data=data,
+            headers=headers,
+            timeout=60,
         )
     assert r.status_code == 200, f"Upload doc failed: {r.text}"
     doc_id = r.json()["data"]["document_id"]
     # 轮询直到 status == done
     deadline = time.time() + 120
     while time.time() < deadline:
-        r2 = requests.get(f"{base_url}/documents/{doc_id}",
-                          headers=headers, timeout=10)
+        r2 = requests.get(f"{base_url}/documents/{doc_id}", headers=headers, timeout=10)
         if r2.status_code == 200:
             doc = r2.json()["data"]
             if doc.get("status") == "done":
@@ -119,9 +131,9 @@ def cdp_kb_doc(admin_token, base_url, cdp_test_kb):
 def _navigate_to_kb_detail(cdp, kb_id):
     """导航到 KB 详情页并等待加载。"""
     cdp.navigate(TAURI_HOME)
-    time.sleep(1)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate(f"window.location.hash = '#/knowledge-bases/{kb_id}'")
-    time.sleep(3)
+    wait_for_url_change(cdp, f"#/knowledge-bases/{kb_id}", timeout=15)
 
 
 def test_kb_detail_page_loads(logged_in_cdp, cdp_kb_doc):
@@ -161,7 +173,7 @@ def test_upload_document_via_ui(logged_in_cdp, cdp_kb_doc, admin_token, base_url
         })();
     """)
     assert clicked, "Upload button not found"
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证上传 Modal 打开
     modal_open = cdp.evaluate("""
         (function() {
@@ -180,15 +192,20 @@ def test_upload_document_via_ui(logged_in_cdp, cdp_kb_doc, admin_token, base_url
             if (closeBtn) closeBtn.click();
         })();
     """)
-    time.sleep(1)
+    wait_for(
+        lambda: not cdp.evaluate("!!document.querySelector('.ant-modal-content')"),
+        timeout=5,
+        message="Upload modal did not close",
+    )
     # 通过 API 上传文档（CDP 无法模拟文件选择）
     upload_filename = f"upload_ui_{uuid.uuid4().hex[:6]}.txt"
     headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
-    file_content = f"CDP upload UI test {upload_filename}".encode("utf-8")
+    file_content = f"CDP upload UI test {upload_filename}".encode()
     files = {"file": (upload_filename, file_content, "text/plain")}
     data = {"kb_id": str(kb_id)}
-    r = requests.post(f"{base_url}/documents/upload",
-                      files=files, data=data, headers=headers, timeout=60)
+    r = requests.post(
+        f"{base_url}/documents/upload", files=files, data=data, headers=headers, timeout=60
+    )
     assert r.status_code == 200, f"API upload failed: {r.text}"
     # 刷新页面验证文档出现在列表
     _navigate_to_kb_detail(cdp, kb_id)
@@ -206,7 +223,6 @@ def test_document_status_becomes_done(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     kb_id = cdp_kb_doc["kb"]["id"]
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     # 验证表格中存在 done 状态的 Tag（绿色/完成）
     # Ant Design Tag with color "success" or "green" for done status
     # KnowledgeBaseDetailPage 用 getStatusColor('done') 渲染 Tag
@@ -238,7 +254,6 @@ def test_document_preview(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     kb_id = cdp_kb_doc["kb"]["id"]
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     # 点击第一行的预览按钮（文案"预览"或 Eye 图标按钮）
     clicked = cdp.evaluate("""
         (function() {
@@ -253,21 +268,19 @@ def test_document_preview(logged_in_cdp, cdp_kb_doc):
     """)
     assert clicked, "Preview button not found"
     # 等待预览 Modal 打开
-    deadline = time.time() + 8
-    modal_open = False
-    while time.time() < deadline:
-        modal_open = cdp.evaluate("""
+    wait_for(
+        lambda: cdp.evaluate("""
             (function() {
                 const modal = document.querySelector('.ant-modal-content');
                 if (!modal) return false;
                 return modal.querySelectorAll('pre, .react-markdown, p').length > 0 ||
                        modal.textContent.length > 50;
             })();
-        """)
-        if modal_open:
-            break
-        time.sleep(1)
-    assert modal_open, "Preview modal did not open or has no content"
+        """),
+        timeout=8,
+        interval=1,
+        message="Preview modal did not open or has no content",
+    )
     # 验证 Modal 标题包含文件名（检查所有 modal-content, 避免匹配到隐藏 modal 的 title）
     has_filename = cdp.evaluate(f"""
         (function() {{
@@ -294,18 +307,18 @@ def test_delete_document(logged_in_cdp, cdp_kb_doc, admin_token, base_url):
     # 通过 API 上传一个专用文档用于删除测试
     del_filename = f"del_test_{uuid.uuid4().hex[:6]}.txt"
     headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
-    file_content = f"Document to delete: {del_filename}".encode("utf-8")
+    file_content = f"Document to delete: {del_filename}".encode()
     files = {"file": (del_filename, file_content, "text/plain")}
     data = {"kb_id": str(kb_id)}
-    r = requests.post(f"{base_url}/documents/upload",
-                      files=files, data=data, headers=headers, timeout=60)
+    r = requests.post(
+        f"{base_url}/documents/upload", files=files, data=data, headers=headers, timeout=60
+    )
     assert r.status_code == 200, f"Upload for delete test failed: {r.text}"
     doc_id = r.json()["data"]["document_id"]
     # 等待文档解析完成（不能删除正在处理的文档）
     deadline = time.time() + 60
     while time.time() < deadline:
-        r2 = requests.get(f"{base_url}/documents/{doc_id}",
-                          headers=headers, timeout=10)
+        r2 = requests.get(f"{base_url}/documents/{doc_id}", headers=headers, timeout=10)
         if r2.status_code == 200:
             doc = r2.json()["data"]
             if doc.get("status") in ("done", "failed"):
@@ -313,7 +326,6 @@ def test_delete_document(logged_in_cdp, cdp_kb_doc, admin_token, base_url):
         time.sleep(2)
     # 导航到 KB 详情页
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     # 找到包含 del_filename 的行并点击删除按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -333,7 +345,7 @@ def test_delete_document(logged_in_cdp, cdp_kb_doc, admin_token, base_url):
         }})();
     """)
     assert clicked, f"Delete button not found for document '{del_filename}'"
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-popconfirm-buttons .ant-btn-primary", timeout=5)
     # 点击 Popconfirm 确认按钮
     confirmed = cdp.evaluate("""
         (function() {
@@ -346,18 +358,17 @@ def test_delete_document(logged_in_cdp, cdp_kb_doc, admin_token, base_url):
     """)
     assert confirmed, "Popconfirm OK button not found"
     # 等待文档从列表消失
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        still_exists = cdp.evaluate(f"""
+    wait_for(
+        lambda: not cdp.evaluate(f"""
             (function() {{
                 return Array.from(document.querySelectorAll('.ant-table-tbody tr'))
                     .some(tr => tr.textContent.includes({json.dumps(del_filename)}));
             }})();
-        """)
-        if not still_exists:
-            return
-        time.sleep(1)
-    assert False, f"Document '{del_filename}' still in list after delete"
+        """),
+        timeout=10,
+        interval=1,
+        message=f"Document '{del_filename}' still in list after delete",
+    )
 
 
 def test_edit_kb_info(logged_in_cdp, cdp_kb_doc):
@@ -365,7 +376,6 @@ def test_edit_kb_info(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     kb_id = cdp_kb_doc["kb"]["id"]
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     new_name = f"CDP_Edited_KB_{uuid.uuid4().hex[:6]}"
     new_desc = "已更新描述"
     # 点击编辑按钮（文案"编辑"）
@@ -379,7 +389,7 @@ def test_edit_kb_info(logged_in_cdp, cdp_kb_doc):
         })();
     """)
     assert clicked, "Edit button not found"
-    time.sleep(1.5)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证编辑 Modal 打开
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     assert modal_open, "Edit modal did not open"
@@ -408,6 +418,7 @@ def test_edit_kb_info(logged_in_cdp, cdp_kb_doc):
             }}
         }})();
     """)
+    # 必要固定等待：React onChange debounce
     time.sleep(0.5)
     # 点击保存按钮（Modal footer 的 primary 按钮，文案"保存"）
     cdp.evaluate("""
@@ -418,14 +429,16 @@ def test_edit_kb_info(logged_in_cdp, cdp_kb_doc):
             if (okBtn) okBtn.click();
         })();
     """)
-    time.sleep(3)
     # 验证页面标题更新为新名称
-    found = cdp.evaluate(f"""
-        (function() {{
-            return document.body.textContent.includes({json.dumps(new_name)});
-        }})();
-    """)
-    assert found, f"Updated KB name '{new_name}' not found on page"
+    wait_for(
+        lambda: cdp.evaluate(f"""
+            (function() {{
+                return document.body.textContent.includes({json.dumps(new_name)});
+            }})();
+        """),
+        timeout=10,
+        message=f"Updated KB name '{new_name}' not found on page",
+    )
 
 
 def test_collaborator_modal_open(logged_in_cdp, cdp_kb_doc):
@@ -433,7 +446,6 @@ def test_collaborator_modal_open(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     kb_id = cdp_kb_doc["kb"]["id"]
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     # 点击协作者按钮（文案"协作者"）
     clicked = cdp.evaluate("""
         (function() {
@@ -445,7 +457,7 @@ def test_collaborator_modal_open(logged_in_cdp, cdp_kb_doc):
         })();
     """)
     assert clicked, "Collaborator button not found"
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证 Modal 打开并包含协作者管理内容
     modal_open = cdp.evaluate("""
         (function() {
@@ -474,12 +486,12 @@ def test_add_collaborator(logged_in_cdp, cdp_kb_doc, test_user, admin_token, bas
     r = requests.post(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators",
         json={"user_id": user_id, "permission": "read"},
-        headers=headers, timeout=10,
+        headers=headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Add collaborator failed: {r.text}"
     # 导航到 KB 详情页并打开协作者 Modal
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     cdp.evaluate("""
         (function() {
             const buttons = Array.from(document.querySelectorAll('button'));
@@ -488,7 +500,7 @@ def test_add_collaborator(logged_in_cdp, cdp_kb_doc, test_user, admin_token, bas
             if (collabBtn) collabBtn.click();
         })();
     """)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证 test_user 出现在协作者列表中
     found = cdp.evaluate(f"""
         (function() {{
@@ -510,12 +522,12 @@ def test_remove_collaborator(logged_in_cdp, cdp_kb_doc, test_user, admin_token, 
     headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
     r = requests.delete(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators/{user_id}",
-        headers=headers, timeout=10,
+        headers=headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Remove collaborator failed: {r.text}"
     # 导航到 KB 详情页并打开协作者 Modal
     _navigate_to_kb_detail(cdp, kb_id)
-    time.sleep(2)
     cdp.evaluate("""
         (function() {
             const buttons = Array.from(document.querySelectorAll('button'));
@@ -524,7 +536,7 @@ def test_remove_collaborator(logged_in_cdp, cdp_kb_doc, test_user, admin_token, 
             if (collabBtn) collabBtn.click();
         })();
     """)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-modal-content", timeout=10)
     # 验证 test_user 已从协作者列表中移除
     still_exists = cdp.evaluate(f"""
         (function() {{

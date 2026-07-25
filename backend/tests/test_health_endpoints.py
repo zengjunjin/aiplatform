@@ -5,8 +5,8 @@
   - /readyz: readiness probe, 探测 DB/Redis/Qdrant
     - 全部就绪 → 200 + {"status": "ready", "checks": {...}}
     - 任一失败 → 503 + {"status": "not_ready", "checks": {...}}
-  - /health: 向后兼容端点（保持 legacy 响应格式不变）
 """
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -51,7 +51,9 @@ async def test_readyz_all_healthy_returns_200():
 async def test_readyz_db_failure_returns_503():
     """DB 探测失败时 /readyz 返回 503 + not_ready，db check 包含错误信息。"""
     with (
-        patch("app.main._check_db", new=AsyncMock(return_value=(False, "error: connection refused"))),
+        patch(
+            "app.main._check_db", new=AsyncMock(return_value=(False, "error: connection refused"))
+        ),
         patch("app.main._check_redis", new=AsyncMock(return_value=(True, "ok"))),
         patch("app.main._check_qdrant", new=AsyncMock(return_value=(True, "ok"))),
     ):
@@ -93,7 +95,10 @@ async def test_readyz_qdrant_failure_returns_503():
     with (
         patch("app.main._check_db", new=AsyncMock(return_value=(True, "ok"))),
         patch("app.main._check_redis", new=AsyncMock(return_value=(True, "ok"))),
-        patch("app.main._check_qdrant", new=AsyncMock(return_value=(False, "error: connection refused"))),
+        patch(
+            "app.main._check_qdrant",
+            new=AsyncMock(return_value=(False, "error: connection refused")),
+        ),
     ):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -141,19 +146,6 @@ async def test_readyz_response_contains_all_three_checks():
 
     data = resp.json()
     assert set(data["checks"].keys()) == {"db", "redis", "qdrant"}
-
-
-@pytest.mark.asyncio
-async def test_health_legacy_endpoint_still_works():
-    """/health 向后兼容端点保持 legacy 响应格式（{"code": 0, ...}）。"""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/health")
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["code"] == 0
-    assert data["data"]["status"] == "healthy"
 
 
 def test_health_endpoints_registered():

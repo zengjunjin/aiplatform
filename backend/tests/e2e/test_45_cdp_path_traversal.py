@@ -16,6 +16,8 @@
 后端应使用 os.path.basename() 或类似机制清洗 filename，
 防止路径遍历攻击写入到非预期位置。
 """
+
+import contextlib
 import io
 import os
 import uuid
@@ -24,8 +26,8 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
     login_cdp_session,
+    make_cdp_client,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
@@ -48,18 +50,18 @@ def traversal_kb(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name, "description": "路径遍历测试"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Create KB failed: {r.text[:200]}"
     kb = r.json().get("data", {})
     yield kb
-    try:
+    with contextlib.suppress(Exception):
         requests.delete(
             f"{base_url}/knowledge-bases/{kb['id']}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
-    except Exception:
-        pass
 
 
 # 路径遍历 payload 清单
@@ -93,7 +95,10 @@ def test_path_traversal_filename(base_url, admin_headers, traversal_kb, filename
 
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data=data, headers=admin_headers, timeout=60,
+        files=files,
+        data=data,
+        headers=admin_headers,
+        timeout=60,
     )
 
     # 应返回 200（清洗后接受）或 400/422（拒绝）
@@ -110,7 +115,8 @@ def test_path_traversal_filename(base_url, admin_headers, traversal_kb, filename
             # 查询文档详情，验证 filename 不含路径分隔符
             r_doc = requests.get(
                 f"{base_url}/documents/{doc_id}",
-                headers=admin_headers, timeout=10,
+                headers=admin_headers,
+                timeout=10,
             )
             if r_doc.status_code == 200:
                 doc_data = r_doc.json().get("data", {})
@@ -124,7 +130,8 @@ def test_path_traversal_filename(base_url, admin_headers, traversal_kb, filename
                 # 清理：删除文档
                 requests.delete(
                     f"{base_url}/documents/{doc_id}",
-                    headers=admin_headers, timeout=5,
+                    headers=admin_headers,
+                    timeout=5,
                 )
 
 
@@ -141,22 +148,26 @@ def test_normal_filename_accepted(base_url, admin_headers, traversal_kb):
 
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data=data, headers=admin_headers, timeout=60,
+        files=files,
+        data=data,
+        headers=admin_headers,
+        timeout=60,
     )
 
     if r.status_code == 429:
         pytest.skip("Upload rate-limited (429)")
 
-    assert r.status_code == 200, (
-        f"Normal filename should be accepted, got {r.status_code}: {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 200
+    ), f"Normal filename should be accepted, got {r.status_code}: {r.text[:200]}"
 
     # 清理
     doc_id = r.json().get("data", {}).get("document_id")
     if doc_id:
         requests.delete(
             f"{base_url}/documents/{doc_id}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
 
 
@@ -174,16 +185,21 @@ def test_filename_with_subdir_rejected_or_sanitized(base_url, admin_headers, tra
 
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data=data, headers=admin_headers, timeout=60,
+        files=files,
+        data=data,
+        headers=admin_headers,
+        timeout=60,
     )
 
     if r.status_code == 429:
         pytest.skip("Upload rate-limited (429)")
 
     # 应返回 200（清洗为 basename）或 400/422（拒绝）
-    assert r.status_code in (200, 400, 422), (
-        f"Subdir filename caused status {r.status_code}: {r.text[:200]}"
-    )
+    assert r.status_code in (
+        200,
+        400,
+        422,
+    ), f"Subdir filename caused status {r.status_code}: {r.text[:200]}"
 
     if r.status_code == 200:
         doc_id = r.json().get("data", {}).get("document_id")
@@ -191,17 +207,19 @@ def test_filename_with_subdir_rejected_or_sanitized(base_url, admin_headers, tra
             # 验证存储的 filename 是 basename（不含 subdir/）
             r_doc = requests.get(
                 f"{base_url}/documents/{doc_id}",
-                headers=admin_headers, timeout=10,
+                headers=admin_headers,
+                timeout=10,
             )
             if r_doc.status_code == 200:
                 doc_data = r_doc.json().get("data", {})
                 stored_filename = doc_data.get("filename", "") or doc_data.get("name", "")
                 # 存储的 filename 不应以 "subdir/" 开头
-                assert not stored_filename.startswith("subdir/"), (
-                    f"Subdir not stripped from filename: '{stored_filename}'"
-                )
+                assert not stored_filename.startswith(
+                    "subdir/"
+                ), f"Subdir not stripped from filename: '{stored_filename}'"
             # 清理
             requests.delete(
                 f"{base_url}/documents/{doc_id}",
-                headers=admin_headers, timeout=5,
+                headers=admin_headers,
+                timeout=5,
             )

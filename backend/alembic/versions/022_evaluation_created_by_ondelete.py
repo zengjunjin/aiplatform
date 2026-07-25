@@ -11,12 +11,12 @@ CASCADE: 当用户被删除时, 其创建的评测运行也应级联删除 (与 
 注: 约束名沿用 PostgreSQL 默认命名规则 `<table>_<column>_fkey`
     (与 015_add_evaluation_fk_ondelete 保持一致)。
 """
+
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision = '022_eval_created_by_cascade'
-down_revision = '021_eval_results_contexts_jsonb'
+revision = "022_eval_created_by_cascade"
+down_revision = "021_eval_results_contexts_jsonb"
 branch_labels = None
 depends_on = None
 
@@ -24,32 +24,32 @@ depends_on = None
 def upgrade():
     # 删除原 SET NULL 外键约束, 重建为 CASCADE
     op.drop_constraint(
-        'evaluation_runs_created_by_fkey',
-        'evaluation_runs',
-        type_='foreignkey',
+        "evaluation_runs_created_by_fkey",
+        "evaluation_runs",
+        type_="foreignkey",
     )
     op.create_foreign_key(
-        'evaluation_runs_created_by_fkey',
-        'evaluation_runs',
-        'users',
-        ['created_by'],
-        ['id'],
-        ondelete='CASCADE',
+        "evaluation_runs_created_by_fkey",
+        "evaluation_runs",
+        "users",
+        ["created_by"],
+        ["id"],
+        ondelete="CASCADE",
     )
 
 
 def downgrade():
     # 反向操作: 恢复为 SET NULL
     op.drop_constraint(
-        'evaluation_runs_created_by_fkey',
-        'evaluation_runs',
-        type_='foreignkey',
+        "evaluation_runs_created_by_fkey",
+        "evaluation_runs",
+        type_="foreignkey",
     )
     op.create_foreign_key(
-        'evaluation_runs_created_by_fkey',
-        'evaluation_runs',
-        'users',
-        ['created_by'],
-        ['id'],
-        ondelete='SET NULL',
+        "evaluation_runs_created_by_fkey",
+        "evaluation_runs",
+        "users",
+        ["created_by"],
+        ["id"],
+        ondelete="SET NULL",
     )

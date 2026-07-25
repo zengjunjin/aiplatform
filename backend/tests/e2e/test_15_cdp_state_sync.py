@@ -7,44 +7,18 @@
 2. 用户信息跨页面保持（auth store）
 3. 创建 KB 后在 chat 页知识库选择器中立即可见（store 响应式更新）
 """
-import json
+
 import os
-import time
 import uuid
+
 import pytest
 
+from tests.e2e.helpers.cdp_auth import login_cdp_session
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import wait_for, wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-
-
-def _inject_auth_token(cdp, admin_token):
-    """注入 admin_token 到前端 localStorage，避免 WebView 填表登录触发 /auth/login 限流。
-
-    前端 auth store 使用 zustand persist，localStorage key 为 'rag-auth'，
-    存储格式为 {state: {token, refreshToken, refreshTokenExpiresAt, user, themeMode}, version: 0}。
-    access_token（token 字段）正常不持久化（partialize 排除），但注入后 zustand
-    rehydrate 会将其读入内存，app 立即可用。onRehydrateStorage 会异步调用
-    refreshAccessToken()（走 /auth/refresh，限流 10/minute，远高于 /auth/login 的 5/minute）。
-    """
-    auth_data = {
-        "state": {
-            "token": admin_token["access_token"],
-            "refreshToken": admin_token["refresh_token"],
-            "refreshTokenExpiresAt": int(time.time() * 1000) + 7 * 24 * 3600 * 1000,
-            "user": admin_token["user"],
-            "themeMode": "light",
-        },
-        "version": 0,
-    }
-    cdp.evaluate(f"""
-        try {{
-            const authData = {json.dumps(auth_data)};
-            localStorage.setItem('rag-auth', JSON.stringify(authData));
-        }} catch(e) {{}}
-    """)
 
 
 @pytest.fixture(scope="module")
@@ -55,13 +29,7 @@ def logged_in_cdp(admin_token):
         client.connect(timeout=30)
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
-    client.navigate(TAURI_HOME)
-    time.sleep(1)
-    # 注入 token 到 localStorage（避免 /auth/login 限流）
-    _inject_auth_token(client, admin_token)
-    # 重新加载页面，触发 zustand persist 从 localStorage rehydrate
-    client.navigate(TAURI_HOME)
-    time.sleep(3)
+    login_cdp_session(client, admin_token, "#/knowledge-bases")
     yield client
     client.close()
 
@@ -74,7 +42,7 @@ def test_kb_list_persists_across_navigation(logged_in_cdp):
     cdp = logged_in_cdp
     # 导航到 KB 页
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-card, [class*='kb-card'], .ant-empty, button", timeout=8)
     # 获取当前 KB 卡片数量
     count_before = cdp.evaluate("""
         (function() {
@@ -85,10 +53,10 @@ def test_kb_list_persists_across_navigation(logged_in_cdp):
     """)
     # 导航到 chat 页
     cdp.evaluate("window.location.hash = '#/chat'")
-    time.sleep(2)
+    wait_for_element(cdp, "button, textarea, input, .ant-empty", timeout=8)
     # 再导航回 KB 页
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-card, [class*='kb-card'], .ant-empty, button", timeout=8)
     count_after = cdp.evaluate("""
         (function() {
             return document.querySelectorAll(
@@ -98,8 +66,9 @@ def test_kb_list_persists_across_navigation(logged_in_cdp):
     """)
     # 数量应保持一致（允许 None 的情况，如果选择器未匹配）
     if count_before is not None and count_after is not None:
-        assert count_before == count_after, \
-            f"KB count changed after navigation: {count_before} -> {count_after}"
+        assert (
+            count_before == count_after
+        ), f"KB count changed after navigation: {count_before} -> {count_after}"
 
 
 def test_user_info_persists(logged_in_cdp):
@@ -109,7 +78,7 @@ def test_user_info_persists(logged_in_cdp):
     """
     cdp = logged_in_cdp
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-card, [class*='kb-card'], .ant-empty, button", timeout=8)
     username_visible = cdp.evaluate("""
         (function() {
             return Array.from(document.querySelectorAll('*'))
@@ -118,7 +87,7 @@ def test_user_info_persists(logged_in_cdp):
     """)
     # 导航到 chat 页
     cdp.evaluate("window.location.hash = '#/chat'")
-    time.sleep(2)
+    wait_for_element(cdp, "button, textarea, input, .ant-empty", timeout=8)
     username_still = cdp.evaluate("""
         (function() {
             return Array.from(document.querySelectorAll('*'))
@@ -126,8 +95,9 @@ def test_user_info_persists(logged_in_cdp):
         })();
     """)
     # 两处应一致（都可见或都不可见）
-    assert username_visible == username_still, \
-        f"Username visibility changed: {username_visible} -> {username_still}"
+    assert (
+        username_visible == username_still
+    ), f"Username visibility changed: {username_visible} -> {username_still}"
 
 
 def test_create_kb_reflects_in_chat(logged_in_cdp):
@@ -138,7 +108,7 @@ def test_create_kb_reflects_in_chat(logged_in_cdp):
     cdp = logged_in_cdp
     # 先到 KB 页创建
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-card, [class*='kb-card'], .ant-empty, button", timeout=8)
     kb_name = f"SyncTest_{uuid.uuid4().hex[:6]}"
     cdp.evaluate("""
         (function() {
@@ -147,7 +117,7 @@ def test_create_kb_reflects_in_chat(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-modal input[type='text']", timeout=8)
     cdp.evaluate(f"""
         (function() {{
             const input = document.querySelector('.ant-modal input[type="text"]');
@@ -160,7 +130,7 @@ def test_create_kb_reflects_in_chat(logged_in_cdp):
             }}
         }})();
     """)
-    time.sleep(0.5)
+    wait_for_element(cdp, ".ant-modal-footer button.ant-btn-primary", timeout=3)
     cdp.evaluate("""
         (function() {
             const ok = document.querySelector(
@@ -169,10 +139,14 @@ def test_create_kb_reflects_in_chat(logged_in_cdp):
             if (ok) ok.click();
         })();
     """)
-    time.sleep(2)
+    wait_for(
+        lambda: not cdp.evaluate("document.querySelector('.ant-modal-content')"),
+        timeout=8,
+        message="Create KB modal did not close",
+    )
     # 导航到 chat 页
     cdp.evaluate("window.location.hash = '#/chat'")
-    time.sleep(2)
+    wait_for_element(cdp, "button, textarea, input, .ant-empty", timeout=8)
     # 检查 KB 选择器中是否有新 KB（软断言，store 异步加载可能导致延迟）
     cdp.evaluate("""
         (function() {
@@ -180,7 +154,7 @@ def test_create_kb_reflects_in_chat(logged_in_cdp):
             if (select) select.click();
         })();
     """)
-    time.sleep(1)
+    wait_for_element(cdp, ".ant-select-dropdown, .ant-select-item", timeout=5)
     in_dropdown = cdp.evaluate(f"""
         (function() {{
             return Array.from(document.querySelectorAll('.ant-select-item'))

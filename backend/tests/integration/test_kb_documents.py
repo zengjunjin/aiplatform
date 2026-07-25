@@ -1,8 +1,10 @@
 """知识库 + 文档 集成测试 - 真实 HTTP 流程"""
-import pytest
-import tempfile
+
 import os
-from unittest.mock import patch, MagicMock
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 @pytest.fixture
@@ -13,10 +15,13 @@ async def user_token(client):
         "password": "Test@123456",
     }
     await client.post("/api/v1/auth/register", json=user_data)
-    login_r = await client.post("/api/v1/auth/login", json={
-        "username": user_data["username"],
-        "password": user_data["password"],
-    })
+    login_r = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": user_data["username"],
+            "password": user_data["password"],
+        },
+    )
     return login_r.json()["data"]["access_token"]
 
 
@@ -29,10 +34,14 @@ def auth_headers(user_token):
 @pytest.mark.integration
 class TestKnowledgeBaseCRUD:
     async def test_create_kb_success(self, client, auth_headers):
-        r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "我的知识库",
-            "description": "测试知识库",
-        }, headers=auth_headers)
+        r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "我的知识库",
+                "description": "测试知识库",
+            },
+            headers=auth_headers,
+        )
         assert r.status_code == 200
         data = r.json()["data"]
         assert data["name"] == "我的知识库"
@@ -41,10 +50,14 @@ class TestKnowledgeBaseCRUD:
 
     async def test_list_kbs_pagination(self, client, auth_headers):
         for i in range(3):
-            await client.post("/api/v1/knowledge-bases", json={
-                "name": f"kb-{i}",
-                "description": f"desc-{i}",
-            }, headers=auth_headers)
+            await client.post(
+                "/api/v1/knowledge-bases",
+                json={
+                    "name": f"kb-{i}",
+                    "description": f"desc-{i}",
+                },
+                headers=auth_headers,
+            )
         r = await client.get("/api/v1/knowledge-bases?page=1&page_size=2", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()["data"]
@@ -55,10 +68,14 @@ class TestKnowledgeBaseCRUD:
         assert data["total_pages"] == 2
 
     async def test_get_kb_detail(self, client, auth_headers):
-        create_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "detail-kb",
-            "description": "detail desc",
-        }, headers=auth_headers)
+        create_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "detail-kb",
+                "description": "detail desc",
+            },
+            headers=auth_headers,
+        )
         kb_id = create_r.json()["data"]["id"]
 
         r = await client.get(f"/api/v1/knowledge-bases/{kb_id}", headers=auth_headers)
@@ -68,24 +85,36 @@ class TestKnowledgeBaseCRUD:
         assert data["name"] == "detail-kb"
 
     async def test_update_kb(self, client, auth_headers):
-        create_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "old-name",
-            "description": "old-desc",
-        }, headers=auth_headers)
+        create_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "old-name",
+                "description": "old-desc",
+            },
+            headers=auth_headers,
+        )
         kb_id = create_r.json()["data"]["id"]
 
-        r = await client.put(f"/api/v1/knowledge-bases/{kb_id}", json={
-            "name": "new-name",
-            "description": "new-desc",
-        }, headers=auth_headers)
+        r = await client.put(
+            f"/api/v1/knowledge-bases/{kb_id}",
+            json={
+                "name": "new-name",
+                "description": "new-desc",
+            },
+            headers=auth_headers,
+        )
         assert r.status_code == 200
         assert r.json()["data"]["name"] == "new-name"
 
     async def test_delete_kb(self, client, auth_headers):
-        create_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "to-delete",
-            "description": "",
-        }, headers=auth_headers)
+        create_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "to-delete",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = create_r.json()["data"]["id"]
 
         r = await client.delete(f"/api/v1/knowledge-bases/{kb_id}", headers=auth_headers)
@@ -103,10 +132,14 @@ class TestKnowledgeBaseCRUD:
 @pytest.mark.integration
 class TestDocumentAPI:
     async def test_list_documents_empty(self, client, auth_headers):
-        kb_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "docs-kb",
-            "description": "",
-        }, headers=auth_headers)
+        kb_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "docs-kb",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = kb_r.json()["data"]["id"]
 
         r = await client.get(f"/api/v1/documents?kb_id={kb_id}", headers=auth_headers)
@@ -116,14 +149,19 @@ class TestDocumentAPI:
         assert data["items"] == []
 
     async def test_upload_text_document(self, client, auth_headers):
-        kb_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "upload-kb",
-            "description": "",
-        }, headers=auth_headers)
+        kb_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "upload-kb",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = kb_r.json()["data"]["id"]
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False,
-                                         encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write("这是一个测试文档的内容。\nHello world!")
             path = f.name
 
@@ -144,14 +182,19 @@ class TestDocumentAPI:
             os.unlink(path)
 
     async def test_get_document_detail(self, client, auth_headers):
-        kb_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "detail-doc-kb",
-            "description": "",
-        }, headers=auth_headers)
+        kb_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "detail-doc-kb",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = kb_r.json()["data"]["id"]
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False,
-                                         encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write("测试文档")
             path = f.name
 
@@ -178,14 +221,19 @@ class TestDocumentAPI:
         assert r.status_code == 404
 
     async def test_delete_document(self, client, auth_headers):
-        kb_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "del-doc-kb",
-            "description": "",
-        }, headers=auth_headers)
+        kb_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "del-doc-kb",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = kb_r.json()["data"]["id"]
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False,
-                                         encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write("todelete")
             path = f.name
 
@@ -214,10 +262,14 @@ class TestDocumentAPI:
             os.unlink(path)
 
     async def test_upload_unsupported_extension(self, client, auth_headers):
-        kb_r = await client.post("/api/v1/knowledge-bases", json={
-            "name": "bad-kb",
-            "description": "",
-        }, headers=auth_headers)
+        kb_r = await client.post(
+            "/api/v1/knowledge-bases",
+            json={
+                "name": "bad-kb",
+                "description": "",
+            },
+            headers=auth_headers,
+        )
         kb_id = kb_r.json()["data"]["id"]
 
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".exe", delete=False) as f:

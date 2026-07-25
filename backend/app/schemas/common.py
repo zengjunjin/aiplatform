@@ -25,12 +25,12 @@ class PaginatedResponse(BaseModel, Generic[T]):
     data: PaginatedData[T]
 
 
-def ok(data=None, message: str = "success") -> dict:
-    return {"code": 0, "message": message, "data": data}
+def ok(data: T | None = None, message: str = "success") -> APIResponse[T]:
+    return APIResponse(code=0, message=message, data=data)
 
 
-def error(code: int, message: str) -> dict:
-    return {"code": code, "message": message, "data": None}
+def error(code: int, message: str) -> APIResponse:
+    return APIResponse(code=code, message=message, data=None)
 
 
 def paginated_ok(
@@ -39,16 +39,13 @@ def paginated_ok(
     page: int = 1,
     page_size: int = 20,
     message: str = "success",
-) -> dict:
+) -> PaginatedResponse:
     total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-    return {
-        "code": 0,
-        "message": message,
-        "data": {
-            "items": items,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-        },
-    }
+    paginated_data = PaginatedData(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
+    return PaginatedResponse(code=0, message=message, data=paginated_data)

@@ -46,6 +46,7 @@ export default function ProgressPanel({ progressState, onProgress, onClose }: Pr
       });
     }, 1000);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅依赖 progressState 的具体属性，整体加入会导致不必要重新执行
   }, [progressState?.completed, progressState?.startTime, progressState?.total, onProgress]);
 
   return (

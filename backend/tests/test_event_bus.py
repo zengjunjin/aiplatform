@@ -2,7 +2,9 @@
 
 Task 19: 验证 close() 不清空 _subscribers，close→init 后订阅仍有效。
 """
+
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -88,10 +90,8 @@ class TestEventBusClosePreservesSubscribers:
             # 清理 listener_task
             if EventBus._listener_task:
                 EventBus._listener_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await EventBus._listener_task
-                except asyncio.CancelledError:
-                    pass
                 EventBus._listener_task = None
 
     @pytest.mark.asyncio
@@ -217,6 +217,7 @@ class TestEventBusSubscribeAndPublish:
         args = fake_redis.publish.await_args
         assert args[0][0] == "events"
         import json
+
         msg = json.loads(args[0][1])
         assert msg["event_type"] == EventBus.DOCUMENT_PARSED
         assert msg["payload"]["doc_id"] == 42

@@ -10,8 +10,7 @@ class UserOut(BaseModel):
     role: Literal["user", "admin"]
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserListResponse(BaseModel):
@@ -21,17 +20,16 @@ class UserListResponse(BaseModel):
     role: Literal["user", "admin"]
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UpdateRoleRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     role: Literal["user", "admin"]
 
 
 class UpdateStatusRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     is_active: bool

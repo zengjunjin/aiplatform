@@ -6,6 +6,7 @@ when EMBEDDING_CACHE_ENABLED=True). Concurrency & retries handled inside
 the embedding provider.
 Progress tracked via Redis (doc:progress:{doc_id}).
 """
+
 import asyncio
 import json
 
@@ -39,8 +40,9 @@ def _get_redis_sync() -> redis_sync.Redis | None:
     return _redis_sync_client
 
 
-def _update_progress(doc_id: int, status: str, progress: int,
-                     chunk_count: int = 0, error: str | None = None) -> None:
+def _update_progress(
+    doc_id: int, status: str, progress: int, chunk_count: int = 0, error: str | None = None
+) -> None:
     """Update progress in both PG and Redis."""
     session = get_sync_session()
     try:
@@ -93,9 +95,8 @@ def _cleanup_old_chunks(doc_id: int, kb_id: int) -> None:
     session = get_sync_session()
     try:
         from sqlalchemy import delete
-        session.execute(
-            delete(DocumentChunk).where(DocumentChunk.doc_id == doc_id)
-        )
+
+        session.execute(delete(DocumentChunk).where(DocumentChunk.doc_id == doc_id))
         session.commit()
     except Exception as e:
         logger.debug(f"Cleanup old chunks failed: {e}")
@@ -137,13 +138,14 @@ def _parse_and_chunk(doc_id: int) -> list[dict]:
                 chunk_index=i,
                 content=c["content"],
                 char_count=c["char_count"],
-                            )
+            )
             chunk_objs.append(chunk)
             chunk_records.append(c)
         session.add_all(chunk_objs)
         session.commit()
 
         from sqlalchemy import select
+
         result = session.execute(
             select(DocumentChunk)
             .where(DocumentChunk.doc_id == doc_id)
@@ -179,6 +181,7 @@ async def _embed_texts_async(texts: list[str]) -> list[list[float]]:
     强制在当前 loop 中重建连接。缓存未启用时无 reset_connection 方法，跳过。
     """
     from app.models.factory import ModelFactory
+
     embedding = ModelFactory.create_embedding()
     # Task 35: 通过公开方法 reset_connection() 重置连接，避免访问私有属性 _redis
     if hasattr(embedding, "reset_connection"):
@@ -219,8 +222,10 @@ def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
+
         async def _add():
             await retriever.add_chunks(kb_id, chunks, vectors)
+
         loop.run_until_complete(_add())
     finally:
         loop.close()
@@ -230,6 +235,7 @@ def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
     session = get_sync_session()
     try:
         from sqlalchemy import update as sa_update
+
         for chunk in chunks:
             chunk_id = chunk.get("chunk_id")
             if chunk_id is None:
@@ -255,13 +261,17 @@ def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
         # Phase F2: 增量追加新文档 chunks 到 BM25 索引（而非全量 rebuild）
         # 避免覆盖 kb 中其他文档的索引数据
         from app.rag.bm25 import bm25_store
+
         bm25_store.add_documents_sync(kb_id, chunks)
     except Exception as e:
         logger.warning(f"BM25 incremental update failed: {e}")
 
 
-@celery_app.task(bind=True, max_retries=settings.TASK_MAX_RETRIES_PARSING,
-                 name="app.tasks.document_task.parse_document")
+@celery_app.task(
+    bind=True,
+    max_retries=settings.TASK_MAX_RETRIES_PARSING,
+    name="app.tasks.document_task.parse_document",
+)
 def parse_document_task(self, doc_id: int) -> dict | None:
     """Parse -> chunk -> embed -> store. Tracks progress via Redis.
 
@@ -343,6 +353,7 @@ def parse_document_task(self, doc_id: int) -> dict | None:
 
             async def _publish():
                 from app.core.events import EventBus
+
                 session = get_sync_session()
                 try:
                     doc = session.get(Document, doc_id)
@@ -351,13 +362,17 @@ def parse_document_task(self, doc_id: int) -> dict | None:
                     kb_id = doc.kb_id if doc else None
                 finally:
                     session.close()
-                await EventBus.publish(EventBus.DOCUMENT_PARSED, {
-                    "doc_id": doc_id,
-                    "filename": filename,
-                    "kb_id": kb_id,
-                    "uploader_id": uploader_id,
-                    "chunk_count": len(chunks),
-                })
+                await EventBus.publish(
+                    EventBus.DOCUMENT_PARSED,
+                    {
+                        "doc_id": doc_id,
+                        "filename": filename,
+                        "kb_id": kb_id,
+                        "uploader_id": uploader_id,
+                        "chunk_count": len(chunks),
+                    },
+                )
+
             loop.run_until_complete(_publish())
         except Exception as e:
             logger.warning(f"Failed to publish DOCUMENT_PARSED event: {e}")
@@ -370,5 +385,7 @@ def parse_document_task(self, doc_id: int) -> dict | None:
             _update_progress(doc_id, "failed", 100, error="文档解析失败，请重试或联系管理员")
         else:
             # 更新进度为 retrying, 让前端知道正在重试
-            _update_progress(doc_id, "retrying", 50, error=f"正在重试 {retry_count + 1}/{self.max_retries}")
-        raise self.retry(exc=e, countdown=2 ** retry_count)
+            _update_progress(
+                doc_id, "retrying", 50, error=f"正在重试 {retry_count + 1}/{self.max_retries}"
+            )
+        raise self.retry(exc=e, countdown=2**retry_count) from e

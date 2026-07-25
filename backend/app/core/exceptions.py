@@ -68,7 +68,9 @@ class ValidationError(AppException):
 
 
 async def app_exception_handler(request: Request, exc: AppException):
-    logger.warning(f"AppException: {exc.code} - {exc.message} - {request.method} {request.url.path}")
+    logger.warning(
+        f"AppException: {exc.code} - {exc.message} - {request.method} {request.url.path}"
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": exc.code, "message": exc.message, "data": None},
@@ -93,5 +95,9 @@ async def generic_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled exception: {request.method} {request.url.path}")
     return JSONResponse(
         status_code=500,
-        content={"code": ErrorCode.INTERNAL_ERROR, "message": get_error_message(ErrorCode.INTERNAL_ERROR), "data": None},
+        content={
+            "code": ErrorCode.INTERNAL_ERROR,
+            "message": get_error_message(ErrorCode.INTERNAL_ERROR),
+            "data": None,
+        },
     )

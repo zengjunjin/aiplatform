@@ -12,6 +12,7 @@
 """
 
 import asyncio
+import contextlib
 import json
 from collections.abc import Awaitable, Callable
 
@@ -136,10 +137,8 @@ class EventBus:
         """
         if cls._listener_task:
             cls._listener_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await cls._listener_task
-            except asyncio.CancelledError:
-                pass
             cls._listener_task = None
         if cls._redis:
             await cls._redis.aclose()

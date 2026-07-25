@@ -1,7 +1,10 @@
 """Tests for app.core.cache (Redis-backed cache helpers)"""
-import pytest
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.core import cache
 
 

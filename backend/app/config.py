@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50
     RETRIEVAL_TOP_K: int = 10
     RERANK_TOP_K: int = 5
+    # Task 2.7: BM25/向量融合 alpha 权重（1.0 纯向量，0.0 纯 BM25，0.5 等权加权）
+    # alpha=None 时回退 RRF 融合；KB 级覆盖由 Task 2.8 接入
+    RETRIEVAL_ALPHA: float = 0.5
 
     # Task 11: 上下文窗口 token 预算配置化（从 context_manager.py 类属性迁移）
     HISTORY_TOKEN_BUDGET: int = 6000
@@ -102,6 +105,13 @@ class Settings(BaseSettings):
 
     # Task 13: 检索结果 score 阈值过滤（低于此分数的 chunks 不进入 prompt）
     RETRIEVAL_SCORE_THRESHOLD: float = 0.3
+
+    # 查询扩展开关：开启后检索前生成多个查询变体并行检索（默认关闭以保持现有行为）
+    QUERY_EXPANSION_ENABLED: bool = False
+
+    # BM25 检索 score 阈值过滤（BM25 score 数值范围与 vector 不同，0.01 为合理下限）
+    # 低于此分数的 chunks 不进入 RRF 融合
+    BM25_SCORE_THRESHOLD: float = 0.01
 
     # Task 2.1: 聊天历史上下文长度统一（消除 chat.py / chat_service.py / context_manager.py 中的魔法数字）
     CHAT_HISTORY_LIMIT: int = 20
@@ -132,6 +142,9 @@ class Settings(BaseSettings):
     # BM25 缓存安全
     BM25_CACHE_MAX_KB: int = 8
     BM25_CACHE_MAX_CHUNKS_PER_KB: int = 50000
+
+    # retriever singleflight 锁 LRU 上限（防 KB 增多后锁字典无界增长导致内存泄漏）
+    RETRIEVER_LOCKS_MAX_SIZE: int = 100
 
     CORS_ORIGINS: str = "tauri://localhost,https://tauri.localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173"
 
@@ -231,6 +244,14 @@ class Settings(BaseSettings):
     # 文档处理进度缓存 TTL（秒，1 小时）——原 document_task.py setex 3600
     DOC_PROGRESS_CACHE_TTL: int = 3600
 
+    # Task 3.6: 硬编码值配置化（默认值与原硬编码一致，可通过环境变量覆盖）
+    # 用户信息缓存 TTL（秒）——原 deps.py USER_CACHE_TTL
+    USER_CACHE_TTL: int = 60
+    # 优雅关闭超时（秒）——原 main.py lifespan timeout=30
+    GRACEFUL_SHUTDOWN_TIMEOUT: int = 30
+    # 内存黑名单上限（Redis 不可用降级时防无限增长）——原 auth_service.py _memory_blacklist_max
+    TOKEN_BLACKLIST_MAX: int = 10000
+
     @property
     def database_url_async(self) -> str:
         return (
@@ -294,8 +315,7 @@ class Settings(BaseSettings):
         # --- JWT_SECRET 校验 ---
         if len(self.JWT_SECRET) < 32:
             problems.append(
-                "JWT_SECRET 长度不足（最少 32 字符，当前 "
-                f"{len(self.JWT_SECRET)} 字符）。"
+                "JWT_SECRET 长度不足（最少 32 字符，当前 " f"{len(self.JWT_SECRET)} 字符）。"
             )
         if self.JWT_SECRET in self._WEAK_JWT_SECRETS:
             problems.append("JWT_SECRET 命中已知弱值黑名单。")

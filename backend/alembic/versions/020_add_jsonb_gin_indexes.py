@@ -14,24 +14,24 @@ GIN 索引 (jsonb_path_ops)，支持高效 @> 包含查询。
 - batch 二 (019_prompt_templates / 019a_chat_prompt_version) 已在并行执行中创建，
   故 down_revision 指向 019a_chat_prompt_version 以保持单一 head 链。
 """
+
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision = '020_jsonb_gin_indexes'
-down_revision = '019a_chat_prompt_version'
+revision = "020_jsonb_gin_indexes"
+down_revision = "019a_chat_prompt_version"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if bind.dialect.name != 'postgresql':
+    if bind.dialect.name != "postgresql":
         # SQLite 测试环境跳过
         return
 
     # CONCURRENTLY 不能在事务中执行
-    op.execute('COMMIT')
+    op.execute("COMMIT")
 
     op.execute(
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_evaluation_runs_metrics_gin "
@@ -42,17 +42,17 @@ def upgrade() -> None:
         "ON chat_messages USING GIN (referenced_chunks jsonb_path_ops)"
     )
 
-    op.execute('BEGIN')
+    op.execute("BEGIN")
 
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if bind.dialect.name != 'postgresql':
+    if bind.dialect.name != "postgresql":
         return
 
-    op.execute('COMMIT')
+    op.execute("COMMIT")
 
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_chat_messages_referenced_chunks_gin")
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_evaluation_runs_metrics_gin")
 
-    op.execute('BEGIN')
+    op.execute("BEGIN")

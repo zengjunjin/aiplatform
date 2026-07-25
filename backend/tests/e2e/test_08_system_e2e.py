@@ -7,24 +7,21 @@ API:
 
 注意：API 没有 /system/health 端点
 """
-import os
-import pytest
+
 import requests
 
-from tests.e2e.conftest import extract_data, BASE_URL
+from tests.e2e.conftest import extract_data
 
 
 def test_system_status_requires_admin(base_url, test_user_headers):
     """非 admin 不能访问 /system/status"""
-    r = requests.get(f"{base_url}/system/status",
-                     headers=test_user_headers, timeout=10)
+    r = requests.get(f"{base_url}/system/status", headers=test_user_headers, timeout=10)
     assert r.status_code == 403, f"Expected 403, got {r.status_code}: {r.text}"
 
 
 def test_system_status_admin_ok(base_url, admin_headers):
     """admin 可访问 /system/status"""
-    r = requests.get(f"{base_url}/system/status",
-                     headers=admin_headers, timeout=15)
+    r = requests.get(f"{base_url}/system/status", headers=admin_headers, timeout=15)
     assert r.status_code == 200, f"System status failed: {r.text}"
     data = extract_data(r)
     # 应包含各服务状态
@@ -37,8 +34,7 @@ def test_system_status_admin_ok(base_url, admin_headers):
 
 def test_system_models(base_url, admin_headers):
     """获取可用模型列表"""
-    r = requests.get(f"{base_url}/system/models",
-                     headers=admin_headers, timeout=10)
+    r = requests.get(f"{base_url}/system/models", headers=admin_headers, timeout=10)
     assert r.status_code == 200, f"List models failed: {r.text}"
     data = extract_data(r)
     assert "models" in data
@@ -59,5 +55,4 @@ def test_metrics_admin_ok(base_url, admin_headers):
     r = requests.get(metrics_url, headers=admin_headers, timeout=10)
     assert r.status_code == 200, f"Metrics failed: {r.text}"
     # 应包含 Prometheus 格式
-    assert "# HELP" in r.text or "# TYPE" in r.text, \
-        "Response is not Prometheus format"
+    assert "# HELP" in r.text or "# TYPE" in r.text, "Response is not Prometheus format"

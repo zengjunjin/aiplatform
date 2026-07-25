@@ -3,8 +3,11 @@
 重点测试 _rrf_fuse（纯算法，无 IO）和边界情况，
 vector_search / _load_chunks_for_bm25 通过 mock 测试。
 """
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.rag.retriever import HybridRetriever, retriever
 
 
@@ -34,7 +37,7 @@ class TestRRFFusion:
         assert result[0]["chunk_id"] == 1  # rank 0 → 最高分
         assert result[0]["rrf_score"] > result[1]["rrf_score"]
         # rrf_score = 1/(60+0+1) ≈ 0.0164
-        assert result[0]["rrf_score"] == pytest.approx(1/61, rel=1e-3)
+        assert result[0]["rrf_score"] == pytest.approx(1 / 61, rel=1e-3)
 
     def test_rrf_fuse_only_bm25_results(self):
         r = HybridRetriever()
@@ -60,7 +63,7 @@ class TestRRFFusion:
         result = r._rrf_fuse(vec, bm25)
         # chunk_id 1 在两个 list 都排 rank 0 → 分数最高
         assert result[0]["chunk_id"] == 1
-        expected = 1/61 + 1/61  # 两个 rank 0
+        expected = 1 / 61 + 1 / 61  # 两个 rank 0
         assert result[0]["rrf_score"] == pytest.approx(expected, rel=1e-3)
         assert result[1]["chunk_id"] == 2
 
@@ -89,14 +92,14 @@ class TestRRFFusion:
         vec = [{"chunk_id": 1, "content": "a", "score": 0.9}]
         result = r._rrf_fuse(vec, [])
         # rank 0, k=60: 1/(60+0+1) = 1/61
-        assert result[0]["rrf_score"] == pytest.approx(1/61, rel=1e-6)
+        assert result[0]["rrf_score"] == pytest.approx(1 / 61, rel=1e-6)
 
     def test_rrf_fuse_custom_k(self):
         r = HybridRetriever()
         vec = [{"chunk_id": 1, "content": "a", "score": 0.9}]
         result = r._rrf_fuse(vec, [], k=100)
         # rank 0, k=100: 1/(100+0+1) = 1/101
-        assert result[0]["rrf_score"] == pytest.approx(1/101, rel=1e-6)
+        assert result[0]["rrf_score"] == pytest.approx(1 / 101, rel=1e-6)
 
 
 class TestRetrieverSingleton:
@@ -112,9 +115,11 @@ class TestRetrieveWithMocks:
         vec_results = [{"chunk_id": 1, "content": "a", "score": 0.9}]
         bm25_results = [{"chunk_id": 2, "content": "b", "score": 5.0}]
 
-        with patch.object(r, "_vector_search", AsyncMock(return_value=vec_results)), \
-             patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])), \
-             patch("app.rag.retriever.bm25_store") as mock_bm25:
+        with (
+            patch.object(r, "_vector_search", AsyncMock(return_value=vec_results)),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+        ):
             mock_bm25.search = AsyncMock(return_value=bm25_results)
             with patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"):
                 result = await r.retrieve("query", kb_id=1, top_k=5)
@@ -131,9 +136,11 @@ class TestRetrieveWithMocks:
         vec = [{"chunk_id": i, "content": f"a{i}", "score": 0.9} for i in range(10)]
         bm25 = [{"chunk_id": i, "content": f"b{i}", "score": 5.0} for i in range(10)]
 
-        with patch.object(r, "_vector_search", AsyncMock(return_value=vec)), \
-             patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])), \
-             patch("app.rag.retriever.bm25_store") as mock_bm25:
+        with (
+            patch.object(r, "_vector_search", AsyncMock(return_value=vec)),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+        ):
             mock_bm25.search = AsyncMock(return_value=bm25)
             with patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"):
                 result = await r.retrieve("query", kb_id=1, top_k=3)
@@ -146,7 +153,7 @@ class TestRetrieveWithMocks:
         captured_top_k_vec = []
         captured_top_k_bm25 = []
 
-        async def fake_vec_search(query, kb_id, top_k):
+        async def fake_vec_search(query, kb_id, top_k, qdrant_filter=None):
             captured_top_k_vec.append(top_k)
             return []
 
@@ -154,9 +161,11 @@ class TestRetrieveWithMocks:
             captured_top_k_bm25.append(top_k)
             return []
 
-        with patch.object(r, "_vector_search", side_effect=fake_vec_search), \
-             patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])), \
-             patch("app.rag.retriever.bm25_store") as mock_bm25:
+        with (
+            patch.object(r, "_vector_search", side_effect=fake_vec_search),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+        ):
             mock_bm25.search = fake_bm25_search
             with patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"):
                 await r.retrieve("query", kb_id=1, top_k=5)
@@ -172,6 +181,7 @@ class TestChunksCacheSingleflight:
     async def test_concurrent_misses_only_load_once(self):
         """多个并发请求 miss 时，_load_chunks_for_bm25 只应被调用一次"""
         import asyncio
+
         r = HybridRetriever()
         load_count = 0
 
@@ -183,9 +193,7 @@ class TestChunksCacheSingleflight:
 
         with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
             # 5 个并发请求
-            results = await asyncio.gather(
-                *[r._get_chunks_for_bm25(kb_id=999) for _ in range(5)]
-            )
+            results = await asyncio.gather(*[r._get_chunks_for_bm25(kb_id=999) for _ in range(5)])
 
         # 只应加载一次（singleflight）
         assert load_count == 1, f"Expected 1 load, got {load_count}"
@@ -216,6 +224,7 @@ class TestChunksCacheSingleflight:
     async def test_different_kb_ids_load_independently(self):
         """不同 kb_id 的加载互不影响"""
         import asyncio
+
         r = HybridRetriever()
         loaded_kbs = []
 
@@ -252,6 +261,7 @@ class TestChunksCacheSingleflight:
     async def test_concurrent_load_and_invalidate_safe(self):
         """并发加载 + invalidate 不应导致状态错误"""
         import asyncio
+
         r = HybridRetriever()
         load_count = 0
 
@@ -295,7 +305,6 @@ class TestVectorSearchScoreThreshold:
     @pytest.mark.asyncio
     async def test_low_score_chunks_filtered_out(self):
         """score < RETRIEVAL_SCORE_THRESHOLD 的 chunks 被过滤"""
-        from app.config import settings
 
         r = HybridRetriever()
         fake_embedding = MagicMock()
@@ -314,7 +323,9 @@ class TestVectorSearchScoreThreshold:
         low_score_point.payload = {"chunk_id": 2, "content": "low score chunk"}
 
         fake_qdrant = MagicMock()
-        fake_qdrant.query_points = MagicMock(return_value=MagicMock(points=[high_score_point, low_score_point]))
+        fake_qdrant.query_points = MagicMock(
+            return_value=MagicMock(points=[high_score_point, low_score_point])
+        )
         r._qdrant_client = fake_qdrant
 
         with patch.object(r, "_ensure_collection"):

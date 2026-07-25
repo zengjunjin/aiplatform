@@ -1,11 +1,13 @@
 import asyncio
 import os
 import secrets
-from app.database import engine, async_session
-from app.db import Base, User, KnowledgeBase, Document, DocumentChunk, ChatSession, ChatMessage
-from app.core.security import hash_password
-from sqlalchemy import select
+
 from loguru import logger
+from sqlalchemy import select
+
+from app.core.security import hash_password
+from app.database import async_session, engine
+from app.db import Base, User
 
 
 async def init():
@@ -30,9 +32,14 @@ async def init():
             await db.commit()
             # 仅通过 logger 输出，避免密码泄漏到 stdout
             if os.getenv("INITIAL_ADMIN_PASSWORD"):
-                logger.info("Default admin user created (password from INITIAL_ADMIN_PASSWORD env var)")
+                logger.info(
+                    "Default admin user created (password from INITIAL_ADMIN_PASSWORD env var)"
+                )
             else:
-                logger.warning("Admin created with random password (length=%d), set INITIAL_ADMIN_PASSWORD env to override", len(admin_password))
+                logger.warning(
+                    "Admin created with random password (length=%d), set INITIAL_ADMIN_PASSWORD env to override",
+                    len(admin_password),
+                )
         else:
             logger.info("Admin user already exists")
 

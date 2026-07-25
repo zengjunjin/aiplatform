@@ -37,14 +37,25 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
         return ok(data=tokens)
     except Exception as e:
         from app.core.exceptions import AppException
+
         if isinstance(e, AppException):
-            await log_audit(action="user.login", user_id=None, request=request,
-                           details={"username": req.username}, result="fail")
+            await log_audit(
+                action="user.login",
+                user_id=None,
+                request=request,
+                details={"username": req.username},
+                result="fail",
+            )
         else:
             # Task 32: 非 AppException（内部异常）也记录审计，便于排查 5xx 类故障
             logger.exception("login internal error for username=%s", req.username)
-            await log_audit(action="user.login", user_id=None, request=request,
-                           details={"username": req.username}, result="fail_internal")
+            await log_audit(
+                action="user.login",
+                user_id=None,
+                request=request,
+                details={"username": req.username},
+                result="fail_internal",
+            )
         raise
 
 
@@ -56,13 +67,18 @@ async def refresh(request: Request, req: RefreshRequest, db: AsyncSession = Depe
 
 
 @router.get("/me")
-async def me(user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def me(request: Request, user: User = Depends(get_current_user)):
     return ok(data=UserResponse.model_validate(user).model_dump())
 
 
 @router.post("/logout")
-async def logout(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")
+async def logout(
+    request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
     from app.services.auth_service import add_to_blacklist
+
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
@@ -72,7 +88,9 @@ async def logout(request: Request, user: User = Depends(get_current_user), db: A
         # 显式类型校验：客户端可能发送 JSON 数组/字符串/数字等非对象类型，
         # 此时 body 不是 dict，直接跳过 refresh_token 处理（不抛异常，保持 200 响应）。
         if not isinstance(body, dict):
-            logger.warning(f"Logout body is not a JSON object, skip refresh_token blacklist: type={type(body).__name__}")
+            logger.warning(
+                f"Logout body is not a JSON object, skip refresh_token blacklist: type={type(body).__name__}"
+            )
         else:
             refresh_token = body.get("refresh_token")
             if refresh_token:
@@ -84,6 +102,7 @@ async def logout(request: Request, user: User = Depends(get_current_user), db: A
 
 
 @router.put("/password")
+@limiter.limit("10/minute")
 async def change_password(
     req: ChangePasswordRequest,
     request: Request,
@@ -91,6 +110,7 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services import user_service
+
     await user_service.change_password(user.id, req.old_password, req.new_password, db)
     await log_audit(action="user.change_password", user_id=user.id, request=request)
     return ok(message="Password changed")

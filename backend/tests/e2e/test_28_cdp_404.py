@@ -8,13 +8,13 @@
 
 使用未登录 cdp fixture（404 页无需鉴权）。
 """
+
 import os
 import time
 
 import pytest
 
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -87,5 +87,6 @@ def test_404_return_home(cdp):
             return
         time.sleep(0.5)
     url = cdp.evaluate("window.location.href")
-    assert "/dashboard" in url or "/login" in url, \
-        f"Did not navigate to dashboard or login after clicking 返回首页: {url}"
+    assert (
+        "/dashboard" in url or "/login" in url
+    ), f"Did not navigate to dashboard or login after clicking 返回首页: {url}"

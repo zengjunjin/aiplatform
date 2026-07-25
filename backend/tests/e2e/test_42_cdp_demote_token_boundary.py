@@ -24,6 +24,7 @@
 - admin CDP 会话：执行降级操作 + UI 验证角色变更
 - 用户 A API 验证：用旧 access_token 调 admin-only API
 """
+
 import os
 import time
 
@@ -31,11 +32,10 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
+    login_cdp_session,
+    make_cdp_client,
 )
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -54,11 +54,11 @@ def _update_user_role(base_url, admin_headers, user_id, role):
     """通过 API 更新用户角色。"""
     r = requests.put(
         f"{base_url}/users/{user_id}/role",
-        json={"role": role}, headers=admin_headers, timeout=10,
+        json={"role": role},
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"Update role to {role} failed: {r.status_code} {r.text[:200]}"
-    )
+    assert r.status_code == 200, f"Update role to {role} failed: {r.status_code} {r.text[:200]}"
 
 
 def test_demote_invalidates_old_admin_token(base_url, admin_headers, cdp_admin):
@@ -81,10 +81,14 @@ def test_demote_invalidates_old_admin_token(base_url, admin_headers, cdp_admin):
 
     # 2. 提升为 admin 并登录获取含 role=admin 的 access_token
     _update_user_role(base_url, admin_headers, user_a_id, "admin")
-    r_login = requests.post(f"{base_url}/auth/login", json={
-        "username": user_a["username"],
-        "password": user_a["password"],
-    }, timeout=10)
+    r_login = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": user_a["username"],
+            "password": user_a["password"],
+        },
+        timeout=10,
+    )
     assert r_login.status_code == 200, f"Login failed: {r_login.text[:200]}"
     admin_token_a = r_login.json().get("data", {}).get("access_token")
 
@@ -146,8 +150,7 @@ def test_promote_does_not_grant_retroactive_admin_via_old_token(base_url, admin_
         timeout=10,
     )
     assert r_before.status_code == 403, (
-        f"Baseline GET /users as user should return 403, "
-        f"got {r_before.status_code}"
+        f"Baseline GET /users as user should return 403, " f"got {r_before.status_code}"
     )
 
     # 3. 提升为 admin

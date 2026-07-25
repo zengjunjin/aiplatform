@@ -1,7 +1,6 @@
-﻿"""Tests for app.tasks.evaluation_task.run_evaluation_task"""
-from unittest.mock import MagicMock, patch
+"""Tests for app.tasks.evaluation_task.run_evaluation_task"""
 
-import pytest
+from unittest.mock import MagicMock, patch
 
 from app.db.evaluation import EvaluationStatus
 from app.tasks import evaluation_task
@@ -83,10 +82,11 @@ class TestRunStateMachinePendingToRunning:
         session = _make_mock_session(run)
 
         # _prepare_dataset 返回空 → 触发 FAILED，但在此之前 RUNNING 已设置
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset", return_value=[]):
-
-            result = run_evaluation_task(run_id=1)
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(evaluation_task, "_prepare_dataset", return_value=[]),
+        ):
+            run_evaluation_task(run_id=1)
 
         # 状态变更: PENDING → RUNNING → FAILED
         assert EvaluationStatus.RUNNING in run.status_changes
@@ -108,11 +108,12 @@ class TestRunSuccessRunningToCompleted:
         results = _fake_results(3)
         fake_metrics = {"faithfulness": 0.9, "answer_relevancy": 0.8}
 
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset", return_value=dataset), \
-             patch.object(evaluation_task, "_run_evaluations", return_value=results), \
-             patch.object(evaluation_task, "aggregate_metrics", return_value=fake_metrics):
-
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+            patch.object(evaluation_task, "_run_evaluations", return_value=results),
+            patch.object(evaluation_task, "aggregate_metrics", return_value=fake_metrics),
+        ):
             result = run_evaluation_task(run_id=1)
 
         # 状态变更: PENDING → RUNNING → COMPLETED
@@ -153,11 +154,15 @@ class TestRunFailureRunningToFailed:
         session = _make_mock_session(run)
         dataset = _fake_dataset(3)
 
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset", return_value=dataset), \
-             patch.object(evaluation_task, "_run_evaluations",
-                          side_effect=RuntimeError("RAGAS evaluation failed")):
-
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+            patch.object(
+                evaluation_task,
+                "_run_evaluations",
+                side_effect=RuntimeError("RAGAS evaluation failed"),
+            ),
+        ):
             result = run_evaluation_task(run_id=1)
 
         # 状态变更: PENDING → RUNNING → FAILED
@@ -189,11 +194,13 @@ class TestCommitErrDoesNotBlock:
         # 2. _update_run_status 中 FAILED 后 → RuntimeError (失败，被内部 except 捕获)
         session.commit.side_effect = [None, RuntimeError("commit failed in except")]
 
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset", return_value=dataset), \
-             patch.object(evaluation_task, "_run_evaluations",
-                          side_effect=RuntimeError("eval error")):
-
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+            patch.object(
+                evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
+            ),
+        ):
             # 不应抛异常，commit 错误被内部 except 捕获
             result = run_evaluation_task(run_id=1)
 
@@ -215,9 +222,10 @@ class TestDatasetGenerationFailureHandling:
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
 
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset", return_value=[]):
-
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(evaluation_task, "_prepare_dataset", return_value=[]),
+        ):
             result = run_evaluation_task(run_id=1)
 
         # 状态变更: PENDING → RUNNING → FAILED
@@ -240,10 +248,12 @@ class TestDatasetGenerationFailureHandling:
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
 
-        with patch.object(evaluation_task, "get_sync_session", return_value=session), \
-             patch.object(evaluation_task, "_prepare_dataset",
-                          side_effect=RuntimeError("DB connection lost")):
-
+        with (
+            patch.object(evaluation_task, "get_sync_session", return_value=session),
+            patch.object(
+                evaluation_task, "_prepare_dataset", side_effect=RuntimeError("DB connection lost")
+            ),
+        ):
             result = run_evaluation_task(run_id=1)
 
         # 异常被 except 捕获，状态设为 FAILED

@@ -1,9 +1,8 @@
 """Tests for app.tasks.feedback_analysis_task"""
-import os
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+import os
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.tasks import feedback_analysis_task
 from app.tasks.feedback_analysis_task import (
@@ -56,11 +55,15 @@ class TestReportGenerated:
         """验证报告文件生成"""
         mock_session = _make_mock_async_session()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=_fake_analysis())), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task,
+                "analyze_feedback",
+                new=AsyncMock(return_value=_fake_analysis()),
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         # 返回值包含报告路径和统计信息
@@ -78,11 +81,15 @@ class TestReportGenerated:
         """报告生成在 REPORT_DIR 指定目录"""
         mock_session = _make_mock_async_session()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=_fake_analysis())), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task,
+                "analyze_feedback",
+                new=AsyncMock(return_value=_fake_analysis()),
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         report_path = result["report_path"]
@@ -96,11 +103,13 @@ class TestReportContentFormat:
         mock_session = _make_mock_async_session()
         analysis = _fake_analysis()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=analysis)), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task, "analyze_feedback", new=AsyncMock(return_value=analysis)
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         with open(result["report_path"], encoding="utf-8") as f:
@@ -122,11 +131,15 @@ class TestReportContentFormat:
         """验证报告包含失败模式分析"""
         mock_session = _make_mock_async_session()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=_fake_analysis())), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task,
+                "analyze_feedback",
+                new=AsyncMock(return_value=_fake_analysis()),
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         with open(result["report_path"], encoding="utf-8") as f:
@@ -142,11 +155,15 @@ class TestReportContentFormat:
         """验证报告包含优化建议"""
         mock_session = _make_mock_async_session()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=_fake_analysis())), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task,
+                "analyze_feedback",
+                new=AsyncMock(return_value=_fake_analysis()),
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         with open(result["report_path"], encoding="utf-8") as f:
@@ -165,11 +182,15 @@ class TestReportContentFormat:
         """验证报告包含低分样本"""
         mock_session = _make_mock_async_session()
 
-        with patch.object(feedback_analysis_task, "async_session", mock_session), \
-             patch.object(feedback_analysis_task, "analyze_feedback",
-                          new=AsyncMock(return_value=_fake_analysis())), \
-             patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
-
+        with (
+            patch.object(feedback_analysis_task, "async_session", mock_session),
+            patch.object(
+                feedback_analysis_task,
+                "analyze_feedback",
+                new=AsyncMock(return_value=_fake_analysis()),
+            ),
+            patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)),
+        ):
             result = run_feedback_analysis()
 
         with open(result["report_path"], encoding="utf-8") as f:
@@ -184,7 +205,7 @@ class TestCleanupOldReports:
     def _create_reports(self, dir_path: str, count: int) -> list[str]:
         """创建 count 个测试报告文件，日期递增"""
         os.makedirs(dir_path, exist_ok=True)
-        base_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        base_date = datetime(2025, 1, 1, tzinfo=UTC)
         filenames = []
         for i in range(count):
             start = base_date + timedelta(weeks=i)
@@ -198,7 +219,7 @@ class TestCleanupOldReports:
 
     def test_cleanup_old_reports_keeps_12(self, tmp_path):
         """生成 15 个报告，验证保留 12 个（keep=12）"""
-        filenames = self._create_reports(str(tmp_path), 15)
+        self._create_reports(str(tmp_path), 15)
 
         with patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
             _cleanup_old_reports(keep=12)
@@ -208,7 +229,7 @@ class TestCleanupOldReports:
 
     def test_cleanup_keeps_latest(self, tmp_path):
         """验证保留的是最新的报告"""
-        filenames = self._create_reports(str(tmp_path), 15)
+        self._create_reports(str(tmp_path), 15)
 
         with patch.object(feedback_analysis_task, "_get_report_dir", return_value=str(tmp_path)):
             _cleanup_old_reports(keep=12)
@@ -219,16 +240,20 @@ class TestCleanupOldReports:
         )
         # 保留的 12 个应该是最新的（i=3 到 i=14）
         # 最新的（i=14）应存在
-        base_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        base_date = datetime(2025, 1, 1, tzinfo=UTC)
         newest_start = base_date + timedelta(weeks=14)
         newest_end = newest_start + timedelta(days=6)
-        newest_name = f"feedback_report_{newest_start.strftime('%Y%m%d')}_{newest_end.strftime('%Y%m%d')}.md"
+        newest_name = (
+            f"feedback_report_{newest_start.strftime('%Y%m%d')}_{newest_end.strftime('%Y%m%d')}.md"
+        )
         assert newest_name in remaining
 
         # 最旧的 3 个（i=0,1,2）应被删除
         oldest_start = base_date
         oldest_end = oldest_start + timedelta(days=6)
-        oldest_name = f"feedback_report_{oldest_start.strftime('%Y%m%d')}_{oldest_end.strftime('%Y%m%d')}.md"
+        oldest_name = (
+            f"feedback_report_{oldest_start.strftime('%Y%m%d')}_{oldest_end.strftime('%Y%m%d')}.md"
+        )
         assert oldest_name not in remaining
 
     def test_cleanup_fewer_than_keep_does_nothing(self, tmp_path):
@@ -255,14 +280,15 @@ class TestGenerateMarkdownReport:
         analysis = _fake_analysis()
         # 使用真实的 generate_optimization_suggestions 生成 optimization
         import asyncio
+
         from app.core.prompt_optimizer import generate_optimization_suggestions
 
         optimization = asyncio.new_event_loop().run_until_complete(
             generate_optimization_suggestions(analysis)
         )
 
-        start = datetime(2025, 6, 1, tzinfo=timezone.utc)
-        end = datetime(2025, 6, 7, tzinfo=timezone.utc)
+        start = datetime(2025, 6, 1, tzinfo=UTC)
+        end = datetime(2025, 6, 7, tzinfo=UTC)
         report = _generate_markdown_report(analysis, optimization, start, end)
 
         assert "# 反馈分析报告" in report

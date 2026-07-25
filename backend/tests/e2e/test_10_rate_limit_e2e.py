@@ -15,13 +15,11 @@ API 限流配置：
 RATE_LIMIT_ENABLED=false 时所有限流测试跳过（测试环境禁用限流以避免
 CDP 测试频繁创建用户触发 5/minute 限流，本文件测试需限流开启才有意义）。
 """
-import os
 
 import pytest
 import requests
 
 from app.config import settings
-from tests.e2e.conftest import extract_data
 
 # 模块级 skip：RATE_LIMIT_ENABLED=false 时所有限流测试无意义
 pytestmark = pytest.mark.skipif(
@@ -33,17 +31,19 @@ pytestmark = pytest.mark.skipif(
 def test_auth_login_rate_limit(base_url):
     """登录接口限流 5/minute"""
     statuses = []
-    for i in range(7):  # 触发 7 次，应第 6 次被拒
-        r = requests.post(f"{base_url}/auth/login", json={
-            "username": "admin",
-            "password": "wrong_password",
-        }, timeout=10)
+    for _i in range(7):  # 触发 7 次，应第 6 次被拒
+        r = requests.post(
+            f"{base_url}/auth/login",
+            json={
+                "username": "admin",
+                "password": "wrong_password",
+            },
+            timeout=10,
+        )
         statuses.append(r.status_code)
         if r.status_code == 429:
             break
-    assert 429 in statuses, (
-        f"Expected rate limit (429) on /auth/login, statuses: {statuses}"
-    )
+    assert 429 in statuses, f"Expected rate limit (429) on /auth/login, statuses: {statuses}"
 
 
 def test_default_rate_limit_60_per_minute(base_url, admin_headers):
@@ -57,9 +57,12 @@ def test_default_rate_limit_60_per_minute(base_url, admin_headers):
 
     def _hit(_i):
         try:
-            r = requests.get(f"{base_url}/knowledge-bases",
-                             params={"page": 1, "page_size": 1},
-                             headers=admin_headers, timeout=10)
+            r = requests.get(
+                f"{base_url}/knowledge-bases",
+                params={"page": 1, "page_size": 1},
+                headers=admin_headers,
+                timeout=10,
+            )
             return r.status_code
         except Exception:
             return None
@@ -71,9 +74,9 @@ def test_default_rate_limit_60_per_minute(base_url, admin_headers):
             s = f.result()
             if s is not None:
                 statuses.append(s)
-    assert 429 in statuses, (
-        f"Expected rate limit (429) on /knowledge-bases, got unique: {set(statuses)}"
-    )
+    assert (
+        429 in statuses
+    ), f"Expected rate limit (429) on /knowledge-bases, got unique: {set(statuses)}"
 
 
 def test_authenticated_overrides_ip_rate_limit(base_url, admin_headers, test_user_headers):
@@ -87,9 +90,12 @@ def test_authenticated_overrides_ip_rate_limit(base_url, admin_headers, test_use
 
     def _hit(_i):
         try:
-            r = requests.get(f"{base_url}/knowledge-bases",
-                             params={"page": 1, "page_size": 1},
-                             headers=admin_headers, timeout=10)
+            r = requests.get(
+                f"{base_url}/knowledge-bases",
+                params={"page": 1, "page_size": 1},
+                headers=admin_headers,
+                timeout=10,
+            )
             return r.status_code
         except Exception:
             return None
@@ -101,9 +107,12 @@ def test_authenticated_overrides_ip_rate_limit(base_url, admin_headers, test_use
             f.result()  # 等待全部完成
 
     # test_user 应能正常请求（不同 user_id）
-    r2 = requests.get(f"{base_url}/knowledge-bases",
-                      params={"page": 1, "page_size": 1},
-                      headers=test_user_headers, timeout=10)
+    r2 = requests.get(
+        f"{base_url}/knowledge-bases",
+        params={"page": 1, "page_size": 1},
+        headers=test_user_headers,
+        timeout=10,
+    )
     # test_user 可能因为自己限流计数也已用尽（如果测试环境合并），
     # 但理论上应不被 admin 计数影响
     assert r2.status_code in (200, 429), f"Unexpected: {r2.status_code}"
@@ -113,11 +122,15 @@ def test_rate_limit_response_format(base_url):
     """限流响应包含 Retry-After 头"""
     # 连续触发限流
     last_resp = None
-    for i in range(7):
-        r = requests.post(f"{base_url}/auth/login", json={
-            "username": "admin",
-            "password": "wrong",
-        }, timeout=10)
+    for _i in range(7):
+        r = requests.post(
+            f"{base_url}/auth/login",
+            json={
+                "username": "admin",
+                "password": "wrong",
+            },
+            timeout=10,
+        )
         last_resp = r
         if r.status_code == 429:
             break
@@ -125,6 +138,11 @@ def test_rate_limit_response_format(base_url):
     if last_resp.status_code == 429:
         # 429 响应应有 Retry-After 头（slowapi 默认行为）
         # 或在 body 中含 detail
-        body = last_resp.json() if last_resp.headers.get("content-type", "").startswith("application/json") else {}
-        assert "Retry-After" in last_resp.headers or "detail" in body or body.get("code"), \
-            f"429 response missing rate limit info: headers={dict(last_resp.headers)} body={last_resp.text}"
+        body = (
+            last_resp.json()
+            if last_resp.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
+        assert (
+            "Retry-After" in last_resp.headers or "detail" in body or body.get("code")
+        ), f"429 response missing rate limit info: headers={dict(last_resp.headers)} body={last_resp.text}"

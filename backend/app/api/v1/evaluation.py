@@ -1,4 +1,5 @@
 """Evaluation API - RAGAS evaluation endpoints."""
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,15 +30,15 @@ async def trigger_evaluation(
     业务逻辑（KB 读权限校验 get_kb_for_read、创建 run、Celery 派发）下沉到
     evaluation_service.trigger_evaluation。本层仅做参数绑定与响应格式化。
     """
-    run, task = await evaluation_service.trigger_evaluation(
-        kb_id, num_questions, admin.id, db
+    run, task = await evaluation_service.trigger_evaluation(kb_id, num_questions, admin.id, db)
+    return ok(
+        data={
+            "run_id": run.id,
+            "status": "pending",
+            "task_id": task.id,
+            "message": "Evaluation has been queued. Poll GET /evaluation/runs/{run_id} for status.",
+        }
     )
-    return ok(data={
-        "run_id": run.id,
-        "status": "pending",
-        "task_id": task.id,
-        "message": "Evaluation has been queued. Poll GET /evaluation/runs/{run_id} for status.",
-    })
 
 
 @router.get("/runs")
@@ -51,9 +52,7 @@ async def list_evaluation_runs(
     admin: User = Depends(get_admin_user),
 ):
     """List evaluation run history (admin only)."""
-    runs, total = await evaluation_service.list_evaluation_runs(
-        admin.id, db, kb_id, page, page_size
-    )
+    runs, total = await evaluation_service.list_evaluation_runs(db, kb_id, page, page_size)
     items = [
         {
             "id": run.id,
@@ -61,6 +60,11 @@ async def list_evaluation_runs(
             "status": run.status or "pending",
             "metrics": run.metrics,
             "total_questions": run.total_questions,
+            "prompt_version": run.prompt_version,
+            "retriever_alpha": run.retriever_alpha,
+            "retriever_top_k": run.retriever_top_k,
+            "rerank_top_k": run.rerank_top_k,
+            "trigger_source": run.trigger_source,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             "created_at": run.created_at.isoformat() if run.created_at else None,
@@ -82,17 +86,24 @@ async def get_evaluation_run(
 ):
     """Get single evaluation run details (admin only)."""
     run = await evaluation_service.get_evaluation_run(run_id, admin.id, db)
-    return ok(data={
-        "id": run.id,
-        "knowledge_base_id": run.knowledge_base_id,
-        "status": run.status or "pending",
-        "metrics": run.metrics,
-        "total_questions": run.total_questions,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-        "created_at": run.created_at.isoformat() if run.created_at else None,
-        "error_message": run.error_message,
-    })
+    return ok(
+        data={
+            "id": run.id,
+            "knowledge_base_id": run.knowledge_base_id,
+            "status": run.status or "pending",
+            "metrics": run.metrics,
+            "total_questions": run.total_questions,
+            "prompt_version": run.prompt_version,
+            "retriever_alpha": run.retriever_alpha,
+            "retriever_top_k": run.retriever_top_k,
+            "rerank_top_k": run.rerank_top_k,
+            "trigger_source": run.trigger_source,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "error_message": run.error_message,
+        }
+    )
 
 
 @router.get("/runs/{run_id}/results")
@@ -120,6 +131,10 @@ async def get_evaluation_results(
             "answer_relevancy": r.answer_relevancy,
             "context_precision": r.context_precision,
             "context_recall": r.context_recall,
+            "question_type": r.question_type,
+            "difficulty": r.difficulty,
+            "latency_ms": r.latency_ms,
+            "token_count": r.token_count,
         }
         for r in results
     ]

@@ -3,12 +3,14 @@
 使用 mock async_session 测试业务逻辑，不依赖真实 PostgreSQL。
 重点验证: 独立 session 写入 / 异常吞掉不影响主流程 / request 字段提取正确。
 """
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from starlette.requests import Request
 
-from app.services import audit_service
 from app.db.audit_log import AuditLog
+from app.services import audit_service
 
 
 def _make_request(client_host="127.0.0.1", user_agent="Mozilla/5.0"):
@@ -26,6 +28,7 @@ def _make_request(client_host="127.0.0.1", user_agent="Mozilla/5.0"):
         "client": (client_host, 8000) if client_host else None,
     }
     return Request(scope)
+
 
 class TestLogAudit:
     @pytest.mark.asyncio

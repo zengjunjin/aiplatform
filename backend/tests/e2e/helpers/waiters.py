@@ -1,10 +1,13 @@
 """轮询/等待工具"""
+
 import time
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
 
-def wait_for(predicate: Callable[[], Any], timeout: int = 30,
-             interval: float = 0.5, message: str = "") -> Any:
+def wait_for(
+    predicate: Callable[[], Any], timeout: int = 30, interval: float = 0.5, message: str = ""
+) -> Any:
     """等待条件成立"""
     deadline = time.time() + timeout
     last_err = None

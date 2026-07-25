@@ -15,40 +15,28 @@
   test_filter_by_status 改为验证状态列 Tag 渲染（颜色 + 文本）。
 - 测试数据保留不清理。
 """
+
+import contextlib
 import json
 import os
 import time
 import uuid
+
 import pytest
 import requests
 
+from tests.e2e.helpers.cdp_auth import login_cdp_session
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import (
+    wait_for,
+    wait_for_dom_ready,
+    wait_for_element,
+    wait_for_url_change,
+)
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-TEST_DOC_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "integration", "test_doc.txt"
-)
-
-
-def _inject_auth_token(cdp, admin_token):
-    """注入 admin_token 到前端 localStorage（zustand persist key 'rag-auth'）。"""
-    auth_data = {
-        "state": {
-            "token": admin_token["access_token"],
-            "refreshToken": admin_token["refresh_token"],
-            "refreshTokenExpiresAt": int(time.time() * 1000) + 7 * 24 * 3600 * 1000,
-            "user": admin_token["user"],
-            "themeMode": "light",
-        },
-        "version": 0,
-    }
-    cdp.evaluate(f"""
-        try {{
-            localStorage.setItem('rag-auth', JSON.stringify({json.dumps(auth_data)}));
-        }} catch(e) {{}}
-    """)
+TEST_DOC_PATH = os.path.join(os.path.dirname(__file__), "..", "integration", "test_doc.txt")
 
 
 @pytest.fixture(scope="module")
@@ -63,11 +51,7 @@ def logged_in_cdp(admin_token):
         client.connect(timeout=30)
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
-    client.navigate(TAURI_HOME)
-    time.sleep(1)
-    _inject_auth_token(client, admin_token)
-    client.send("Page.reload")
-    time.sleep(3)
+    login_cdp_session(client, admin_token, "#/documents")
     yield client
     client.close()
 
@@ -77,10 +61,15 @@ def cdp_test_kb(admin_token, base_url):
     """通过 API 创建测试 KB（module scope）"""
     kb_name = f"CDP_Docs_KB_{uuid.uuid4().hex[:8]}"
     headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
-    r = requests.post(f"{base_url}/knowledge-bases", json={
-        "name": kb_name,
-        "description": "CDP 文档管理页测试知识库",
-    }, headers=headers, timeout=10)
+    r = requests.post(
+        f"{base_url}/knowledge-bases",
+        json={
+            "name": kb_name,
+            "description": "CDP 文档管理页测试知识库",
+        },
+        headers=headers,
+        timeout=10,
+    )
     assert r.status_code == 200, f"Create KB failed: {r.text}"
     return r.json()["data"]
 
@@ -94,30 +83,33 @@ def cdp_kb_doc(admin_token, base_url, cdp_test_kb):
         data = {"kb_id": str(cdp_test_kb["id"])}
         r = requests.post(
             f"{base_url}/documents/upload",
-            files=files, data=data, headers=headers, timeout=60,
+            files=files,
+            data=data,
+            headers=headers,
+            timeout=60,
         )
     assert r.status_code == 200, f"Upload doc failed: {r.text}"
     doc_id = r.json()["data"]["document_id"]
     deadline = time.time() + 120
     while time.time() < deadline:
-        r2 = requests.get(f"{base_url}/documents/{doc_id}",
-                          headers=headers, timeout=10)
+        r2 = requests.get(f"{base_url}/documents/{doc_id}", headers=headers, timeout=10)
         if r2.status_code == 200:
             doc = r2.json()["data"]
             if doc.get("status") == "done":
                 return {"kb": cdp_test_kb, "doc": doc}
             if doc.get("status") == "failed":
                 raise AssertionError(f"Document parse failed: {doc.get('error_message')}")
-        time.sleep(2)
+        time.sleep(2)  # API 轮询间隔
     raise TimeoutError("Document parse timeout")
 
 
 def _navigate_to_documents(cdp):
     """导航到文档管理页并等待加载。"""
     cdp.navigate(TAURI_HOME)
-    time.sleep(1)
+    wait_for_dom_ready(cdp, timeout=10)
     cdp.evaluate("window.location.hash = '#/documents'")
-    time.sleep(3)
+    wait_for_url_change(cdp, "#/documents", timeout=10)
+    wait_for_element(cdp, ".ant-table, .ant-empty, .ant-select", timeout=15)
 
 
 def test_documents_page_loads(logged_in_cdp, cdp_kb_doc):
@@ -168,14 +160,11 @@ def test_filter_by_kb(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     kb_name = cdp_kb_doc["kb"]["name"]
     _navigate_to_documents(cdp)
-    time.sleep(3)
     wait_for_element(cdp, ".ant-select-selector", timeout=10)
     # 打开下拉
-    try:
-        cdp.click_element('.ant-select-selector')
-    except Exception:
-        pass
-    time.sleep(1)
+    with contextlib.suppress(Exception):
+        cdp.click_element(".ant-select-selector")
+    wait_for_element(cdp, ".ant-select-item", timeout=5)
     # 轮询等待选项渲染并选中
     selected = False
     deadline = time.time() + 15
@@ -197,7 +186,7 @@ def test_filter_by_kb(logged_in_cdp, cdp_kb_doc):
                 return {{found: true}};
             }})();
         """)
-        if click_result and click_result.get('found'):
+        if click_result and click_result.get("found"):
             selected = True
             break
         # 下拉未打开则重新点击
@@ -205,25 +194,32 @@ def test_filter_by_kb(logged_in_cdp, cdp_kb_doc):
             document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').length > 0
         """)
         if not has_dropdown:
-            try:
-                cdp.click_element('.ant-select-selector')
-            except Exception:
-                pass
-        time.sleep(0.5)
+            with contextlib.suppress(Exception):
+                cdp.click_element(".ant-select-selector")
+        time.sleep(0.5)  # 轮询间隔
     assert selected, f"KB option '{kb_name}' not found in dropdown"
-    time.sleep(3)
+    # 等待表格刷新显示筛选结果
+    wait_for(
+        lambda: cdp.evaluate("!!document.querySelector('.ant-table')"),
+        timeout=8,
+        interval=0.5,
+        message="Table not found after KB filter selection",
+    )
     # 验证 Select 已显示选中的 KB 名称
-    select_text = cdp.evaluate("""
+    select_text = (
+        cdp.evaluate("""
         (function() {
             const sel = document.querySelector('.ant-select-selection-item');
             return sel ? sel.textContent.trim() : '';
         })();
-    """) or ""
+    """)
+        or ""
+    )
     print(f"[test_filter_by_kb] select_text='{select_text}', kb_name='{kb_name}'")
     # Select 文本应包含 KB 名称（可能带文档数后缀）
-    assert kb_name in select_text or select_text.startswith('CDP'), (
-        f"Select did not show selected KB. select_text='{select_text}', expected '{kb_name}'"
-    )
+    assert kb_name in select_text or select_text.startswith(
+        "CDP"
+    ), f"Select did not show selected KB. select_text='{select_text}', expected '{kb_name}'"
     # 验证表格存在
     has_table = cdp.evaluate("!!document.querySelector('.ant-table')")
     assert has_table, "Table not found after KB filter"
@@ -233,22 +229,27 @@ def test_filter_by_kb(logged_in_cdp, cdp_kb_doc):
         })();
     """)
     if row_count and row_count > 0:
-        kb_tags = cdp.evaluate(f"""
-            (function() {{
+        kb_tags = (
+            cdp.evaluate("""
+            (function() {
                 const rows = document.querySelectorAll('.ant-table-tbody tr.ant-table-row');
-                return Array.from(rows).map(tr => {{
+                return Array.from(rows).map(tr => {
                     const tag = tr.querySelector('.ant-tag-geekblue');
                     return tag ? tag.textContent.trim() : '';
-                }});
-            }})();
-        """) or []
-        print(f"[test_filter_by_kb DEBUG] kb_name={kb_name}, row_count={row_count}, kb_tags={kb_tags}")
+                });
+            })();
+        """)
+            or []
+        )
+        print(
+            f"[test_filter_by_kb DEBUG] kb_name={kb_name}, row_count={row_count}, kb_tags={kb_tags}"
+        )
         # 验证所有行的 KB 标签匹配选中 KB（双向部分匹配）
         for i, tag_text in enumerate(kb_tags):
             matched = (
-                (tag_text and kb_name in tag_text) or
-                (tag_text and tag_text in kb_name) or
-                (tag_text and tag_text.startswith('CDP') and kb_name.startswith('CDP'))
+                (tag_text and kb_name in tag_text)
+                or (tag_text and tag_text in kb_name)
+                or (tag_text and tag_text.startswith("CDP") and kb_name.startswith("CDP"))
             )
             if not matched:
                 pytest.fail(
@@ -265,7 +266,7 @@ def test_filter_by_status(logged_in_cdp, cdp_kb_doc):
     """
     cdp = logged_in_cdp
     _navigate_to_documents(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-table, .ant-empty", timeout=10)
     # 验证状态列有 Tag 元素
     has_status_tags = cdp.evaluate("""
         (function() {
@@ -310,7 +311,7 @@ def test_reparse_document(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     doc_filename = cdp_kb_doc["doc"]["filename"]
     _navigate_to_documents(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-table, .ant-empty", timeout=10)
     # 找到包含 doc_filename 的行，点击重新解析按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -331,25 +332,28 @@ def test_reparse_document(logged_in_cdp, cdp_kb_doc):
     """)
     if not clicked:
         pytest.skip(f"Reparse button not found or disabled for '{doc_filename}'")
-    time.sleep(3)
     # 验证状态变为 parsing（乐观更新立即生效）
     # getStatusTextKey('parsing') 返回"解析中"或类似
-    is_parsing = cdp.evaluate(f"""
-        (function() {{
-            const rows = document.querySelectorAll('.ant-table-tbody tr');
-            const row = Array.from(rows).find(r =>
-                r.textContent.includes({json.dumps(doc_filename)}));
-            if (!row) return false;
-            const tags = row.querySelectorAll('.ant-tag');
-            return Array.from(tags).some(tag =>
-                tag.textContent.includes('解析') ||
-                tag.textContent.includes('parsing') ||
-                tag.textContent.includes('Parsing') ||
-                tag.textContent.includes('处理')
-            );
-        }})();
-    """)
-    assert is_parsing, f"Document '{doc_filename}' status did not change to parsing"
+    wait_for(
+        lambda: cdp.evaluate(f"""
+            (function() {{
+                const rows = document.querySelectorAll('.ant-table-tbody tr');
+                const row = Array.from(rows).find(r =>
+                    r.textContent.includes({json.dumps(doc_filename)}));
+                if (!row) return false;
+                const tags = row.querySelectorAll('.ant-tag');
+                return Array.from(tags).some(tag =>
+                    tag.textContent.includes('解析') ||
+                    tag.textContent.includes('parsing') ||
+                    tag.textContent.includes('Parsing') ||
+                    tag.textContent.includes('处理')
+                );
+            }})();
+        """),
+        timeout=10,
+        interval=0.5,
+        message=f"Document '{doc_filename}' status did not change to parsing",
+    )
 
 
 def test_document_preview_modal(logged_in_cdp, cdp_kb_doc):
@@ -357,7 +361,7 @@ def test_document_preview_modal(logged_in_cdp, cdp_kb_doc):
     cdp = logged_in_cdp
     doc_filename = cdp_kb_doc["doc"]["filename"]
     _navigate_to_documents(cdp)
-    time.sleep(2)
+    wait_for_element(cdp, ".ant-table, .ant-empty", timeout=10)
     # 找到包含 doc_filename 的行，点击预览按钮
     clicked = cdp.evaluate(f"""
         (function() {{
@@ -388,7 +392,7 @@ def test_document_preview_modal(logged_in_cdp, cdp_kb_doc):
         """)
         if modal_ready:
             break
-        time.sleep(1)
+        time.sleep(1)  # 轮询间隔
     assert modal_ready, "Preview modal did not open or has no content"
     # 验证 Modal 标题包含文件名
     has_filename = cdp.evaluate(f"""

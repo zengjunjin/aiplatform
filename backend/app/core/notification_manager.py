@@ -1,10 +1,11 @@
 """WebSocket 通知管理器。
 
 管理 WebSocket 连接池，按用户 ID 分发消息。
-支持单用户推送和全量广播。
+支持单用户推送。
 """
 
 import asyncio
+import contextlib
 import json
 
 from fastapi import WebSocket
@@ -65,8 +66,7 @@ class NotificationManager:
             existing.append(websocket)
             cls._connections[user_id] = existing
             logger.info(
-                f"WebSocket connected: user_id={user_id}, "
-                f"total_connections={len(existing)}"
+                f"WebSocket connected: user_id={user_id}, " f"total_connections={len(existing)}"
             )
 
         # Task 34: 连接成功后拉取并推送离线消息（锁外执行避免阻塞其他连接操作）
@@ -92,14 +92,10 @@ class NotificationManager:
                 try:
                     await websocket.send_text(msg)
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to deliver offline message to user {user_id}: {e}"
-                    )
+                    logger.warning(f"Failed to deliver offline message to user {user_id}: {e}")
                     break
             await redis.delete(key)
-            logger.info(
-                f"Delivered {len(messages)} offline messages to user_id={user_id}"
-            )
+            logger.info(f"Delivered {len(messages)} offline messages to user_id={user_id}")
         except Exception as e:
             logger.warning(f"Failed to fetch offline messages for user {user_id}: {e}")
 
@@ -124,10 +120,8 @@ class NotificationManager:
         """移除 WebSocket 连接"""
         async with cls._get_lock():
             if user_id in cls._connections:
-                try:
+                with contextlib.suppress(ValueError):
                     cls._connections[user_id].remove(websocket)
-                except ValueError:
-                    pass
                 if not cls._connections[user_id]:
                     del cls._connections[user_id]
         logger.info(f"WebSocket disconnected: user_id={user_id}")
@@ -161,42 +155,5 @@ class NotificationManager:
             async with cls._get_lock():
                 cur = cls._connections.get(user_id, [])
                 for ws in dead:
-                    try:
+                    with contextlib.suppress(ValueError):
                         cur.remove(ws)
-                    except ValueError:
-                        pass
-
-    @classmethod
-    async def broadcast(cls, notification: dict) -> None:
-        """向所有用户广播通知（并行发送，return_exceptions 隔离单连接失败）
-
-        注意：此方法被 tests/test_ws.py 用于验证广播逻辑，
-        当前生产入口未直接调用，但保留以维持测试覆盖率，勿删除。
-        """
-        message = json.dumps(notification, ensure_ascii=False)
-        # 快照当前 (user_id, ws) 列表，避免在持有锁时进行 I/O
-        async with cls._get_lock():
-            targets = [
-                (user_id, ws)
-                for user_id, conns in cls._connections.items()
-                for ws in conns
-            ]
-
-        if not targets:
-            return
-
-        async def _send(user_id: str, ws: WebSocket) -> tuple[str, WebSocket] | None:
-            try:
-                await ws.send_text(message)
-                return None
-            except Exception as e:
-                logger.warning(f"Failed to broadcast to user {user_id}: {e}")
-                return (user_id, ws)
-
-        results = await asyncio.gather(
-            *[_send(uid, ws) for uid, ws in targets],
-            return_exceptions=True,
-        )
-        dead: list[tuple[str, WebSocket]] = [r for r in results if isinstance(r, tuple)]
-        for user_id, ws in dead:
-            await cls.disconnect(user_id, ws)

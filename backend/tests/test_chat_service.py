@@ -1,10 +1,13 @@
 """Tests for app.services.chat_service (session CRUD + history context)"""
-import pytest
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services import chat_service
-from app.core.exceptions import NotFoundError, ForbiddenError
+
+import pytest
+
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.chat_session import ChatSession
+from app.services import chat_service
 
 
 def _make_session(session_id=1, user_id=1, kb_id=None, title="test"):
@@ -32,6 +35,7 @@ class TestCreateSession:
 
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 99
+
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         result = await chat_service.create_session(req, user_id=1, db=db)
@@ -161,10 +165,12 @@ class TestGetHistoryContext:
         """Redis lrange 返回最新在前，get_history_context 反转为时间顺序"""
         redis_mock = MagicMock()
         # Redis lpush 后 lrange(0, limit-1) 返回 [最新, ..., 最旧]
-        redis_mock.lrange = AsyncMock(return_value=[
-            json.dumps({"role": "assistant", "content": "reply"}),
-            json.dumps({"role": "user", "content": "question"}),
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"role": "assistant", "content": "reply"}),
+                json.dumps({"role": "user", "content": "question"}),
+            ]
+        )
         with patch("app.services.chat_service.get_redis", return_value=redis_mock):
             result = await chat_service.get_history_context(session_id=1, limit=8)
         # 反转后：question 在前，reply 在后（时间顺序）
@@ -176,10 +182,12 @@ class TestGetHistoryContext:
     async def test_get_history_skips_invalid_json(self):
         """Redis 中有非法 JSON → 跳过"""
         redis_mock = MagicMock()
-        redis_mock.lrange = AsyncMock(return_value=[
-            "invalid json",
-            json.dumps({"role": "user", "content": "ok"}),
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                "invalid json",
+                json.dumps({"role": "user", "content": "ok"}),
+            ]
+        )
         with patch("app.services.chat_service.get_redis", return_value=redis_mock):
             result = await chat_service.get_history_context(session_id=1, limit=8)
         assert len(result) == 1
@@ -258,13 +266,19 @@ class TestSaveMessage:
     async def test_save_message_creates_record_with_all_fields(self):
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 99
+
         db = AsyncMock()
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         result = await chat_service.save_message(
-            session_id=1, role="assistant", content="hello",
-            db=db, references=[{"chunk_id": 1}],
-            token_input=10, token_output=20, latency_ms=500,
+            session_id=1,
+            role="assistant",
+            content="hello",
+            db=db,
+            references=[{"chunk_id": 1}],
+            token_input=10,
+            token_output=20,
+            latency_ms=500,
         )
         assert result.id == 99
         db.add.assert_called_once()
@@ -275,6 +289,9 @@ class TestSaveMessage:
         db = AsyncMock()
         db.refresh = AsyncMock()
         await chat_service.save_message(
-            session_id=1, role="user", content="hi", db=db,
+            session_id=1,
+            role="user",
+            content="hi",
+            db=db,
         )
         db.add.assert_called_once()

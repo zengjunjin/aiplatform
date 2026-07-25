@@ -4,10 +4,21 @@ frontend/.pnp
 frontend/.pnp.js
 frontend/package-lock.json
 backend/__pycache__/
+backend/**/__pycache__/
 backend/**/*.pyc
 backend/**/.pytest_cache/
 backend/.venv/
 backend/venv/
+
+# IDE / Agent temp files
+.trae-cn/
+.trae/
+
+# CI temp artifacts
+backend/pytest-results.xml
+backend/coverage.xml
+frontend/junit.xml
+ci-*-results.log
 
 # Build outputs
 frontend/dist/

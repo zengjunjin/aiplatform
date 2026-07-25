@@ -54,7 +54,7 @@ export default function KBCollaboratorModal({ open, kbId, onClose }: Props) {
     } finally {
       setCollabLoading(false);
     }
-  }, [kbId, message]);
+  }, [kbId, message, t]);
 
   // open 变 true 时拉取协作者列表 (替代原 handleOpenCollab 内的 fetchCollaborators 调用)
   useEffect(() => {

@@ -6,9 +6,11 @@
   2. 非 admin 用户访问 → 403 (ForbiddenError)
   3. admin 用户访问 → 200 + Prometheus 格式内容
 """
+
+from unittest.mock import MagicMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import MagicMock
 
 from app.api.deps import get_admin_user
 from app.core.exceptions import AuthError, ForbiddenError
@@ -25,6 +27,7 @@ def _reset_dependency_overrides():
 @pytest.mark.asyncio
 async def test_metrics_unauthenticated_returns_401():
     """未认证访问 /metrics → 401 (模拟无 token 场景)."""
+
     async def _raise_auth_error():
         raise AuthError("Missing authentication token")
 
@@ -42,6 +45,7 @@ async def test_metrics_unauthenticated_returns_401():
 @pytest.mark.asyncio
 async def test_metrics_non_admin_returns_403():
     """非 admin 用户访问 /metrics → 403 (ForbiddenError)."""
+
     async def _raise_forbidden_error():
         raise ForbiddenError("Admin access required")
 
@@ -93,6 +97,6 @@ def test_metrics_route_has_admin_dependency():
 
     # dependant.dependencies 中每个 Dependant 的 call 字段是实际被依赖的可调用对象
     dependency_calls = [d.call for d in dependant.dependencies]
-    assert get_admin_user in dependency_calls, (
-        "/metrics 端点未声明 get_admin_user 依赖，指标端点未受保护"
-    )
+    assert (
+        get_admin_user in dependency_calls
+    ), "/metrics 端点未声明 get_admin_user 依赖，指标端点未受保护"

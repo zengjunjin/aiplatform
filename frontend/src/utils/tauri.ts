@@ -1,5 +1,7 @@
 /** Tauri API 封装 */
 
+import { logger } from './logger';
+
 export const isTauri = (): boolean => {
   if (typeof window === 'undefined') return false;
 
@@ -11,12 +13,16 @@ export const isTauri = (): boolean => {
   // 检测 Tauri 自定义协议
   try {
     if (window.location?.protocol === 'tauri:') return true;
-  } catch {}
+  } catch {
+    // window.location 在某些环境不可访问
+  }
 
   // 兜底：Tauri 默认加载的页面 hostname 为 tauri.localhost
   try {
     if (window.location?.hostname === 'tauri.localhost') return true;
-  } catch {}
+  } catch {
+    // window.location 在某些环境不可访问
+  }
 
   return false;
 };
@@ -34,7 +40,7 @@ export async function readLocalFile(filePath?: string): Promise<File | null> {
       const name = filePath.split(/[\\/]/).pop() || 'file';
       return new File([data], name);
     } catch (e) {
-      console.error('Tauri fs read failed:', e);
+      logger.error('Tauri fs read failed:', e);
       return null;
     }
   }

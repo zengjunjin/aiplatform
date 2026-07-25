@@ -7,44 +7,18 @@
 2. Modal 关闭无 pointer-events 残留（Tauri WebView2 CSS 动画 bug 验证）
 3. 通过 UI 创建 KB
 """
-import json
+
 import os
-import time
 import uuid
+
 import pytest
 
+from tests.e2e.helpers.cdp_auth import login_cdp_session
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
+from tests.e2e.helpers.waiters import wait_for, wait_for_dom_ready, wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
-
-
-def _inject_auth_token(cdp, admin_token):
-    """注入 admin_token 到前端 localStorage，避免 WebView 填表登录触发 /auth/login 限流。
-
-    前端 auth store 使用 zustand persist，localStorage key 为 'rag-auth'，
-    存储格式为 {state: {token, refreshToken, refreshTokenExpiresAt, user, themeMode}, version: 0}。
-    access_token（token 字段）正常不持久化（partialize 排除），但注入后 zustand
-    rehydrate 会将其读入内存，app 立即可用。onRehydrateStorage 会异步调用
-    refreshAccessToken()（走 /auth/refresh，限流 10/minute，远高于 /auth/login 的 5/minute）。
-    """
-    auth_data = {
-        "state": {
-            "token": admin_token["access_token"],
-            "refreshToken": admin_token["refresh_token"],
-            "refreshTokenExpiresAt": int(time.time() * 1000) + 7 * 24 * 3600 * 1000,
-            "user": admin_token["user"],
-            "themeMode": "light",
-        },
-        "version": 0,
-    }
-    cdp.evaluate(f"""
-        try {{
-            const authData = {json.dumps(auth_data)};
-            localStorage.setItem('rag-auth', JSON.stringify(authData));
-        }} catch(e) {{}}
-    """)
 
 
 @pytest.fixture(scope="module")
@@ -55,13 +29,7 @@ def logged_in_cdp(admin_token):
         client.connect(timeout=30)
     except Exception as e:
         pytest.skip(f"CDP not available (port {CDP_PORT}): {e}")
-    client.navigate(TAURI_HOME)
-    time.sleep(1)
-    # 注入 token 到 localStorage（避免 /auth/login 限流）
-    _inject_auth_token(client, admin_token)
-    # 重新加载页面，触发 zustand persist 从 localStorage rehydrate
-    client.navigate(TAURI_HOME)
-    time.sleep(3)
+    login_cdp_session(client, admin_token, "#/knowledge-bases")
     yield client
     client.close()
 
@@ -73,10 +41,10 @@ def _reset_kb_page(cdp):
     自动 rehydrate，无需重新登录。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     # 导航到 KB 页面
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
-    time.sleep(2.5)
+    wait_for_element(cdp, "button, .ant-card, .ant-empty", timeout=8)
 
 
 def test_open_create_kb_modal(logged_in_cdp):
@@ -138,31 +106,40 @@ def test_modal_close_no_residual(logged_in_cdp):
             if (btn) btn.click();
         })();
     """)
-    time.sleep(2)
+    # 等待 Modal 出现（替代固定 sleep）
+    wait_for_element(cdp, ".ant-modal-content", timeout=8)
     # 确认 Modal 打开
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     if not modal_open:
         pytest.skip("Failed to open Modal for close test")
 
     # 1. 验证 transitionName="" 生效：Modal 元素不应有 ant-zoom-* transition class
-    modal_classes = cdp.evaluate("""
+    modal_classes = (
+        cdp.evaluate("""
         (function() {
             const modal = document.querySelector('.ant-modal');
             return modal ? modal.className : '';
         })();
-    """) or ""
-    assert "ant-zoom" not in modal_classes, \
-        f"Modal has transition class (transitionName='' not applied): {modal_classes}"
+    """)
+        or ""
+    )
+    assert (
+        "ant-zoom" not in modal_classes
+    ), f"Modal has transition class (transitionName='' not applied): {modal_classes}"
 
     # 2. 验证 maskTransitionName="" 生效：Mask 元素不应有 ant-fade-* transition class
-    mask_classes = cdp.evaluate("""
+    mask_classes = (
+        cdp.evaluate("""
         (function() {
             const mask = document.querySelector('.ant-modal-mask');
             return mask ? mask.className : '';
         })();
-    """) or ""
-    assert "ant-fade" not in mask_classes, \
-        f"Mask has transition class (maskTransitionName='' not applied): {mask_classes}"
+    """)
+        or ""
+    )
+    assert (
+        "ant-fade" not in mask_classes
+    ), f"Mask has transition class (maskTransitionName='' not applied): {mask_classes}"
 
     # 3. 用 DOM 强制移除 Modal（绕过 React 合成事件限制）
     # 注：transitionName="" 只控制 ant-zoom-* class，不影响 Ant Design 5.x 内置的
@@ -177,7 +154,13 @@ def test_modal_close_no_residual(logged_in_cdp):
             document.body.style.paddingRight = '';
         })();
     """)
-    time.sleep(1)
+    # 等待 Modal 从 DOM 消失（替代固定 sleep）
+    wait_for(
+        lambda: not cdp.evaluate("document.querySelector('.ant-modal-content')"),
+        timeout=5,
+        interval=0.2,
+        message="Modal removed from DOM",
+    )
 
     # 4. 验证 Modal 消失
     modal = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
@@ -185,8 +168,9 @@ def test_modal_close_no_residual(logged_in_cdp):
 
     # 5. 验证 body 无 ant-scrolling-effect class（Ant Design 5.x 用此 class 锁定滚动）
     body_class = cdp.evaluate("document.body.className") or ""
-    assert "ant-scrolling-effect" not in body_class, \
-        f"Body still has ant-scrolling-effect class: {body_class}"
+    assert (
+        "ant-scrolling-effect" not in body_class
+    ), f"Body still has ant-scrolling-effect class: {body_class}"
 
     # 6. 验证可点击其他按钮（pointer-events 未被禁用）
     clickable = cdp.evaluate("""
@@ -200,8 +184,7 @@ def test_modal_close_no_residual(logged_in_cdp):
 
     # 7. 验证 body overflow 恢复正常
     body_overflow = cdp.evaluate("getComputedStyle(document.body).overflow")
-    assert body_overflow != "hidden", \
-        f"Body overflow is hidden after modal close: {body_overflow}"
+    assert body_overflow != "hidden", f"Body overflow is hidden after modal close: {body_overflow}"
 
 
 def test_create_kb_via_ui(logged_in_cdp):
@@ -224,7 +207,8 @@ def test_create_kb_via_ui(logged_in_cdp):
             btn.click();
         })();
     """)
-    time.sleep(1.5)
+    # 等待 Modal 出现（替代固定 sleep）
+    wait_for_element(cdp, ".ant-modal-content", timeout=8)
     # 确认 Modal 已打开
     modal_open = cdp.evaluate("!!document.querySelector('.ant-modal-content')")
     if not modal_open:
@@ -242,7 +226,8 @@ def test_create_kb_via_ui(logged_in_cdp):
             input.dispatchEvent(new Event('change', {{bubbles: true}}));
         }})();
     """)
-    time.sleep(0.5)
+    # 等待确定按钮可点击（替代 debounce 固定 sleep）
+    wait_for_element(cdp, ".ant-modal-footer button.ant-btn-primary", timeout=3)
     # 点击确定按钮
     cdp.evaluate("""
         (function() {
@@ -252,18 +237,20 @@ def test_create_kb_via_ui(logged_in_cdp):
             if (ok) ok.click();
         })();
     """)
-    # 等待 KB 创建并出现在列表
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        found = cdp.evaluate(f"""
-            (function() {{
-                return Array.from(document.querySelectorAll('*'))
-                    .some(el => el.textContent.includes({repr(kb_name)}));
-            }})();
-        """)
-        if found:
-            return
-        time.sleep(1)
+    # 等待 KB 创建并出现在列表（轮询替代固定 sleep）
+    try:
+        wait_for(
+            lambda: cdp.evaluate(f"""
+                Array.from(document.querySelectorAll('*'))
+                    .some(el => el.textContent.includes({repr(kb_name)}))
+            """),
+            timeout=10,
+            interval=1,
+            message=f"KB '{kb_name}' to appear in list",
+        )
+        return
+    except TimeoutError:
+        pass
     # 最终检查
     found = cdp.evaluate(f"""
         Array.from(document.querySelectorAll('*'))

@@ -14,6 +14,7 @@
 5. [回滚流程](#5-回滚流程)
 6. [数据库备份](#6-数据库备份)
 7. [灾难恢复](#7-灾难恢复)
+8. [系统架构与数据流](#8-系统架构与数据流)
 
 ---
 
@@ -49,31 +50,47 @@ docker compose -f deploy/docker-compose.yml logs -f backend
 
 ### 1.3 服务架构
 
-```
-                    ┌─────────────────┐
-                    │  Nginx (:80)    │
-                    │  反向代理        │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-       ┌──────▼──────┐ ┌───▼────┐  ┌──────▼──────┐
-       │  Frontend   │ │Backend │  │   /docs     │
-       │  (React     │ │(:8000) │  │   /redoc    │
-       │   SPA)      │ │        │  │   /health   │
-       └─────────────┘ └───┬────┘  └─────────────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         │                  │                  │
-  ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
-  │ PostgreSQL  │   │   Redis     │   │   Qdrant    │
-  │   (:5432)   │   │  (:6379)    │   │  (:6333)    │
-  └─────────────┘   └──────┬──────┘   └─────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │   Celery    │
-                    │   Worker    │
-                    └─────────────┘
+```mermaid
+graph TB
+    subgraph Client["客户端层"]
+        Browser["Web 浏览器<br/>(React 18 + AntD 5)"]
+        Tauri["Tauri 桌面端<br/>(Windows / WebView2)"]
+    end
+
+    subgraph Edge["接入层"]
+        Nginx["Nginx (:80)<br/>反向代理 + TLS + CSP"]
+    end
+
+    subgraph App["应用层"]
+        Frontend["Frontend<br/>(React SPA 静态资源)"]
+        Backend["Backend (:8000)<br/>FastAPI + Gunicorn"]
+        Celery["Celery Worker<br/>异步文档解析 / 评估任务"]
+    end
+
+    subgraph Data["数据层"]
+        Postgres[("PostgreSQL (:5432)<br/>用户 / KB / 文档 / 会话")]
+        Redis[("Redis (:6379)<br/>缓存 / 队列 / 限流")]
+        Qdrant[("Qdrant (:6333)<br/>向量检索")]
+    end
+
+    subgraph LLM["AI 推理层"]
+        Ollama["Ollama (:11434)<br/>LLM + Embedding + Reranker"]
+    end
+
+    Browser --> Nginx
+    Tauri -->|"HTTP / SSE / WebSocket"| Nginx
+    Nginx --> Frontend
+    Nginx --> Backend
+    Nginx -->|"/docs /redoc /healthz"| Backend
+    Backend --> Postgres
+    Backend --> Redis
+    Backend --> Qdrant
+    Backend --> Ollama
+    Backend -->|"异步任务"| Celery
+    Celery --> Postgres
+    Celery --> Redis
+    Celery --> Qdrant
+    Celery --> Ollama
 ```
 
 ### 1.4 服务说明
@@ -763,3 +780,83 @@ docker run --rm -v qdrant_data:/data -v $(pwd):/backup alpine sh -c "cd /data &&
 4. 执行上述 `pg_restore` 与 Qdrant tar 解压恢复数据
 5. 按 7.4 顺序恢复上层服务
 6. 校验数据完整性：检查文档数、向量集合数，并确认最近一次备份时间点之后产生的数据是否需要重新导入
+
+---
+
+## 8. 系统架构与数据流
+
+本节使用 Mermaid 图展示系统的运行时架构与核心数据流，适用于 Docker Compose 与裸机两种部署模式。图表可在 [mermaid.live](https://mermaid.live) 中预览验证。
+
+### 8.1 文档处理流程
+
+文档上传后由 Celery Worker 异步完成解析、分块、向量化与入库，全程通过 WebSocket 向前端推送进度。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant F as 前端
+    participant B as 后端 (FastAPI)
+    participant C as Celery Worker
+    participant DB as PostgreSQL
+    participant O as Ollama
+    participant Q as Qdrant
+
+    U->>F: 选择文档并上传
+    F->>B: POST /api/v1/documents/upload (kb_id, file)
+    B->>B: 落盘到 storage/
+    B->>DB: 写入文档记录 (status=pending)
+    B->>C: 投递异步解析任务 (document_id)
+    B-->>F: 202 返回 document_id + task_id
+    F-->>U: 显示"解析中"状态
+
+    Note over C: 异步处理开始
+    C->>DB: 读取文档记录与文件路径
+    C->>C: 解析文档 (PDF / DOCX / MD / TXT)
+    C->>C: 文本分块 (CHUNK_SIZE=512, OVERLAP=50)
+    C->>O: 调用 bge-m3 生成 embedding
+    O-->>C: 返回向量 (dim=1024)
+    C->>Q: 写入向量 + payload (chunk 元数据)
+    C->>DB: 更新文档状态 (status=ready) + chunk 记录
+    C-->>B: 任务完成通知 (via Redis pub/sub)
+    B-->>F: WebSocket 推送进度 (status=ready)
+    F-->>U: 显示"解析完成"
+```
+
+### 8.2 检索与对话流程
+
+用户发起问答后，后端执行混合检索（BM25 + 向量）→ RRF 融合 → Rerank 重排序 → LLM 流式生成，通过 SSE 推送回前端。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant F as 前端
+    participant B as 后端 (FastAPI)
+    participant R as Redis
+    participant Q as Qdrant
+    participant O as Ollama
+
+    U->>F: 输入问题
+    F->>B: POST /api/v1/chat/sessions/{id}/messages
+    B->>B: 验证 session 归属 + SSE 并发计数 (INCR)
+    B->>R: 检查语义缓存
+
+    alt 缓存命中
+        R-->>B: 返回缓存答案
+        B-->>F: SSE 流式推送 (含引用来源)
+    else 缓存未命中
+        B->>B: 查询改写 (query_rewriter)
+        B->>Q: 向量相似度检索 (bge-m3, top_k)
+        B->>B: BM25 关键词检索
+        B->>B: RRF 融合排序
+        B->>O: Reranker 重排序 (bge-reranker-base)
+        O-->>B: 返回重排序结果
+        B->>B: 构建上下文 (context_manager + prompt_builder)
+        B->>O: LLM 流式生成 (qwen2.5:7b)
+        O-->>B: 流式 token
+        B->>R: 写入语义缓存
+        B-->>F: SSE 流式推送 (含引用来源)
+    end
+
+    F-->>U: 显示回答 + 引用来源标注
+    B->>R: SSE 并发计数 (DECR)
+```

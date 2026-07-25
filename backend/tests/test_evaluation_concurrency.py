@@ -8,6 +8,7 @@
   - aggregate_metrics 仅聚合成功题目的 metrics
   - DB 增量提交（每 10 题一次）
 """
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,10 +36,16 @@ class TestEvalSingleQuestionSuccess:
         semaphore = asyncio.Semaphore(8)
         fake_metrics = {"faithfulness": 0.9, "answer_relevancy": 0.8}
 
-        with patch("app.core.evaluation.get_rag_answer",
-                   new=AsyncMock(return_value=("answer", ["retrieved"]))), \
-             patch("app.core.evaluation._compute_ragas_metrics",
-                   new=AsyncMock(return_value=fake_metrics)):
+        with (
+            patch(
+                "app.core.evaluation.get_rag_answer",
+                new=AsyncMock(return_value=("answer", ["retrieved"])),
+            ),
+            patch(
+                "app.core.evaluation._compute_ragas_metrics",
+                new=AsyncMock(return_value=fake_metrics),
+            ),
+        ):
             result = await evaluation._eval_single_question(item, kb_id=1, semaphore=semaphore)
 
         assert result["success"] is True
@@ -56,8 +63,10 @@ class TestEvalSingleQuestionFailure:
         item = {"question": "q1", "ground_truth": "g1", "contexts": ["c1"]}
         semaphore = asyncio.Semaphore(8)
 
-        with patch("app.core.evaluation.get_rag_answer",
-                   new=AsyncMock(side_effect=RuntimeError("rag down"))):
+        with patch(
+            "app.core.evaluation.get_rag_answer",
+            new=AsyncMock(side_effect=RuntimeError("rag down")),
+        ):
             result = await evaluation._eval_single_question(item, kb_id=1, semaphore=semaphore)
 
         assert result["success"] is False
@@ -73,10 +82,16 @@ class TestEvalSingleQuestionFailure:
         item = {"question": "q1", "ground_truth": "g1", "contexts": ["c1"]}
         semaphore = asyncio.Semaphore(8)
 
-        with patch("app.core.evaluation.get_rag_answer",
-                   new=AsyncMock(return_value=("answer", ["retrieved"]))), \
-             patch("app.core.evaluation._compute_ragas_metrics",
-                   new=AsyncMock(side_effect=RuntimeError("ragas lib error"))):
+        with (
+            patch(
+                "app.core.evaluation.get_rag_answer",
+                new=AsyncMock(return_value=("answer", ["retrieved"])),
+            ),
+            patch(
+                "app.core.evaluation._compute_ragas_metrics",
+                new=AsyncMock(side_effect=RuntimeError("ragas lib error")),
+            ),
+        ):
             result = await evaluation._eval_single_question(item, kb_id=1, semaphore=semaphore)
 
         assert result["success"] is False
@@ -95,15 +110,28 @@ class TestRunEvaluationConcurrency:
         run_result.scalar_one_or_none.return_value = fake_run
         db.execute = AsyncMock(return_value=run_result)
 
-        fake_metrics = {"faithfulness": 0.9, "answer_relevancy": 0.8,
-                        "context_precision": 0.7, "context_recall": 0.6}
+        fake_metrics = {
+            "faithfulness": 0.9,
+            "answer_relevancy": 0.8,
+            "context_precision": 0.7,
+            "context_recall": 0.6,
+        }
 
-        with patch("app.core.evaluation.get_rag_answer",
-                   new=AsyncMock(return_value=("answer", ["ctx"]))), \
-             patch("app.core.evaluation._compute_ragas_metrics",
-                   new=AsyncMock(return_value=fake_metrics)):
+        with (
+            patch(
+                "app.core.evaluation.get_rag_answer",
+                new=AsyncMock(return_value=("answer", ["ctx"])),
+            ),
+            patch(
+                "app.core.evaluation._compute_ragas_metrics",
+                new=AsyncMock(return_value=fake_metrics),
+            ),
+        ):
             aggregated = await evaluation.run_evaluation(
-                run_id=1, dataset=dataset, kb_id=1, db=db,
+                run_id=1,
+                dataset=dataset,
+                kb_id=1,
+                db=db,
             )
 
         # 3 个问题都成功 → db.add 调用 3 次
@@ -111,7 +139,7 @@ class TestRunEvaluationConcurrency:
         # run 状态被更新
         assert fake_run.status.value == "completed"  # EvaluationStatus.COMPLETED
         # aggregated 应该是 3 个 fake_metrics 的平均
-        assert aggregated["faithfulness"] == 0.9
+        assert aggregated["faithfulness"]["mean"] == 0.9
 
     @pytest.mark.asyncio
     async def test_single_failure_does_not_block_others(self):
@@ -129,20 +157,31 @@ class TestRunEvaluationConcurrency:
                 raise RuntimeError("intentional failure")
             return ("answer", ["ctx"])
 
-        good_metrics = {"faithfulness": 0.9, "answer_relevancy": 0.8,
-                        "context_precision": 0.7, "context_recall": 0.6}
+        good_metrics = {
+            "faithfulness": 0.9,
+            "answer_relevancy": 0.8,
+            "context_precision": 0.7,
+            "context_recall": 0.6,
+        }
 
-        with patch("app.core.evaluation.get_rag_answer", new=fake_get_rag_answer), \
-             patch("app.core.evaluation._compute_ragas_metrics",
-                   new=AsyncMock(return_value=good_metrics)):
+        with (
+            patch("app.core.evaluation.get_rag_answer", new=fake_get_rag_answer),
+            patch(
+                "app.core.evaluation._compute_ragas_metrics",
+                new=AsyncMock(return_value=good_metrics),
+            ),
+        ):
             aggregated = await evaluation.run_evaluation(
-                run_id=1, dataset=dataset, kb_id=1, db=db,
+                run_id=1,
+                dataset=dataset,
+                kb_id=1,
+                db=db,
             )
 
         # 3 个问题都被 db.add（包括失败的，失败的有 null metrics）
         assert db.add.call_count == 3
         # aggregated 仅用 2 个成功题目的 metrics
-        assert aggregated["faithfulness"] == 0.9
+        assert aggregated["faithfulness"]["mean"] == 0.9
 
     @pytest.mark.asyncio
     async def test_incremental_commit_every_10_questions(self):
@@ -159,12 +198,18 @@ class TestRunEvaluationConcurrency:
         # 所以总 commit 次数 = 增量次数(1) + 最后提交(1) + run更新(1) = 3
         fake_metrics = {"faithfulness": 0.5}
 
-        with patch("app.core.evaluation.get_rag_answer",
-                   new=AsyncMock(return_value=("a", ["c"]))), \
-             patch("app.core.evaluation._compute_ragas_metrics",
-                   new=AsyncMock(return_value=fake_metrics)):
+        with (
+            patch("app.core.evaluation.get_rag_answer", new=AsyncMock(return_value=("a", ["c"]))),
+            patch(
+                "app.core.evaluation._compute_ragas_metrics",
+                new=AsyncMock(return_value=fake_metrics),
+            ),
+        ):
             await evaluation.run_evaluation(
-                run_id=1, dataset=dataset, kb_id=1, db=db,
+                run_id=1,
+                dataset=dataset,
+                kb_id=1,
+                db=db,
             )
 
         # 15 题 → 第 10 题增量提交 1 次 + 最后提交 1 次 + run 更新 1 次 = 3 次
@@ -182,9 +227,12 @@ class TestRunEvaluationConcurrency:
         db.execute = AsyncMock(return_value=run_result)
 
         aggregated = await evaluation.run_evaluation(
-            run_id=1, dataset=[], kb_id=1, db=db,
+            run_id=1,
+            dataset=[],
+            kb_id=1,
+            db=db,
         )
 
         # 空数据集 → aggregate_metrics([]) 返回全 0
-        assert aggregated["faithfulness"] == 0.0
+        assert aggregated["faithfulness"]["mean"] == 0.0
         assert db.add.call_count == 0

@@ -5,6 +5,7 @@ Task 10: Prompt 模板版本化管理
 - 启动时加载到内存，支持热加载
 - chat_messages 表记录使用的 prompt_version
 """
+
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
 
 from app.db.base import Base

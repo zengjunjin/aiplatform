@@ -1,5 +1,7 @@
 """Unit tests for RRF fusion algorithm in HybridRetriever."""
+
 import pytest
+
 from app.rag.retriever import HybridRetriever
 
 
@@ -12,26 +14,26 @@ class TestRRFFusion:
     def test_rrf_basic_fusion(self):
         """Test that overlapping items rank higher."""
         retriever = HybridRetriever()
-        
+
         # Vector results: chunk A (rank 0), chunk B (rank 1), chunk C (rank 2)
         vec_results = [
             {"chunk_id": "A", "content": "vec A", "score": 0.9, "source": "vector"},
             {"chunk_id": "B", "content": "vec B", "score": 0.8, "source": "vector"},
             {"chunk_id": "C", "content": "vec C", "score": 0.7, "source": "vector"},
         ]
-        
+
         # BM25 results: chunk B (rank 0), chunk A (rank 1), chunk D (rank 2)
         bm25_results = [
             {"chunk_id": "B", "score": 2.5, "content": "bm25 B"},
             {"chunk_id": "A", "score": 2.0, "content": "bm25 A"},
             {"chunk_id": "D", "score": 1.5, "content": "bm25 D"},
         ]
-        
+
         result = retriever._rrf_fuse(vec_results, bm25_results)
-        
+
         # Both A and B appear in both lists, should rank above C and D
         chunk_ids = [r["chunk_id"] for r in result]
-        
+
         # B should be top (rank 0 in BM25 + rank 1 in vector)
         # A should be second (rank 0 in vector + rank 1 in BM25)
         # Both should rank above C and D (only in one list)
@@ -78,12 +80,14 @@ class TestRRFFusion:
 class TestHybridRetrieverMethods:
     def test_init_defaults(self):
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         assert retriever._qdrant_client is None
         assert retriever._embedding is None
 
     def test_collection_name_format(self):
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         name = retriever._collection_name(42)
         assert "42" in name
@@ -91,6 +95,7 @@ class TestHybridRetrieverMethods:
 
     def test_rrf_fuse_single_vector(self):
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         vec = [{"chunk_id": "A", "content": "test", "score": 0.9, "source": "vector"}]
         result = retriever._rrf_fuse(vec, [])
@@ -101,6 +106,7 @@ class TestHybridRetrieverMethods:
 
     def test_rrf_fuse_single_bm25(self):
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         bm25 = [{"chunk_id": "B", "score": 2.5, "content": "bm25 B"}]
         vec = [{"chunk_id": "A", "content": "test", "score": 0.9, "source": "vector"}]
@@ -109,9 +115,18 @@ class TestHybridRetrieverMethods:
 
     def test_rrf_fuse_preserves_metadata(self):
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
-        vec = [{"chunk_id": "X", "content": "hello", "score": 0.5, "source": "vector",
-                 "doc_id": 1, "filename": "test.pdf"}]
+        vec = [
+            {
+                "chunk_id": "X",
+                "content": "hello",
+                "score": 0.5,
+                "source": "vector",
+                "doc_id": 1,
+                "filename": "test.pdf",
+            }
+        ]
         result = retriever._rrf_fuse(vec, [])
         assert result[0]["content"] == "hello"
         assert result[0]["doc_id"] == 1
@@ -120,6 +135,7 @@ class TestHybridRetrieverMethods:
     def test_rrf_rank_based_not_score_based(self):
         """RRF uses rank positions, not raw scores."""
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         vec = [
             {"chunk_id": "first", "content": "", "score": 0.9, "source": "vector"},
@@ -137,6 +153,7 @@ class TestHybridRetrieverMethods:
     def test_rrf_scores_differ_for_different_ranks(self):
         """Items with better combined ranks should have higher scores."""
         from app.rag.retriever import HybridRetriever
+
         retriever = HybridRetriever()
         vec = [
             {"chunk_id": "A", "content": "", "score": 0.9, "source": "vector"},

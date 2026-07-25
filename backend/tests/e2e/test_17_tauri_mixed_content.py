@@ -10,11 +10,13 @@ Tauri 2 前端在 http://tauri.localhost 加载，后端在 http://localhost:800
 2. 无 CSP 阻止警告
 3. WebSocket 连接到后端
 """
+
 import os
-import time
+
 import pytest
 
 from tests.e2e.helpers.cdp_client import CdpClient
+from tests.e2e.helpers.waiters import wait_for_dom_ready
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -39,8 +41,9 @@ def test_https_to_http_fetch_succeeds(cdp):
     --allow-running-insecure-content 配置也允许加载 HTTP 资源。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
-    result = cdp.evaluate("""
+    wait_for_dom_ready(cdp, timeout=10)
+    result = cdp.evaluate(
+        """
         (async function() {
             try {
                 const r = await fetch('http://localhost:8000/api/v1/system/status');
@@ -50,13 +53,15 @@ def test_https_to_http_fetch_succeeds(cdp):
                 return 'ERROR: ' + e.message;
             }
         })();
-    """, await_promise=True)
+    """,
+        await_promise=True,
+    )
     # 应成功或返回 HTTP 状态码（不应被 CSP 阻止）
-    assert result == "OK" or result.startswith("STATUS:"), \
-        f"HTTP fetch failed: {result}"
+    assert result == "OK" or result.startswith("STATUS:"), f"HTTP fetch failed: {result}"
     # 不应被 CSP 阻止
-    assert "Blocked" not in result and "ERR_BLOCKED" not in result, \
-        f"Request blocked by CSP: {result}"
+    assert (
+        "Blocked" not in result and "ERR_BLOCKED" not in result
+    ), f"Request blocked by CSP: {result}"
 
 
 def test_no_mixed_content_warning(cdp):
@@ -65,7 +70,7 @@ def test_no_mixed_content_warning(cdp):
     验证 Performance API 中无混合内容阻止条目。
     """
     cdp.navigate(TAURI_HOME)
-    time.sleep(2)
+    wait_for_dom_ready(cdp, timeout=10)
     # 检查 Performance API 中是否有混合内容条目
     logs = cdp.evaluate("""
         (function() {
@@ -86,7 +91,8 @@ def test_websocket_to_backend(cdp):
     而不是抛出未捕获异常。
     """
     # WebSocket 连接测试（不依赖登录状态，验证连接过程不抛异常）
-    result = cdp.evaluate("""
+    result = cdp.evaluate(
+        """
         (async function() {
             return new Promise((resolve) => {
                 try {
@@ -105,8 +111,9 @@ def test_websocket_to_backend(cdp):
                 }
             });
         })();
-    """, await_promise=True)
+    """,
+        await_promise=True,
+    )
     # WebSocket 可能需要认证才连接成功
     # 此测试验证至少不抛出异常
-    assert result in ("CONNECTED", "ERROR", "TIMEOUT"), \
-        f"Unexpected WebSocket result: {result}"
+    assert result in ("CONNECTED", "ERROR", "TIMEOUT"), f"Unexpected WebSocket result: {result}"

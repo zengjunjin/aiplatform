@@ -1,7 +1,10 @@
 """检查基础设施服务是否就绪"""
+
 import sys
+
 import requests
 from sqlalchemy import create_engine, text
+
 from app.config import settings
 
 ok = True
@@ -19,6 +22,7 @@ except Exception as e:
 # Redis
 try:
     import redis as redis_lib
+
     r = redis_lib.from_url(f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}")
     r.ping()
     print("[OK] Redis")
@@ -29,7 +33,9 @@ except Exception as e:
 
 # Qdrant
 try:
-    resp = requests.get(f"http://{settings.QDRANT_HOST}:{settings.QDRANT_PORT}/collections", timeout=5)
+    resp = requests.get(
+        f"http://{settings.QDRANT_HOST}:{settings.QDRANT_PORT}/collections", timeout=5
+    )
     if resp.status_code == 200:
         print("[OK] Qdrant")
     else:

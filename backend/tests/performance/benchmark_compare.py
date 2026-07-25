@@ -12,7 +12,6 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -35,9 +34,10 @@ def assert_within_baseline(metric_name: str, actual_ms: float):
     baseline = load_baseline()
     if metric_name in baseline:
         threshold = baseline[metric_name] * 1.2  # 允许 20% 退化
-        assert actual_ms <= threshold, (
-            f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
-        )
+        assert (
+            actual_ms <= threshold
+        ), f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
+
 
 DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "small.json"
 
@@ -46,7 +46,7 @@ def load_dataset(dataset_path: str) -> dict:
     path = Path(dataset_path)
     if not path.is_absolute():
         path = Path(__file__).resolve().parent / dataset_path
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -87,8 +87,8 @@ async def retrieve_without_rerank(query: str, kb_id: int) -> tuple[float, list[d
 
 async def retrieve_with_rerank(query: str, kb_id: int) -> tuple[float, list[dict]]:
     """检索 + Rerank。"""
-    from app.rag.retriever import retriever
     from app.rag.reranker import reranker
+    from app.rag.retriever import retriever
 
     start = time.perf_counter()
     chunks = await retriever.retrieve(query, kb_id, top_k=10)
@@ -112,7 +112,9 @@ async def run_rerank_comparison(kb_id: int, dataset_path: str, output: str | Non
     results: list[dict] = []
     errors: list[dict] = []
 
-    print(f"Rerank 对比测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}")
+    print(
+        f"Rerank 对比测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}"
+    )
     print("-" * 60)
 
     for i, q in enumerate(questions):
@@ -145,8 +147,10 @@ async def run_rerank_comparison(kb_id: int, dataset_path: str, output: str | Non
                 "overhead_pct": round((w_latency - wo_latency) / max(wo_latency, 0.001) * 100, 1),
             }
             results.append(entry)
-            print(f"    无 Rerank: {wo_latency:.4f}s, 有 Rerank: {w_latency:.4f}s, "
-                  f"开销: {w_latency - wo_latency:.4f}s (+{entry['overhead_pct']}%)")
+            print(
+                f"    无 Rerank: {wo_latency:.4f}s, 有 Rerank: {w_latency:.4f}s, "
+                f"开销: {w_latency - wo_latency:.4f}s (+{entry['overhead_pct']}%)"
+            )
 
         except Exception as e:
             print(f"    错误: {e}")
@@ -158,7 +162,6 @@ async def run_rerank_comparison(kb_id: int, dataset_path: str, output: str | Non
         "kb_id": kb_id,
         "total_questions": len(questions),
         "successful": len(without_latencies),
-        "errors": len(errors),
         "without_rerank_stats": compute_stats(without_latencies),
         "with_rerank_stats": compute_stats(with_latencies),
         "results": results,
@@ -167,10 +170,14 @@ async def run_rerank_comparison(kb_id: int, dataset_path: str, output: str | Non
 
     print("-" * 60)
     print("Rerank 对比测试完成")
-    print(f"  无 Rerank: P50={report['without_rerank_stats']['p50']}s, "
-          f"P95={report['without_rerank_stats']['p95']}s")
-    print(f"  有 Rerank: P50={report['with_rerank_stats']['p50']}s, "
-          f"P95={report['with_rerank_stats']['p95']}s")
+    print(
+        f"  无 Rerank: P50={report['without_rerank_stats']['p50']}s, "
+        f"P95={report['without_rerank_stats']['p95']}s"
+    )
+    print(
+        f"  有 Rerank: P50={report['with_rerank_stats']['p50']}s, "
+        f"P95={report['with_rerank_stats']['p95']}s"
+    )
 
     # 性能回归断言：无 Rerank 的 P95 延迟应在基线 20% 容差内
     if without_latencies:
@@ -210,7 +217,6 @@ async def run_chunking_comparison(kb_id: int, dataset_path: str, output: str | N
     configs_to_test.insert(0, current_chunk_size)
 
     config_results: dict[int, dict] = {}
-    results: list[dict] = []
 
     print(f"分块策略对比测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}")
     print(f"当前 CHUNK_SIZE={current_chunk_size}, 测试配置: {configs_to_test}")
@@ -218,8 +224,10 @@ async def run_chunking_comparison(kb_id: int, dataset_path: str, output: str | N
 
     for chunk_size in configs_to_test:
         if chunk_size != current_chunk_size:
-            print(f"注意: chunk_size={chunk_size} 需要重启服务才生效，当前使用 {current_chunk_size}")
-            print(f"  将使用当前配置运行，并在报告中标注期望的 chunk_size")
+            print(
+                f"注意: chunk_size={chunk_size} 需要重启服务才生效，当前使用 {current_chunk_size}"
+            )
+            print("  将使用当前配置运行，并在报告中标注期望的 chunk_size")
 
         config_key = f"chunk_size_{chunk_size}"
         config_latencies: list[float] = []
@@ -234,12 +242,14 @@ async def run_chunking_comparison(kb_id: int, dataset_path: str, output: str | N
                 elapsed = time.perf_counter() - start
 
                 config_latencies.append(elapsed)
-                config_results_list.append({
-                    "index": i,
-                    "question": question,
-                    "latency_seconds": round(elapsed, 4),
-                    "chunks_returned": len(chunks),
-                })
+                config_results_list.append(
+                    {
+                        "index": i,
+                        "question": question,
+                        "latency_seconds": round(elapsed, 4),
+                        "chunks_returned": len(chunks),
+                    }
+                )
 
             except Exception as e:
                 print(f"    [{config_key}][{i}] 错误: {e}")
@@ -255,9 +265,11 @@ async def run_chunking_comparison(kb_id: int, dataset_path: str, output: str | N
             "results": config_results_list,
         }
 
-        print(f"  chunk_size={chunk_size} (实际={actual_chunk_size}): "
-              f"P50={config_results[config_key]['stats']['p50']}s, "
-              f"mean={config_results[config_key]['stats']['mean']}s")
+        print(
+            f"  chunk_size={chunk_size} (实际={actual_chunk_size}): "
+            f"P50={config_results[config_key]['stats']['p50']}s, "
+            f"mean={config_results[config_key]['stats']['mean']}s"
+        )
 
     report = {
         "benchmark": "compare_chunking",
@@ -308,11 +320,13 @@ def main():
     args = parser.parse_args()
 
     if args.compare == "rerank":
-        asyncio.run(run_rerank_comparison(
-            kb_id=args.kb_id,
-            dataset_path=args.dataset,
-            output=args.output,
-        ))
+        asyncio.run(
+            run_rerank_comparison(
+                kb_id=args.kb_id,
+                dataset_path=args.dataset,
+                output=args.output,
+            )
+        )
     elif args.compare == "chunking":
         raise NotImplementedError(
             "chunking 对比需要为每个 chunk_size 重启服务，CLI 直接运行仅产生"

@@ -1,4 +1,4 @@
-﻿from sqlalchemy import BigInteger, Boolean, Column, DateTime, String, func
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, String, func
 
 from app.db.base import Base
 
@@ -13,4 +13,6 @@ class User(Base):
     role = Column(String(20), nullable=False, default="user")
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

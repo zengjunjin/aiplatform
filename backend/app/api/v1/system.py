@@ -51,6 +51,7 @@ async def system_status(
 
     async def _check_ollama():
         import httpx
+
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{settings.OLLAMA_HOST}/api/tags")
             if r.status_code == 200:
@@ -62,11 +63,13 @@ async def system_status(
     async def _check_qdrant():
         # Task 14.2: qdrant.get_collections() 是同步阻塞 HTTP 调用，用 asyncio.to_thread 避免阻塞事件循环
         from app.rag.retriever import retriever
+
         collections = await asyncio.to_thread(retriever.qdrant.get_collections)
         return {"qdrant": "up", "qdrant_collections": len(collections.collections)}
 
     async def _check_celery():
         from app.tasks.celery_app import celery_app
+
         stats = await asyncio.to_thread(lambda: celery_app.control.inspect(timeout=2).stats())
         if stats:
             return {"celery": "up", "celery_workers": list(stats.keys())}
@@ -100,10 +103,12 @@ async def list_models(
     models = []
     for name in providers:
         provider = ModelRegistry.get(name)
-        models.append({
-            "name": provider.provider_name,
-            "display_name": f"{provider.model_name} ({'本地' if provider.provider_name.startswith('ollama') else '云端'})",
-            "source": "local" if provider.provider_name.startswith("ollama") else "cloud",
-            "status": "healthy" if provider.is_healthy else "unhealthy",
-        })
+        models.append(
+            {
+                "name": provider.provider_name,
+                "display_name": f"{provider.model_name} ({'本地' if provider.provider_name.startswith('ollama') else '云端'})",
+                "source": "local" if provider.provider_name.startswith("ollama") else "cloud",
+                "status": "healthy" if provider.is_healthy else "unhealthy",
+            }
+        )
     return ok(data={"models": models, "default_model": "ollama"})

@@ -297,6 +297,7 @@ describe('chatStore', () => {
 
       const abortErr = new Error('aborted');
       abortErr.name = 'AbortError';
+      // eslint-disable-next-line require-yield -- 测试用：模拟 stream 立即抛错
       vi.mocked(streamChat).mockImplementation(async function* () {
         throw abortErr;
       });
@@ -310,6 +311,7 @@ describe('chatStore', () => {
 
     it('should handle stream throw with generic error', async () => {
 
+      // eslint-disable-next-line require-yield -- 测试用：模拟 stream 立即抛错
       vi.mocked(streamChat).mockImplementation(async function* () {
         throw new Error('connection lost');
       });

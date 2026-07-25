@@ -122,7 +122,7 @@ class ModelRouter:
         if not available:
             raise ValueError("No providers available")
         # 优先选择免费的
-        free_providers = [p for p in available if getattr(p, 'is_free', False)]
+        free_providers = [p for p in available if getattr(p, "is_free", False)]
         if free_providers:
             return free_providers[0]
         # 没有免费的就用第一个
@@ -169,14 +169,18 @@ class ModelRouter:
                         ordered.remove(preferred)
                     ordered.insert(0, preferred)
             except ValueError:
-                logger.warning(f"Preferred model '{preferred_model}' not found, using auto-selection")
+                logger.warning(
+                    f"Preferred model '{preferred_model}' not found, using auto-selection"
+                )
 
         # 3. 依次尝试
         last_error: Exception | None = None
         for provider in ordered:
             tried.append(provider.provider_name)
             try:
-                logger.info(f"Trying provider: {provider.provider_name} (model={provider.model_name})")
+                logger.info(
+                    f"Trying provider: {provider.provider_name} (model={provider.model_name})"
+                )
                 result = await provider.chat(messages, stream=stream, **kwargs)
                 # 成功：如果之前有失败的 provider，记录 fallback 事件
                 if len(tried) > 1:
@@ -194,7 +198,4 @@ class ModelRouter:
                 continue
 
         # 4. 所有 Provider 都失败
-        raise ValueError(
-            f"All LLM providers failed (tried: {tried}). "
-            f"Last error: {last_error}"
-        )
+        raise ValueError(f"All LLM providers failed (tried: {tried}). " f"Last error: {last_error}")

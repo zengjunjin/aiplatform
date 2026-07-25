@@ -1,1 +1,1 @@
-﻿# RAG Engine package
+# RAG Engine package

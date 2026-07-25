@@ -18,6 +18,8 @@ target_user 通过 API 验证权限变更的实效（token 失效、登录恢复
 - target_user 行定位：在 Table 中按用户名查找行。
 - Popconfirm 确认按钮选择器：.ant-popconfirm-buttons .ant-btn-primary。
 """
+
+import contextlib
 import json
 import time
 
@@ -25,9 +27,9 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
+    login_cdp_session,
+    make_cdp_client,
     verify_api_call,
 )
 from tests.e2e.helpers.waiters import wait_for_element
@@ -48,13 +50,13 @@ def target_user(base_url, admin_headers):
     user_info = create_user_via_api(base_url, admin_headers)
     yield user_info
     # 清理：禁用
-    try:
+    with contextlib.suppress(Exception):
         requests.put(
             f"{base_url}/users/{user_info['user']['id']}/status",
-            json={"is_active": False}, headers=admin_headers, timeout=5,
+            json={"is_active": False},
+            headers=admin_headers,
+            timeout=5,
         )
-    except Exception:
-        pass
 
 
 def _click_popconfirm_ok(cdp, timeout=8):
@@ -184,10 +186,11 @@ def _api_update_user_status(base_url, headers, user_id, is_active):
     """
     r = requests.put(
         f"{base_url}/users/{user_id}/status",
-        json={"is_active": is_active}, headers=headers, timeout=10,
+        json={"is_active": is_active},
+        headers=headers,
+        timeout=10,
     )
-    assert r.status_code == 200, \
-        f"Update user status failed: {r.status_code} {r.text[:200]}"
+    assert r.status_code == 200, f"Update user status failed: {r.status_code} {r.text[:200]}"
 
 
 def _api_update_user_role(base_url, headers, user_id, role):
@@ -197,10 +200,11 @@ def _api_update_user_role(base_url, headers, user_id, role):
     """
     r = requests.put(
         f"{base_url}/users/{user_id}/role",
-        json={"role": role}, headers=headers, timeout=10,
+        json={"role": role},
+        headers=headers,
+        timeout=10,
     )
-    assert r.status_code == 200, \
-        f"Update user role failed: {r.status_code} {r.text[:200]}"
+    assert r.status_code == 200, f"Update user role failed: {r.status_code} {r.text[:200]}"
 
 
 def test_users_list_renders(cdp_admin, target_user):
@@ -208,12 +212,15 @@ def test_users_list_renders(cdp_admin, target_user):
     cdp = cdp_admin
     wait_for_element(cdp, ".ant-table", timeout=15)
     # 验证表头列存在
-    headers = cdp.evaluate("""
+    headers = (
+        cdp.evaluate("""
         (function() {
             const ths = document.querySelectorAll('.ant-table-thead th');
             return Array.from(ths).map(th => th.textContent.trim());
         })();
-    """) or []
+    """)
+        or []
+    )
     headers_text = " ".join(headers)
     for col in ["用户名", "邮箱", "角色", "状态", "操作"]:
         assert col in headers_text, f"Column '{col}' not found in headers: {headers}"
@@ -238,8 +245,9 @@ def test_disable_user_ui(cdp_admin, target_user, base_url, admin_headers):
     _api_update_user_status(base_url, admin_headers, user_id, False)
     # 刷新页面验证 UI 状态变更
     _reload_users_page(cdp)
-    assert _wait_row_tag_paginated(cdp, username, "禁用", timeout=20), \
-        f"Status tag did not change to '禁用' for user '{username}'"
+    assert _wait_row_tag_paginated(
+        cdp, username, "禁用", timeout=20
+    ), f"Status tag did not change to '禁用' for user '{username}'"
 
 
 def test_disable_user_effect(cdp_admin, target_user, base_url):
@@ -247,17 +255,23 @@ def test_disable_user_effect(cdp_admin, target_user, base_url):
     用账号密码调 /auth/login 验证 401。"""
     # refresh_token 应失效（401）
     verify_api_call(
-        f"{base_url}/auth/refresh", "POST",
+        f"{base_url}/auth/refresh",
+        "POST",
         json={"refresh_token": target_user["refresh_token"]},
         expected_status=401,
     )
     # 账号密码登录应被拒（401）
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": target_user["username"],
-        "password": target_user["password"],
-    }, timeout=10)
-    assert r.status_code == 401, \
-        f"Login should fail for disabled user, got {r.status_code}: {r.text[:200]}"
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": target_user["username"],
+            "password": target_user["password"],
+        },
+        timeout=10,
+    )
+    assert (
+        r.status_code == 401
+    ), f"Login should fail for disabled user, got {r.status_code}: {r.text[:200]}"
 
 
 def test_enable_user_ui(cdp_admin, target_user, base_url, admin_headers):
@@ -270,18 +284,24 @@ def test_enable_user_ui(cdp_admin, target_user, base_url, admin_headers):
     _api_update_user_status(base_url, admin_headers, user_id, True)
     # 刷新页面验证 UI 状态变更
     _reload_users_page(cdp)
-    assert _wait_row_tag_paginated(cdp, username, "正常", timeout=20), \
-        f"Status tag did not change to '正常' for user '{username}'"
+    assert _wait_row_tag_paginated(
+        cdp, username, "正常", timeout=20
+    ), f"Status tag did not change to '正常' for user '{username}'"
 
 
 def test_enable_user_effect(cdp_admin, target_user, base_url):
     """用例5: 用 target_user 账号密码重新登录验证 200 + access_token 有效。"""
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": target_user["username"],
-        "password": target_user["password"],
-    }, timeout=10)
-    assert r.status_code == 200, \
-        f"Login should succeed for enabled user, got {r.status_code}: {r.text[:200]}"
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": target_user["username"],
+            "password": target_user["password"],
+        },
+        timeout=10,
+    )
+    assert (
+        r.status_code == 200
+    ), f"Login should succeed for enabled user, got {r.status_code}: {r.text[:200]}"
     token_data = r.json().get("data", r.json())
     assert "access_token" in token_data, f"No access_token in response: {token_data}"
     # 更新 target_user 的 token（供后续用例使用）
@@ -289,7 +309,8 @@ def test_enable_user_effect(cdp_admin, target_user, base_url):
     target_user["refresh_token"] = token_data["refresh_token"]
     # 验证 access_token 有效（调 /auth/me）
     verify_api_call(
-        f"{base_url}/auth/me", "GET",
+        f"{base_url}/auth/me",
+        "GET",
         token=token_data["access_token"],
         expected_status=200,
     )
@@ -305,18 +326,23 @@ def test_promote_to_admin_ui(cdp_admin, target_user, base_url, admin_headers):
     _api_update_user_role(base_url, admin_headers, user_id, "admin")
     # 刷新页面验证 UI 状态变更
     _reload_users_page(cdp)
-    assert _wait_row_tag_paginated(cdp, username, "管理员", timeout=20), \
-        f"Role tag did not change to '管理员' for user '{username}'"
+    assert _wait_row_tag_paginated(
+        cdp, username, "管理员", timeout=20
+    ), f"Role tag did not change to '管理员' for user '{username}'"
 
 
 def test_promote_to_admin_effect(cdp_admin, target_user, base_url):
     """用例7: target_user 重新登录（API），用独立 CDP 会话验证侧边栏出现
     "用户管理"菜单 + 访问 /#/users 不被重定向。"""
     # 重新登录获取含 admin 角色的 token
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": target_user["username"],
-        "password": target_user["password"],
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": target_user["username"],
+            "password": target_user["password"],
+        },
+        timeout=10,
+    )
     assert r.status_code == 200
     fresh_token = r.json().get("data", r.json())
     target_user["access_token"] = fresh_token["access_token"]
@@ -327,18 +353,23 @@ def test_promote_to_admin_effect(cdp_admin, target_user, base_url):
     try:
         login_cdp_session(client2, fresh_token, "#/dashboard")
         # 验证侧边栏出现"用户管理"菜单
-        menu_text = client2.evaluate(
-            "document.querySelector('.ant-menu') ? "
-            "document.querySelector('.ant-menu').textContent : ''"
-        ) or ""
-        assert "用户管理" in menu_text, \
-            f"Admin menu '用户管理' not found in sidebar after promotion: {menu_text}"
+        menu_text = (
+            client2.evaluate(
+                "document.querySelector('.ant-menu') ? "
+                "document.querySelector('.ant-menu').textContent : ''"
+            )
+            or ""
+        )
+        assert (
+            "用户管理" in menu_text
+        ), f"Admin menu '用户管理' not found in sidebar after promotion: {menu_text}"
         # 访问 /#/users 不被重定向
         client2.evaluate("window.location.hash = '#/users'")
         time.sleep(2)
         hash_val = client2.evaluate("window.location.hash") or ""
-        assert "users" in hash_val, \
-            f"Admin user should access /#/users without redirect, but hash={hash_val}"
+        assert (
+            "users" in hash_val
+        ), f"Admin user should access /#/users without redirect, but hash={hash_val}"
     finally:
         client2.close()
 
@@ -359,14 +390,19 @@ def test_demote_to_user(cdp_admin, target_user, base_url, admin_headers, admin_t
     _api_update_user_role(base_url, admin_headers, user_id, "user")
     # 刷新页面验证 UI 状态变更
     _reload_users_page(cdp)
-    assert _wait_row_tag_paginated(cdp, username, "普通用户", timeout=20), \
-        f"Role tag did not change to '普通用户' for user '{username}'"
+    assert _wait_row_tag_paginated(
+        cdp, username, "普通用户", timeout=20
+    ), f"Role tag did not change to '普通用户' for user '{username}'"
 
     # target_user 重新登录（此时已降级为普通用户）
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": target_user["username"],
-        "password": target_user["password"],
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": target_user["username"],
+            "password": target_user["password"],
+        },
+        timeout=10,
+    )
     assert r.status_code == 200
     fresh_token = r.json().get("data", r.json())
     target_user["access_token"] = fresh_token["access_token"]
@@ -377,17 +413,22 @@ def test_demote_to_user(cdp_admin, target_user, base_url, admin_headers, admin_t
     try:
         login_cdp_session(client2, fresh_token, "#/dashboard")
         # 验证侧边栏无"用户管理"菜单
-        menu_text = client2.evaluate(
-            "document.querySelector('.ant-menu') ? "
-            "document.querySelector('.ant-menu').textContent : ''"
-        ) or ""
-        assert "用户管理" not in menu_text, \
-            f"Admin menu '用户管理' should not be visible for normal user: {menu_text}"
+        menu_text = (
+            client2.evaluate(
+                "document.querySelector('.ant-menu') ? "
+                "document.querySelector('.ant-menu').textContent : ''"
+            )
+            or ""
+        )
+        assert (
+            "用户管理" not in menu_text
+        ), f"Admin menu '用户管理' should not be visible for normal user: {menu_text}"
         # 访问 /#/users 被重定向到 /#/dashboard
         client2.evaluate("window.location.hash = '#/users'")
         time.sleep(2)
         hash_val = client2.evaluate("window.location.hash") or ""
-        assert "dashboard" in hash_val, \
-            f"Normal user should be redirected from /#/users to /#/dashboard, hash={hash_val}"
+        assert (
+            "dashboard" in hash_val
+        ), f"Normal user should be redirected from /#/users to /#/dashboard, hash={hash_val}"
     finally:
         client2.close()

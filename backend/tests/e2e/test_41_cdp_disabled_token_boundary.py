@@ -20,6 +20,7 @@ conftest.py 第 110-112 行明确记录：
 - admin CDP 会话：执行禁用操作 + UI 验证状态变更
 - 用户 A API 验证：用旧 access_token 调 API 验证是否失效
 """
+
 import os
 import time
 
@@ -27,12 +28,10 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
-    verify_api_call,
+    login_cdp_session,
+    make_cdp_client,
 )
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -51,7 +50,9 @@ def _disable_user_via_api(base_url, admin_headers, user_id):
     """通过 API 禁用用户。"""
     r = requests.put(
         f"{base_url}/users/{user_id}/status",
-        json={"is_active": False}, headers=admin_headers, timeout=10,
+        json={"is_active": False},
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Disable user failed: {r.status_code} {r.text[:200]}"
 
@@ -60,7 +61,9 @@ def _enable_user_via_api(base_url, admin_headers, user_id):
     """通过 API 启用用户。"""
     r = requests.put(
         f"{base_url}/users/{user_id}/status",
-        json={"is_active": True}, headers=admin_headers, timeout=10,
+        json={"is_active": True},
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Enable user failed: {r.status_code} {r.text[:200]}"
 
@@ -159,9 +162,9 @@ def test_disabled_user_cannot_access_protected_resource(base_url, admin_headers)
         headers={"Authorization": f"Bearer {user_a_token}"},
         timeout=10,
     )
-    assert r_before.status_code == 200, (
-        f"Baseline KB list should return 200, got {r_before.status_code}"
-    )
+    assert (
+        r_before.status_code == 200
+    ), f"Baseline KB list should return 200, got {r_before.status_code}"
 
     # 禁用用户 A
     _disable_user_via_api(base_url, admin_headers, user_a_id)
@@ -183,9 +186,7 @@ def test_disabled_user_cannot_access_protected_resource(base_url, admin_headers)
     elif r_after.status_code == 401:
         assert True, "禁用用户的 access_token 已正确失效"
     else:
-        pytest.fail(
-            f"Unexpected status: {r_after.status_code}: {r_after.text[:200]}"
-        )
+        pytest.fail(f"Unexpected status: {r_after.status_code}: {r_after.text[:200]}")
 
     # 清理
     _enable_user_via_api(base_url, admin_headers, user_a_id)

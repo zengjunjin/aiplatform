@@ -6,13 +6,16 @@ Covers:
 - JWT blacklist (logout) behavior
 - Conflict on duplicate username/email
 """
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services import auth_service
+
+import pytest
+
 from app.core.exceptions import AuthError, ConflictError, ValidationError
 from app.core.security import create_access_token, create_refresh_token, decode_token
-from app.schemas.auth import RegisterRequest, LoginRequest, RefreshRequest
 from app.db.user import User
+from app.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest
+from app.services import auth_service
 
 
 @pytest.fixture
@@ -60,9 +63,11 @@ class TestRegister:
     async def test_register_success(self, fake_user, make_auth_db):
         """注册新用户：DB 返回 None → 创建用户 → 返回 User 对象"""
         db = make_auth_db(user=None)
+
         # 模拟 db.add 后 db.refresh 填充 id
         async def fake_refresh(obj, *args, **kwargs):
             obj.id = 99
+
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         req = RegisterRequest(
@@ -227,6 +232,7 @@ class TestJWTBlacklist:
         # 引入 redis，所以 patch app.redis_client.get_redis 即可
         with patch("app.redis_client.get_redis", return_value=redis_mock):
             from app.services.auth_service import add_to_blacklist
+
             await add_to_blacklist(token, "access")
 
         redis_mock.setex.assert_awaited_once()
@@ -244,6 +250,7 @@ class TestJWTBlacklist:
 
         with patch("app.redis_client.get_redis", return_value=redis_mock):
             from app.services.auth_service import is_blacklisted
+
             result = await is_blacklisted("any.token.here", "access")
         assert result is True
 
@@ -255,6 +262,7 @@ class TestJWTBlacklist:
 
         with patch("app.redis_client.get_redis", return_value=redis_mock):
             from app.services.auth_service import is_blacklisted
+
             result = await is_blacklisted("any.token.here", "access")
         assert result is False
 
@@ -266,6 +274,7 @@ class TestJWTBlacklist:
 
         with patch("app.redis_client.get_redis", return_value=redis_mock):
             from app.services.auth_service import add_to_blacklist
+
             await add_to_blacklist("invalid.token", "access")
         # setex 不应被调用
         redis_mock.setex.assert_not_awaited()
@@ -277,8 +286,9 @@ class TestDepsBlacklistCheck:
     @pytest.mark.asyncio
     async def test_blacklisted_token_rejected(self, fake_user, make_auth_db):
         """token 在黑名单中 → AuthError"""
-        from app.api.deps import get_current_user
         from fastapi.security import HTTPAuthorizationCredentials
+
+        from app.api.deps import get_current_user
 
         token = create_access_token(str(fake_user.id))
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)

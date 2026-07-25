@@ -10,7 +10,6 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -34,9 +33,9 @@ def assert_within_baseline(metric_name: str, actual_ms: float):
     baseline = load_baseline()
     if metric_name in baseline:
         threshold = baseline[metric_name] * 1.2  # 允许 20% 退化
-        assert actual_ms <= threshold, (
-            f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
-        )
+        assert (
+            actual_ms <= threshold
+        ), f"{metric_name}: {actual_ms}ms exceeds baseline {baseline[metric_name]}ms by >20%"
 
 
 def load_dataset(dataset_path: str) -> dict:
@@ -44,7 +43,7 @@ def load_dataset(dataset_path: str) -> dict:
     path = Path(dataset_path)
     if not path.is_absolute():
         path = Path(__file__).resolve().parent / dataset_path
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -82,13 +81,12 @@ async def run_retrieval_benchmark(kb_id: int, dataset_path: str, output: str | N
         sys.exit(1)
 
     latencies: list[float] = []
-    stage_latencies: dict[str, list[float]] = {
-        "total": [],
-    }
     results: list[dict] = []
     errors: list[dict] = []
 
-    print(f"开始检索基准测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}")
+    print(
+        f"开始检索基准测试: kb_id={kb_id}, 数据集={metadata.get('name', 'unknown')}, 问题数={len(questions)}"
+    )
     print("-" * 60)
 
     for i, q in enumerate(questions):
@@ -109,18 +107,22 @@ async def run_retrieval_benchmark(kb_id: int, dataset_path: str, output: str | N
                 "question_type": q.get("question_type"),
                 "latency_seconds": round(elapsed, 4),
                 "chunks_returned": len(chunks),
-                "top_chunk_scores": [round(c.get("rrf_score", c.get("score", 0)), 4) for c in chunks[:5]],
+                "top_chunk_scores": [
+                    round(c.get("rrf_score", c.get("score", 0)), 4) for c in chunks[:5]
+                ],
             }
             results.append(result_entry)
             print(f"    延迟: {elapsed:.4f}s, 返回块数: {len(chunks)}")
 
         except Exception as e:
             print(f"    错误: {e}")
-            errors.append({
-                "index": i,
-                "question": question,
-                "error": str(e),
-            })
+            errors.append(
+                {
+                    "index": i,
+                    "question": question,
+                    "error": str(e),
+                }
+            )
 
     sorted_latencies = sorted(latencies)
 
@@ -130,7 +132,6 @@ async def run_retrieval_benchmark(kb_id: int, dataset_path: str, output: str | N
         "kb_id": kb_id,
         "total_questions": len(questions),
         "successful": len(latencies),
-        "errors": len(errors),
         "latency_stats": {
             "min": round(sorted_latencies[0], 4) if sorted_latencies else 0,
             "max": round(sorted_latencies[-1], 4) if sorted_latencies else 0,
@@ -146,12 +147,16 @@ async def run_retrieval_benchmark(kb_id: int, dataset_path: str, output: str | N
     print("-" * 60)
     print("检索基准测试完成")
     print(f"  成功: {len(latencies)}, 失败: {len(errors)}")
-    print(f"  延迟 (秒): min={report['latency_stats']['min']}, "
-          f"mean={report['latency_stats']['mean']}, "
-          f"max={report['latency_stats']['max']}")
-    print(f"  分位数: P50={report['latency_stats']['p50']}, "
-          f"P95={report['latency_stats']['p95']}, "
-          f"P99={report['latency_stats']['p99']}")
+    print(
+        f"  延迟 (秒): min={report['latency_stats']['min']}, "
+        f"mean={report['latency_stats']['mean']}, "
+        f"max={report['latency_stats']['max']}"
+    )
+    print(
+        f"  分位数: P50={report['latency_stats']['p50']}, "
+        f"P95={report['latency_stats']['p95']}, "
+        f"P99={report['latency_stats']['p99']}"
+    )
 
     # 性能回归阈值检查
     if latencies:
@@ -182,11 +187,13 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="输出 JSON 报告文件路径")
     args = parser.parse_args()
 
-    asyncio.run(run_retrieval_benchmark(
-        kb_id=args.kb_id,
-        dataset_path=args.dataset,
-        output=args.output,
-    ))
+    asyncio.run(
+        run_retrieval_benchmark(
+            kb_id=args.kb_id,
+            dataset_path=args.dataset,
+            output=args.output,
+        )
+    )
 
 
 if __name__ == "__main__":

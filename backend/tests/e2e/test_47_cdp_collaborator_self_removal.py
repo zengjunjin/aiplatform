@@ -17,7 +17,8 @@
 - admin CDP 会话：创建 KB + 添加协作者
 - 用户 A API 验证：自删除 + 验证失去访问权限
 """
-import io
+
+import contextlib
 import os
 import time
 import uuid
@@ -26,10 +27,9 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
-    login_cdp_session,
     create_user_via_api,
-    verify_api_call,
+    login_cdp_session,
+    make_cdp_client,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
@@ -52,18 +52,18 @@ def self_removal_kb(base_url, admin_headers):
     r = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name, "description": "协作者自删除测试"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Create KB failed: {r.text[:200]}"
     kb = r.json().get("data", {})
     yield kb
-    try:
+    with contextlib.suppress(Exception):
         requests.delete(
             f"{base_url}/knowledge-bases/{kb['id']}",
-            headers=admin_headers, timeout=5,
+            headers=admin_headers,
+            timeout=5,
         )
-    except Exception:
-        pass
 
 
 def _set_collaborator(base_url, admin_headers, kb_id, user_id, permission):
@@ -71,11 +71,12 @@ def _set_collaborator(base_url, admin_headers, kb_id, user_id, permission):
     r = requests.post(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators",
         json={"user_id": user_id, "permission": permission},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"Set collaborator ({permission}) failed: {r.status_code} {r.text[:200]}"
-    )
+    assert (
+        r.status_code == 200
+    ), f"Set collaborator ({permission}) failed: {r.status_code} {r.text[:200]}"
 
 
 def test_read_collaborator_self_removal(base_url, admin_headers, self_removal_kb):
@@ -103,8 +104,7 @@ def test_read_collaborator_self_removal(base_url, admin_headers, self_removal_kb
         timeout=10,
     )
     assert r_before.status_code == 200, (
-        f"Baseline: read collaborator should access KB, "
-        f"got {r_before.status_code}"
+        f"Baseline: read collaborator should access KB, " f"got {r_before.status_code}"
     )
 
     # 3. 用户 A 调用 DELETE 移除自己
@@ -118,8 +118,7 @@ def test_read_collaborator_self_removal(base_url, admin_headers, self_removal_kb
     # - 200（自删除成功）或 403（不允许自删除）
     # 不应返回 500
     assert r_del.status_code in (200, 403), (
-        f"Self-removal should return 200 or 403, "
-        f"got {r_del.status_code}: {r_del.text[:200]}"
+        f"Self-removal should return 200 or 403, " f"got {r_del.status_code}: {r_del.text[:200]}"
     )
 
     if r_del.status_code == 200:
@@ -233,11 +232,10 @@ def test_owner_not_in_collaborator_list(base_url, admin_headers, self_removal_kb
 
     r = requests.get(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r.status_code == 200, (
-        f"GET collaborators failed: {r.status_code} {r.text[:200]}"
-    )
+    assert r.status_code == 200, f"GET collaborators failed: {r.status_code} {r.text[:200]}"
     # 协作者 API 返回 {"data": [...]}，data 直接是 list
     collaborators = r.json().get("data", [])
     if not isinstance(collaborators, list):
@@ -247,9 +245,9 @@ def test_owner_not_in_collaborator_list(base_url, admin_headers, self_removal_kb
     # owner 不应在协作者列表中
     collab_user_ids = [c.get("user_id") or c.get("id") for c in collaborators]
     if owner_id:
-        assert owner_id not in collab_user_ids, (
-            f"Owner {owner_id} should not be in collaborator list: {collab_user_ids}"
-        )
+        assert (
+            owner_id not in collab_user_ids
+        ), f"Owner {owner_id} should not be in collaborator list: {collab_user_ids}"
 
 
 def test_collaborator_cannot_remove_others(base_url, admin_headers, self_removal_kb):
@@ -284,13 +282,14 @@ def test_collaborator_cannot_remove_others(base_url, admin_headers, self_removal
     # 验证用户 B 仍是协作者
     r_list = requests.get(
         f"{base_url}/knowledge-bases/{kb_id}/collaborators",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     # 协作者 API 返回 {"data": [...]}，data 直接是 list
     collaborators = r_list.json().get("data", [])
     if not isinstance(collaborators, list):
         collaborators = collaborators.get("items", []) if isinstance(collaborators, dict) else []
     collab_user_ids = [c.get("user_id") or c.get("id") for c in collaborators]
-    assert user_b_id in collab_user_ids, (
-        f"User B should still be collaborator after write user's failed removal attempt"
-    )
+    assert (
+        user_b_id in collab_user_ids
+    ), "User B should still be collaborator after write user's failed removal attempt"

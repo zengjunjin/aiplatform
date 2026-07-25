@@ -2,6 +2,7 @@
 
 验证 sync_engine 使用 settings 中的连接池参数，而非硬编码值。
 """
+
 import inspect
 
 from app.db import sync_session
@@ -41,6 +42,7 @@ class TestSyncSessionPoolConfig:
     def test_sync_engine_actual_pool_size_matches_settings(self):
         """Task 27 SubTask 27.3: 验证配置实际生效"""
         from app.config import settings
+
         # sync_engine.pool 是 QueuePool 实例，其 _pool.maxsize 等于 pool_size + max_overflow
         # 但更直接的是检查 engine 创建时的参数
         # 这里通过检查源码 + 设置项存在性验证

@@ -1,10 +1,11 @@
 import re
-from datetime import UTC
+from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.errors import ErrorCode
 from app.core.exceptions import AuthError, ConflictError, ValidationError
 from app.core.security import (
@@ -22,7 +23,9 @@ from app.schemas.auth import LoginRequest, RegisterRequest
 # 内存黑名单仅在当前进程有效，进程重启后失效；多进程/多实例部署下其他进程无法感知。
 # 仅用于 Redis 不可用时避免 fail-open，不应作为常规黑名单存储。
 _memory_blacklist: dict[str, float] = {}  # key="{token_type}:{token}" -> exp timestamp
-_memory_blacklist_max = 10000  # 上限防止无限增长
+_memory_blacklist_max = (
+    settings.TOKEN_BLACKLIST_MAX
+)  # 上限防止无限增长（可通过 TOKEN_BLACKLIST_MAX 环境变量配置）
 
 
 def validate_password_strength(password: str) -> None:
@@ -30,13 +33,15 @@ def validate_password_strength(password: str) -> None:
 
     if len(password) < settings.PASSWORD_MIN_LENGTH:
         raise ValidationError(f"密码至少 {settings.PASSWORD_MIN_LENGTH} 个字符")
-    if settings.PASSWORD_REQUIRE_UPPER and not re.search(r'[A-Z]', password):
+    if settings.PASSWORD_REQUIRE_UPPER and not re.search(r"[A-Z]", password):
         raise ValidationError("密码需包含至少一个大写字母")
-    if settings.PASSWORD_REQUIRE_LOWER and not re.search(r'[a-z]', password):
+    if settings.PASSWORD_REQUIRE_LOWER and not re.search(r"[a-z]", password):
         raise ValidationError("密码需包含至少一个小写字母")
-    if settings.PASSWORD_REQUIRE_DIGIT and not re.search(r'[0-9]', password):
+    if settings.PASSWORD_REQUIRE_DIGIT and not re.search(r"[0-9]", password):
         raise ValidationError("密码需包含至少一个数字")
-    if settings.PASSWORD_REQUIRE_SPECIAL and not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]', password):
+    if settings.PASSWORD_REQUIRE_SPECIAL and not re.search(
+        r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]', password
+    ):
         raise ValidationError("密码需包含至少一个特殊字符")
 
 
@@ -58,9 +63,9 @@ async def register(req: RegisterRequest, db: AsyncSession) -> User:
     db.add(user)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
-        raise ConflictError("Username or email already exists")
+        raise ConflictError("Username or email already exists") from e
     await db.refresh(user)
     return user
 
@@ -126,6 +131,7 @@ async def refresh_token(refresh: str, db: AsyncSession) -> dict:
         },
     }
 
+
 def _memory_blacklist_add(token_type: str, token: str, exp: float) -> None:
     """将 token 加入内存黑名单。超限时丢弃最旧条目（插入顺序）。
 
@@ -147,7 +153,6 @@ def _memory_blacklist_contains(token_type: str, token: str) -> bool:
     exp = _memory_blacklist.get(key)
     if exp is None:
         return False
-    from datetime import datetime
     now = datetime.now(UTC).timestamp()
     if exp <= now:
         # 已过期，清理并返回未命中
@@ -162,13 +167,13 @@ async def add_to_blacklist(token: str, token_type: str = "access") -> None:
     Redis 不可用时降级到进程内存黑名单（best-effort，不保证跨进程一致）。
     """
     from app.redis_client import get_redis
+
     payload = decode_token(token)
     if not payload:
         return
     exp = payload.get("exp")
     if not exp:
         return
-    from datetime import datetime
     now = datetime.now(UTC).timestamp()
     ttl = int(exp - now)
     if ttl <= 0:
@@ -184,6 +189,7 @@ async def add_to_blacklist(token: str, token_type: str = "access") -> None:
 
 async def is_blacklisted(token: str, token_type: str = "access") -> bool:
     from app.redis_client import get_redis
+
     redis = get_redis()
     if redis:
         key = f"auth:blacklist:{token_type}:{token}"

@@ -10,41 +10,53 @@ Create Date: 2026-07-23
 
 注: 实际列名为 knowledge_base_id / created_by (非 kb_id / user_id)。
 """
+
 from alembic import op
 
-
-revision = '015_evaluation_fk_ondelete'
-down_revision = '014_json_to_jsonb'
+revision = "015_evaluation_fk_ondelete"
+down_revision = "014_json_to_jsonb"
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     # Drop existing FK constraints and recreate with ondelete
-    op.drop_constraint('evaluation_runs_knowledge_base_id_fkey', 'evaluation_runs', type_='foreignkey')
+    op.drop_constraint(
+        "evaluation_runs_knowledge_base_id_fkey", "evaluation_runs", type_="foreignkey"
+    )
     op.create_foreign_key(
-        'evaluation_runs_knowledge_base_id_fkey',
-        'evaluation_runs',
-        'knowledge_bases',
-        ['knowledge_base_id'],
-        ['id'],
-        ondelete='CASCADE'
+        "evaluation_runs_knowledge_base_id_fkey",
+        "evaluation_runs",
+        "knowledge_bases",
+        ["knowledge_base_id"],
+        ["id"],
+        ondelete="CASCADE",
     )
 
-    op.drop_constraint('evaluation_runs_created_by_fkey', 'evaluation_runs', type_='foreignkey')
+    op.drop_constraint("evaluation_runs_created_by_fkey", "evaluation_runs", type_="foreignkey")
     op.create_foreign_key(
-        'evaluation_runs_created_by_fkey',
-        'evaluation_runs',
-        'users',
-        ['created_by'],
-        ['id'],
-        ondelete='SET NULL'
+        "evaluation_runs_created_by_fkey",
+        "evaluation_runs",
+        "users",
+        ["created_by"],
+        ["id"],
+        ondelete="SET NULL",
     )
 
 
 def downgrade():
-    op.drop_constraint('evaluation_runs_created_by_fkey', 'evaluation_runs', type_='foreignkey')
-    op.create_foreign_key('evaluation_runs_created_by_fkey', 'evaluation_runs', 'users', ['created_by'], ['id'])
+    op.drop_constraint("evaluation_runs_created_by_fkey", "evaluation_runs", type_="foreignkey")
+    op.create_foreign_key(
+        "evaluation_runs_created_by_fkey", "evaluation_runs", "users", ["created_by"], ["id"]
+    )
 
-    op.drop_constraint('evaluation_runs_knowledge_base_id_fkey', 'evaluation_runs', type_='foreignkey')
-    op.create_foreign_key('evaluation_runs_knowledge_base_id_fkey', 'evaluation_runs', 'knowledge_bases', ['knowledge_base_id'], ['id'])
+    op.drop_constraint(
+        "evaluation_runs_knowledge_base_id_fkey", "evaluation_runs", type_="foreignkey"
+    )
+    op.create_foreign_key(
+        "evaluation_runs_knowledge_base_id_fkey",
+        "evaluation_runs",
+        "knowledge_bases",
+        ["knowledge_base_id"],
+        ["id"],
+    )

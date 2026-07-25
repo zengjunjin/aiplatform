@@ -1,4 +1,5 @@
 """认证 API 集成测试 - 真实 PostgreSQL + Redis"""
+
 import pytest
 
 
@@ -34,10 +35,13 @@ class TestRegister:
 class TestLogin:
     async def test_login_success(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         assert r.status_code == 200
         data = r.json()["data"]
         assert "access_token" in data
@@ -47,10 +51,13 @@ class TestLogin:
 
     async def test_login_wrong_password(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": "Wrongpass1!",
-        })
+        r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": "Wrongpass1!",
+            },
+        )
         assert r.status_code == 401
 
 
@@ -59,10 +66,13 @@ class TestLogin:
 class TestRefresh:
     async def test_refresh_success(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        login_r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        login_r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         refresh_token = login_r.json()["data"]["refresh_token"]
 
         r = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
@@ -77,10 +87,13 @@ class TestRefresh:
 class TestLogout:
     async def test_logout_success(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        login_r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        login_r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         access_token = login_r.json()["data"]["access_token"]
         refresh_token = login_r.json()["data"]["refresh_token"]
 
@@ -100,30 +113,43 @@ class TestLogout:
 class TestChangePassword:
     async def test_change_password_success(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        login_r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        login_r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         access_token = login_r.json()["data"]["access_token"]
 
         new_pwd = "Newpass456!@#"
         r = await client.put(
             "/api/v1/auth/password",
             headers={"Authorization": f"Bearer {access_token}"},
-            json={"old_password": user_creds["password"], "new_password": new_pwd, "confirm_password": new_pwd},
+            json={
+                "old_password": user_creds["password"],
+                "new_password": new_pwd,
+                "confirm_password": new_pwd,
+            },
         )
         assert r.status_code == 200
 
-        r2 = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": new_pwd,
-        })
+        r2 = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": new_pwd,
+            },
+        )
         assert r2.status_code == 200
 
-        r3 = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        r3 = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         assert r3.status_code == 401
 
 
@@ -132,10 +158,13 @@ class TestChangePassword:
 class TestMe:
     async def test_me_success(self, client, user_creds):
         await client.post("/api/v1/auth/register", json=user_creds)
-        login_r = await client.post("/api/v1/auth/login", json={
-            "username": user_creds["username"],
-            "password": user_creds["password"],
-        })
+        login_r = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": user_creds["username"],
+                "password": user_creds["password"],
+            },
+        )
         access_token = login_r.json()["data"]["access_token"]
 
         r = await client.get(

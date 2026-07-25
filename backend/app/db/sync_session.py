@@ -9,6 +9,7 @@ attribute 'send'" errors.
 This module provides a synchronous SQLAlchemy session using psycopg2,
 which is safe to use inside Celery tasks.
 """
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 

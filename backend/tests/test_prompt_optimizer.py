@@ -1,4 +1,5 @@
 """Tests for app.core.prompt_optimizer.generate_optimization_suggestions"""
+
 import pytest
 
 from app.core.prompt_optimizer import generate_optimization_suggestions
@@ -17,11 +18,14 @@ def _make_feedback_data(patterns: dict | None = None, **kwargs) -> dict:
     if patterns:
         default_patterns.update(patterns)
     return {
-        "stats": kwargs.get("stats", {
-            "total_feedback": kwargs.get("total_feedback", 10),
-            "positive_rate": kwargs.get("positive_rate", 0.6),
-            "negative_rate": kwargs.get("negative_rate", 0.4),
-        }),
+        "stats": kwargs.get(
+            "stats",
+            {
+                "total_feedback": kwargs.get("total_feedback", 10),
+                "positive_rate": kwargs.get("positive_rate", 0.6),
+                "negative_rate": kwargs.get("negative_rate", 0.4),
+            },
+        ),
         "failure_patterns": default_patterns,
         "low_rated_samples": kwargs.get("low_rated_samples", []),
         "suggestions": kwargs.get("suggestions", []),
@@ -131,13 +135,15 @@ class TestMixedPatterns:
     @pytest.mark.asyncio
     async def test_mixed_patterns(self):
         """多 pattern 混合时生成多个建议，顺序与代码检查顺序一致"""
-        data = _make_feedback_data(patterns={
-            "faithfulness_issue": 2,
-            "context_insufficient": 3,
-            "incompleteness": 1,
-            "irrelevance": 1,
-            "verbosity": 1,
-        })
+        data = _make_feedback_data(
+            patterns={
+                "faithfulness_issue": 2,
+                "context_insufficient": 3,
+                "incompleteness": 1,
+                "irrelevance": 1,
+                "verbosity": 1,
+            }
+        )
         result = await generate_optimization_suggestions(data)
 
         suggestions = result["suggestions"]

@@ -1,9 +1,10 @@
+import hashlib
+
 from loguru import logger
 
 from app.config import settings
 from app.models.factory import ModelFactory
 from app.rag.prompt_builder import build_context_messages, build_rag_prompt, get_system_prompt
-
 
 # tiktoken 精确 token 计数（延迟初始化，import 失败时 fallback 到估算方法）
 _tiktoken_encoder = None
@@ -22,6 +23,7 @@ def _get_tiktoken_encoder():
         return _tiktoken_encoder
     try:
         import tiktoken
+
         _tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
         _tiktoken_available = True
         return _tiktoken_encoder
@@ -65,8 +67,8 @@ class ContextManager:
         if encoder is not None:
             try:
                 return len(encoder.encode(text))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"tiktoken encode failed, fallback to estimation: {e}")
         # Fallback: 中文字符约 1:1, 英文约 4:1
         cjk_count = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         ascii_count = len(text) - cjk_count
@@ -92,8 +94,30 @@ class ContextManager:
             result_chars.append(ch)
         return "".join(result_chars)
 
-    def _truncate_to_budget(self, chunks: list[dict],
-                            budget: int) -> list[dict]:
+    def _deduplicate(self, chunks: list, history: list) -> list:
+        """基于 content 的 sha256 hash 去重。
+
+        先把历史消息的 hash 加入已见集合，再过滤 chunks：
+        移除与历史消息内容重复的 chunk，并去除 chunks 内部重复。
+        保留首次出现的 chunk。
+        """
+        seen_hashes = set()
+        # 先把历史消息的 hash 加入 seen
+        for msg in history:
+            content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+            h = hashlib.sha256(content.encode()).hexdigest()
+            seen_hashes.add(h)
+        # 过滤 chunks
+        result = []
+        for chunk in chunks:
+            content = chunk.get("content", "") if isinstance(chunk, dict) else str(chunk)
+            h = hashlib.sha256(content.encode()).hexdigest()
+            if h not in seen_hashes:
+                seen_hashes.add(h)
+                result.append(chunk)
+        return result
+
+    def _truncate_to_budget(self, chunks: list[dict], budget: int) -> list[dict]:
         """截断检索片段以适应 token 预算."""
         result = []
         used = 0
@@ -113,8 +137,7 @@ class ContextManager:
             used += chunk_tokens
         return result
 
-    def _truncate_history_to_budget(self, history: list[dict],
-                                     budget: int) -> list[dict]:
+    def _truncate_history_to_budget(self, history: list[dict], budget: int) -> list[dict]:
         """从最近的开始保留, 截断历史以适应 token 预算."""
         result = []
         used = 0
@@ -136,15 +159,16 @@ class ContextManager:
         keep_count = self.keep_recent * 2
         recent = history[-keep_count:] if len(history) > keep_count else history
 
+        # 去重：移除与历史消息内容重复的 chunk，并去除 chunks 内部重复
+        deduplicated_chunks = self._deduplicate(retrieved_chunks, history)
+
         # 截断检索片段到 token 预算
         truncated_chunks = self._truncate_to_budget(
-            retrieved_chunks, self.RETRIEVAL_TOKEN_BUDGET
+            deduplicated_chunks, self.RETRIEVAL_TOKEN_BUDGET
         )
 
         # 截断历史到 token 预算
-        truncated_history = self._truncate_history_to_budget(
-            recent, self.HISTORY_TOKEN_BUDGET
-        )
+        truncated_history = self._truncate_history_to_budget(recent, self.HISTORY_TOKEN_BUDGET)
 
         rag_context = build_rag_prompt(current_query, truncated_chunks)
         return build_context_messages(
@@ -170,9 +194,7 @@ class ContextManager:
         if not older_messages:
             return ""
         llm = ModelFactory.create_llm()
-        conversation = "\n".join(
-            [f"{m['role']}: {m['content'][:300]}" for m in older_messages]
-        )
+        conversation = "\n".join([f"{m['role']}: {m['content'][:300]}" for m in older_messages])
         prompt = f"请用中文简要点总结以下对话的要点,200字以内,保留关键信息和主题:\n\n{conversation}"
         messages = [{"role": "user", "content": prompt}]
         summary = await llm.chat(messages, temperature=0.3)
@@ -186,13 +208,17 @@ class ContextManager:
         existing_summary: str | None = None,
     ) -> tuple[list[dict], str | None]:
         if not self.needs_summary(history):
-            messages = self.build_messages(history, current_query, retrieved_chunks, existing_summary)
+            messages = self.build_messages(
+                history, current_query, retrieved_chunks, existing_summary
+            )
             return messages, existing_summary
 
         older, recent = self.split_history(history)
 
         if existing_summary:
-            messages = self.build_messages(recent, current_query, retrieved_chunks, existing_summary)
+            messages = self.build_messages(
+                recent, current_query, retrieved_chunks, existing_summary
+            )
             return messages, existing_summary
 
         new_summary = await self.summarize(older)

@@ -1,13 +1,14 @@
-"""CDP UI 测试 - Dashboard 和 System 页面验证
+"""Dashboard 与 System 页面的 API 层 + CDP UI 层 E2E 测试
 
-需要 Tauri 以 CDP 端口 9223 启动 + 后端服务运行。
-
-测试场景：
-1. Dashboard 加载（KPI 卡片 .ant-statistic + 图表卡片 .ant-card）
-2. Dashboard KPI 数值有效（非 undefined/NaN）
-3. System 页加载（5 个组件状态卡: postgresql/redis/ollama/qdrant/celery）
-4. System 组件状态 Tag（healthy=green "健康" / unhealthy=red "故障"）
-5. System 刷新按钮（点击后页面更新）
+包含两类测试：
+1. API 层 E2E（无需 CDP）：直接请求后端 API，覆盖 DashboardPage / SystemPage
+   聚合的数据源（KB 列表 / 反馈统计 / 评估运行 / 系统状态 / 模型列表 / metrics）。
+2. CDP UI 层 E2E（需要 Tauri 以 CDP 端口 9223 启动 + 后端服务运行）：
+   - Dashboard 加载（KPI 卡片 .ant-statistic + 图表卡片 .ant-card）
+   - Dashboard KPI 数值有效（非 undefined/NaN）
+   - System 页加载（5 个组件状态卡: postgresql/redis/ollama/qdrant/celery）
+   - System 组件状态 Tag（healthy=green "健康" / unhealthy=red "故障"）
+   - System 刷新按钮（点击后页面更新）
 
 注意：
 - DashboardPage 顶部 2 个 KPI Card（今日问答数 + 系统健康状态），
@@ -16,13 +17,15 @@
   每个含 Statistic + Tag（green "健康" / red "故障"）。
   刷新按钮文案为"刷新"（i18n: evaluation.refresh）。
 """
+
 import os
 import time
 
 import pytest
 import requests
 
-from tests.e2e.helpers.cdp_auth import make_cdp_client, login_cdp_session
+from tests.e2e.conftest import extract_data
+from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
 from tests.e2e.helpers.waiters import wait_for_element
 
 
@@ -35,16 +38,134 @@ def logged_in_cdp(base_url):
     admin 密码通过环境变量 E2E_ADMIN_PASSWORD 注入（与 conftest 一致）。
     """
     admin_password = os.getenv("E2E_ADMIN_PASSWORD", "admin123")
-    r = requests.post(f"{base_url}/auth/login", json={
-        "username": "admin",
-        "password": admin_password,
-    }, timeout=10)
+    r = requests.post(
+        f"{base_url}/auth/login",
+        json={
+            "username": "admin",
+            "password": admin_password,
+        },
+        timeout=10,
+    )
     assert r.status_code == 200, f"Admin login failed: {r.text}"
     token_data = r.json().get("data", r.json())
     client = make_cdp_client(9223)
     login_cdp_session(client, token_data, "#/dashboard")
     yield client
     client.close()
+
+
+# ============ API 层 E2E（无需 CDP）============
+
+
+def test_dashboard_kb_api(base_url, admin_headers):
+    """Dashboard 数据源 1：KB 列表 API
+
+    KB list 限流 60/minute，前面 test_03_kb_e2e 已消耗部分配额，
+    若被限流则等待 60s 重试一次（与 test_01_auth_e2e 限流重试模式一致）。
+    """
+    r = requests.get(
+        f"{base_url}/knowledge-bases",
+        params={"page": 1, "page_size": 5},
+        headers=admin_headers,
+        timeout=10,
+    )
+    if r.status_code == 429:
+        time.sleep(60)
+        r = requests.get(
+            f"{base_url}/knowledge-bases",
+            params={"page": 1, "page_size": 5},
+            headers=admin_headers,
+            timeout=10,
+        )
+    assert r.status_code == 200, f"KB list failed: {r.text}"
+    data = extract_data(r)
+    assert "items" in data
+    assert "total" in data
+
+
+def test_dashboard_feedback_stats_api(base_url, admin_headers):
+    """Dashboard 数据源 2：反馈统计 API"""
+    r = requests.get(
+        f"{base_url}/chat/feedback/stats",
+        headers=admin_headers,
+        timeout=10,
+    )
+    assert r.status_code == 200, f"Feedback stats failed: {r.text}"
+    data = extract_data(r)
+    assert data is not None
+
+
+def test_dashboard_evaluation_runs_api(base_url, admin_headers):
+    """Dashboard 数据源 3：评估运行列表 API"""
+    r = requests.get(
+        f"{base_url}/evaluation/runs",
+        params={"page": 1, "page_size": 5},
+        headers=admin_headers,
+        timeout=10,
+    )
+    assert r.status_code == 200, f"Evaluation runs failed: {r.text}"
+    data = extract_data(r)
+    assert "items" in data
+
+
+def test_dashboard_system_status_api(base_url, admin_headers):
+    """Dashboard 数据源 4：系统状态 API（admin only）"""
+    r = requests.get(
+        f"{base_url}/system/status",
+        headers=admin_headers,
+        timeout=15,
+    )
+    assert r.status_code == 200, f"System status failed: {r.text}"
+    data = extract_data(r)
+    assert "postgresql" in data
+    assert "redis" in data
+
+
+def test_system_status_returns_all_components(base_url, admin_headers):
+    """SystemPage 数据源：/system/status 应返回所有 5 个组件状态"""
+    r = requests.get(
+        f"{base_url}/system/status",
+        headers=admin_headers,
+        timeout=15,
+    )
+    assert r.status_code == 200, f"System status failed: {r.text}"
+    data = extract_data(r)
+    for component in ("postgresql", "redis", "ollama", "qdrant", "celery"):
+        assert component in data, f"Missing {component} in system status"
+
+
+def test_system_models_list(base_url, admin_headers):
+    """SystemPage 数据源：/system/models 返回模型列表"""
+    r = requests.get(
+        f"{base_url}/system/models",
+        headers=admin_headers,
+        timeout=10,
+    )
+    assert r.status_code == 200, f"List models failed: {r.text}"
+    data = extract_data(r)
+    assert "models" in data
+    assert isinstance(data["models"], list)
+
+
+def test_system_status_forbidden(base_url, test_user_headers):
+    """非 admin 不能访问 system status（Dashboard / System 页安全约束）"""
+    r = requests.get(
+        f"{base_url}/system/status",
+        headers=test_user_headers,
+        timeout=10,
+    )
+    assert r.status_code == 403, f"Expected 403, got {r.status_code}"
+
+
+def test_metrics_admin_ok(base_url, admin_headers):
+    """SystemPage 顶部 /metrics 可访问（admin，Prometheus 格式）"""
+    metrics_url = base_url.replace("/api/v1", "") + "/metrics"
+    r = requests.get(metrics_url, headers=admin_headers, timeout=10)
+    assert r.status_code == 200, f"Metrics failed: {r.text}"
+    assert "# HELP" in r.text or "# TYPE" in r.text, "Response is not Prometheus format"
+
+
+# ============ CDP UI 层 E2E（需要 Tauri CDP）============
 
 
 def test_dashboard_loads(logged_in_cdp):
@@ -71,17 +192,19 @@ def test_dashboard_kpi_values(logged_in_cdp):
     """
     cdp = logged_in_cdp
     wait_for_element(cdp, ".ant-statistic", timeout=20)
-    values = cdp.evaluate("""
+    values = (
+        cdp.evaluate("""
         (function() {
             const stats = document.querySelectorAll('.ant-statistic-content-value');
             return Array.from(stats).map(s => s.textContent.trim());
         })();
-    """) or []
+    """)
+        or []
+    )
     assert len(values) > 0, "No KPI values found on dashboard"
     for v in values:
         # Tag 渲染的"健康"/"故障"也是有效值，仅排除 undefined/NaN/空
-        assert v and v != "undefined" and v != "NaN", \
-            f"Invalid KPI value: '{v}'"
+        assert v and v != "undefined" and v != "NaN", f"Invalid KPI value: '{v}'"
 
 
 def test_system_page_loads(logged_in_cdp):
@@ -99,8 +222,7 @@ def test_system_page_loads(logged_in_cdp):
     page_text = cdp.evaluate("document.body.textContent") or ""
     components = ["PostgreSQL", "Redis", "Ollama", "Qdrant", "Celery"]
     for comp in components:
-        assert comp.lower() in page_text.lower(), \
-            f"Component '{comp}' not found on system page"
+        assert comp.lower() in page_text.lower(), f"Component '{comp}' not found on system page"
 
 
 def test_system_component_tags(logged_in_cdp):
@@ -113,20 +235,20 @@ def test_system_component_tags(logged_in_cdp):
     """
     cdp = logged_in_cdp
     wait_for_element(cdp, ".ant-tag", timeout=20)
-    tags = cdp.evaluate("""
+    tags = (
+        cdp.evaluate("""
         (function() {
             const tags = document.querySelectorAll('.ant-tag');
             return Array.from(tags).map(t => t.textContent.trim().replace(/\\s/g, ''));
         })();
-    """) or []
+    """)
+        or []
+    )
     # 至少有一个状态 Tag
     assert len(tags) > 0, "No status tags found on system page"
     # 验证存在"健康"或"故障"状态 Tag
-    has_status_tag = any(
-        "健康" in t or "故障" in t for t in tags
-    )
-    assert has_status_tag, \
-        f"No valid status tag ('健康'/'故障') found, tags: {tags}"
+    has_status_tag = any("健康" in t or "故障" in t for t in tags)
+    assert has_status_tag, f"No valid status tag ('健康'/'故障') found, tags: {tags}"
 
 
 def test_system_refresh(logged_in_cdp):

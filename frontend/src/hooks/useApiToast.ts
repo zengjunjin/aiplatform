@@ -53,5 +53,13 @@ export function useApiToast() {
     }
   }, [t, message]);
 
-  return { runWithToast, runWithToastOrThrow };
+  /**
+   * Task 6.1: 直接弹出 error toast, 用于非 runWithToast 场景下的错误提示
+   * (如并行 Promise.allSettled 中单个任务失败的轻量提示)
+   */
+  const error = useCallback((msg: string) => {
+    message.error(msg);
+  }, [message]);
+
+  return { runWithToast, runWithToastOrThrow, error };
 }

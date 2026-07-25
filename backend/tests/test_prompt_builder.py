@@ -1,6 +1,9 @@
 """Unit tests for rag.prompt_builder module."""
-import pytest
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.rag.prompt_builder import (
     DEFAULT_PROMPT_VERSION,
     DEFAULT_SYSTEM_PROMPT,
@@ -11,7 +14,6 @@ from app.rag.prompt_builder import (
     get_system_prompt,
     load_prompt_templates,
 )
-
 
 SAMPLE_CHUNKS = [
     {"chunk_id": 1, "doc_id": 10, "filename": "manual.pdf", "content": "Warranty is 24 months."},
@@ -83,6 +85,7 @@ class TestBuildContextMessages:
 
 # ---------- Task 10: Prompt 模板版本化与热加载 ----------
 
+
 class TestPromptCacheFallback:
     """Task 10: DB 不可用时 fallback 到默认值"""
 
@@ -134,8 +137,8 @@ class TestPromptHotReload:
     @pytest.mark.asyncio
     async def test_load_from_db_updates_cache(self):
         """从 DB 加载 active prompt 后，缓存更新"""
-        from app.rag.prompt_builder import _prompt_cache
         from app.db.prompt_template import PromptTemplate
+        from app.rag.prompt_builder import _prompt_cache
 
         fake_template = MagicMock(spec=PromptTemplate)
         fake_template.content = "你是新版助手。"
@@ -161,6 +164,7 @@ class TestPromptHotReload:
     async def test_reload_sync_updates_cache(self):
         """reload_sync 可手动设置缓存内容"""
         from app.rag.prompt_builder import _prompt_cache
+
         original_content = _prompt_cache.content
         original_version = _prompt_cache.version
         try:
@@ -183,8 +187,11 @@ class TestChatMessagePromptVersion:
         mock_db.refresh = AsyncMock(side_effect=lambda m: setattr(m, "id", 1))
 
         with patch("app.rag.prompt_builder.get_prompt_version", return_value="test-v1"):
-            msg = await chat_service.save_message(
-                session_id=1, role="assistant", content="answer", db=mock_db,
+            await chat_service.save_message(
+                session_id=1,
+                role="assistant",
+                content="answer",
+                db=mock_db,
             )
 
         # 验证 prompt_version 被设置到 ChatMessage 上
@@ -198,8 +205,11 @@ class TestChatMessagePromptVersion:
 
         mock_db = AsyncMock()
 
-        msg = await chat_service.save_message(
-            session_id=1, role="user", content="question", db=mock_db,
+        await chat_service.save_message(
+            session_id=1,
+            role="user",
+            content="question",
+            db=mock_db,
         )
 
         added_obj = mock_db.add.call_args[0][0]

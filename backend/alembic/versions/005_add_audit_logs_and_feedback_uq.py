@@ -5,12 +5,11 @@ Revises: 004_summary
 Create Date: 2026-07-11 00:00:00.000000
 
 """
+
 from alembic import op
-import sqlalchemy as sa
 
-
-revision = '005_audit_feedback'
-down_revision = '004_summary'
+revision = "005_audit_feedback"
+down_revision = "004_summary"
 branch_labels = None
 depends_on = None
 
@@ -49,8 +48,8 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_constraint('uq_message_user_feedback', 'message_feedbacks', type_='unique')
-    op.drop_index('idx_audit_created', table_name='audit_logs')
-    op.drop_index('idx_audit_action', table_name='audit_logs')
-    op.drop_index('idx_audit_user', table_name='audit_logs')
-    op.drop_table('audit_logs')
+    op.drop_constraint("uq_message_user_feedback", "message_feedbacks", type_="unique")
+    op.drop_index("idx_audit_created", table_name="audit_logs")
+    op.drop_index("idx_audit_action", table_name="audit_logs")
+    op.drop_index("idx_audit_user", table_name="audit_logs")
+    op.drop_table("audit_logs")

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import KBBreadcrumbHeader from '../../components/KBBreadcrumbHeader';
 import type { KnowledgeBase } from '../../types';
 
@@ -21,7 +22,7 @@ const mockKB: KnowledgeBase = {
   updated_at: '',
 };
 
-function renderWithRouter(ui: React.ReactElement) {
+function renderWithRouter(ui: ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
 

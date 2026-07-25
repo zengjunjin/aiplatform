@@ -1,7 +1,6 @@
 """Unit tests for rag.bm25 module."""
-import pytest
-from app.rag.bm25 import BM25Store, bm25_store
 
+from app.rag.bm25 import BM25Store, bm25_store
 
 SAMPLE_DOCS = [
     {"content": "The quick brown fox jumps over the lazy dog"},
@@ -51,6 +50,7 @@ class TestBM25Store:
 
     def test_search_with_chunks_provided(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999999, "fox", top_k=2, chunks=SAMPLE_DOCS))
         assert len(results) == 2
@@ -60,30 +60,35 @@ class TestBM25Store:
 
     def test_search_empty_kb_no_chunks(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999998, "query", top_k=5))
         assert results == []
 
     def test_search_empty_query(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999995, "", top_k=5, chunks=SAMPLE_DOCS))
         assert isinstance(results, list)
 
     def test_top_k_limit(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999997, "the", top_k=2, chunks=SAMPLE_DOCS))
         assert len(results) <= 2
 
     def test_top_k_zero(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999994, "fox", top_k=0, chunks=SAMPLE_DOCS))
         assert len(results) == 0
 
     def test_scores_descending(self):
         import asyncio
+
         store = BM25Store()
         results = asyncio.run(store.search(999996, "fox", top_k=4, chunks=SAMPLE_DOCS))
         scores = [r["score"] for r in results]
@@ -106,19 +111,25 @@ class TestBM25Store:
 
     def test_delete_removes_from_cache(self):
         import asyncio
+
         store = BM25Store()
+
         async def _test():
             await store.search(9003, "fox", top_k=2, chunks=SAMPLE_DOCS)
             assert 9003 in store._cache
             await store.delete(9003)
             assert 9003 not in store._cache
+
         asyncio.run(_test())
 
     def test_delete_nonexistent_no_error(self):
         import asyncio
+
         store = BM25Store()
+
         async def _test():
             await store.delete(9999999)
+
         asyncio.run(_test())
 
     def test_module_instance_exists(self):
@@ -126,26 +137,54 @@ class TestBM25Store:
         assert isinstance(bm25_store, BM25Store)
 
     def test_cache_used_on_second_search(self):
+        """第二次 search 不传 chunks 时，应从内存缓存加载 chunks 元数据，结果 content 不为空。"""
         import asyncio
+
         store = BM25Store()
         kb_id = 9100
-        # First call builds and caches
+        # First call builds and caches BM25 index + chunks metadata
         asyncio.run(store.search(kb_id, "fox", top_k=2, chunks=SAMPLE_DOCS))
         assert kb_id in store._cache
-        # Second call should use cache (no chunks needed)
-        results = asyncio.run(store.search(kb_id, "dog", top_k=2))
+        # Second call uses cached BM25 index, loads chunks from memory cache
+        # Note: 不能用 "dog"，因为 "dog" 在 2/4 文档中出现，BM25 IDF = log((4-2+0.5)/(2+0.5)) = 0，
+        # 打分全为 0 被阈值过滤（与 Lucene/Elasticsearch 业界惯例一致），返回空结果。
+        # "fox" 在 3/4 文档中出现，IDF<0（负分），负分不被过滤，能返回结果验证 cache 复用 + chunks 回填。
+        results = asyncio.run(store.search(kb_id, "fox", top_k=2))
         assert len(results) == 2
+        # Verify chunks metadata is properly backfilled from memory cache (content not empty)
+        assert all(r.get("content") for r in results)
 
 
 # ---------- Phase F2: 增量更新测试 ----------
 
 DOC_A_CHUNKS = [
-    {"chunk_id": 1, "doc_id": 100, "kb_id": 9200, "content": "Python is a programming language", "filename": "a.md", "file_type": "md"},
-    {"chunk_id": 2, "doc_id": 100, "kb_id": 9200, "content": "Python supports multiple paradigms", "filename": "a.md", "file_type": "md"},
+    {
+        "chunk_id": 1,
+        "doc_id": 100,
+        "kb_id": 9200,
+        "content": "Python is a programming language",
+        "filename": "a.md",
+        "file_type": "md",
+    },
+    {
+        "chunk_id": 2,
+        "doc_id": 100,
+        "kb_id": 9200,
+        "content": "Python supports multiple paradigms",
+        "filename": "a.md",
+        "file_type": "md",
+    },
 ]
 
 DOC_B_CHUNKS = [
-    {"chunk_id": 3, "doc_id": 200, "kb_id": 9200, "content": "Rust is a systems programming language", "filename": "b.md", "file_type": "md"},
+    {
+        "chunk_id": 3,
+        "doc_id": 200,
+        "kb_id": 9200,
+        "content": "Rust is a systems programming language",
+        "filename": "b.md",
+        "file_type": "md",
+    },
 ]
 
 
@@ -238,6 +277,7 @@ class TestBM25Incremental:
     def test_add_documents_async(self):
         """异步增量 add_documents"""
         import asyncio
+
         store = BM25Store()
         kb_id = 9205
 
@@ -257,6 +297,7 @@ class TestBM25Incremental:
     def test_remove_document_async(self):
         """异步 remove_document"""
         import asyncio
+
         store = BM25Store()
         kb_id = 9206
 
@@ -285,17 +326,20 @@ class TestBM25AsyncLock:
         lock = store._get_async_lock()
         assert lock is not None
         import asyncio
+
         assert isinstance(lock, asyncio.Lock)
 
     def test_sync_lock_remains_threading_lock(self):
         """sync 路径（Celery）继续使用 threading.Lock"""
         import threading
+
         store = BM25Store()
         assert isinstance(store._sync_lock, type(threading.Lock()))
 
     def test_concurrent_get_or_build_safe(self):
         """并发 get_or_build 不会破坏 _cache"""
         import asyncio
+
         store = BM25Store()
         kb_id = 9300
 
@@ -317,6 +361,7 @@ class TestBM25AsyncLock:
     def test_concurrent_rebuild_and_delete_safe(self):
         """并发 rebuild + delete 不应导致状态错误"""
         import asyncio
+
         store = BM25Store()
         kb_id = 9301
 

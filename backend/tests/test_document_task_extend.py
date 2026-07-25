@@ -1,8 +1,10 @@
 """Tests for uncovered parts of app.tasks.document_task: _parse_and_chunk + _embed_and_store."""
-import pytest
+
 import asyncio
-import sys
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.tasks import document_task
 
 
@@ -58,7 +60,10 @@ class TestParseAndChunk:
         doc.filename = "test.md"
 
         # chunks from parser
-        chunks_from_parser = [{"content": "hello", "char_count": 5}, {"content": "world", "char_count": 5}]
+        chunks_from_parser = [
+            {"content": "hello", "char_count": 5},
+            {"content": "world", "char_count": 5},
+        ]
 
         # 模拟 db_chunks（提交后查询出来的）
         db_chunk1 = MagicMock()
@@ -103,8 +108,22 @@ class TestEmbedAndStore:
     def test_embed_and_store_calls_retriever_and_backfills(self):
         """_embed_and_store 完整流程：embed → add_chunks → backfill vector_id → BM25 增量"""
         chunks = [
-            {"chunk_id": 101, "doc_id": 10, "kb_id": 1, "content": "hello", "filename": "a.md", "file_type": "md"},
-            {"chunk_id": 102, "doc_id": 10, "kb_id": 1, "content": "world", "filename": "a.md", "file_type": "md"},
+            {
+                "chunk_id": 101,
+                "doc_id": 10,
+                "kb_id": 1,
+                "content": "hello",
+                "filename": "a.md",
+                "file_type": "md",
+            },
+            {
+                "chunk_id": 102,
+                "doc_id": 10,
+                "kb_id": 1,
+                "content": "world",
+                "filename": "a.md",
+                "file_type": "md",
+            },
         ]
         vectors = [[0.1, 0.2], [0.3, 0.4]]
 
@@ -130,7 +149,14 @@ class TestEmbedAndStore:
     def test_embed_and_store_continues_on_backfill_failure(self):
         """backfill vector_id 失败 → rollback，但不抛异常"""
         chunks = [
-            {"chunk_id": 101, "doc_id": 10, "kb_id": 1, "content": "hello", "filename": "a.md", "file_type": "md"},
+            {
+                "chunk_id": 101,
+                "doc_id": 10,
+                "kb_id": 1,
+                "content": "hello",
+                "filename": "a.md",
+                "file_type": "md",
+            },
         ]
 
         session = MagicMock()
@@ -150,7 +176,14 @@ class TestEmbedAndStore:
     def test_embed_and_store_continues_on_bm25_failure(self):
         """BM25 增量失败 → 不抛异常"""
         chunks = [
-            {"chunk_id": 101, "doc_id": 10, "kb_id": 1, "content": "hello", "filename": "a.md", "file_type": "md"},
+            {
+                "chunk_id": 101,
+                "doc_id": 10,
+                "kb_id": 1,
+                "content": "hello",
+                "filename": "a.md",
+                "file_type": "md",
+            },
         ]
 
         session = MagicMock()
@@ -185,6 +218,3 @@ class TestEmbedAndStore:
                             document_task._embed_and_store(10, chunks)
         # 没有 chunk_id，不执行 UPDATE SQL
         session.execute.assert_not_called()
-
-
-

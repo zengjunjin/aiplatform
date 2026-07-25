@@ -19,6 +19,8 @@ document_service 订阅者负责清理外部资源（Qdrant 向量、文件存�
 - admin CDP 会话：创建 KB + 上传文档 + 删除 KB + UI 验证
 - admin API 验证：删除后查询文档确认 404
 """
+
+import contextlib
 import io
 import os
 import time
@@ -28,10 +30,9 @@ import pytest
 import requests
 
 from tests.e2e.helpers.cdp_auth import (
-    make_cdp_client,
     login_cdp_session,
+    make_cdp_client,
 )
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -56,7 +57,10 @@ def _upload_doc(base_url, admin_headers, kb_id, filename=None, content=None):
     data = {"kb_id": str(kb_id)}
     r = requests.post(
         f"{base_url}/documents/upload",
-        files=files, data=data, headers=admin_headers, timeout=60,
+        files=files,
+        data=data,
+        headers=admin_headers,
+        timeout=60,
     )
     if r.status_code == 200:
         return 200, r.json().get("data", {})
@@ -69,7 +73,8 @@ def _wait_doc_status(base_url, admin_headers, doc_id, timeout=60):
     while time.time() < deadline:
         r = requests.get(
             f"{base_url}/documents/{doc_id}",
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         if r.status_code == 200:
             status = r.json().get("data", {}).get("status")
@@ -95,7 +100,8 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
     r_create_kb = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name, "description": "级联清理测试"},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r_create_kb.status_code == 200, f"Create KB failed: {r_create_kb.text[:200]}"
     kb_id = r_create_kb.json().get("data", {}).get("id")
@@ -119,7 +125,8 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
         # 3. 基线：验证文档可访问
         r_doc_before = requests.get(
             f"{base_url}/documents/{doc_id}",
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         assert r_doc_before.status_code == 200, (
             f"Baseline: doc should be accessible before KB deletion, "
@@ -129,11 +136,12 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
         # 4. 删除 KB
         r_del_kb = requests.delete(
             f"{base_url}/knowledge-bases/{kb_id}",
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
-        assert r_del_kb.status_code == 200, (
-            f"Delete KB failed: {r_del_kb.status_code} {r_del_kb.text[:200]}"
-        )
+        assert (
+            r_del_kb.status_code == 200
+        ), f"Delete KB failed: {r_del_kb.status_code} {r_del_kb.text[:200]}"
 
         # 等待级联清理（EventBus 异步处理可能需要时间）
         time.sleep(2)
@@ -141,7 +149,8 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
         # 5. 验证 GET /documents/{doc_id} 返回 404
         r_doc_after = requests.get(
             f"{base_url}/documents/{doc_id}",
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         assert r_doc_after.status_code == 404, (
             f"Document should be cleaned after KB deletion (404 expected), "
@@ -152,14 +161,14 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
         r_docs_list = requests.get(
             f"{base_url}/documents",
             params={"kb_id": kb_id, "page": 1, "page_size": 10},
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
         # 已删 KB 的文档列表应返回空列表或 404/403
         if r_docs_list.status_code == 200:
             items = r_docs_list.json().get("data", {}).get("items", [])
             assert len(items) == 0, (
-                f"Document list for deleted KB should be empty, "
-                f"got {len(items)} items"
+                f"Document list for deleted KB should be empty, " f"got {len(items)} items"
             )
         else:
             # 404 或 403 也是可接受的（KB 不存在或不可访问）
@@ -170,13 +179,12 @@ def test_delete_kb_cleans_documents(base_url, admin_headers, cdp_admin):
 
     finally:
         # 清理：确保 KB 被删除（即使测试失败）
-        try:
+        with contextlib.suppress(Exception):
             requests.delete(
                 f"{base_url}/knowledge-bases/{kb_id}",
-                headers=admin_headers, timeout=5,
+                headers=admin_headers,
+                timeout=5,
             )
-        except Exception:
-            pass
 
 
 def test_delete_kb_removes_kb_from_list(base_url, admin_headers, cdp_admin):
@@ -191,7 +199,8 @@ def test_delete_kb_removes_kb_from_list(base_url, admin_headers, cdp_admin):
     r_create = requests.post(
         f"{base_url}/knowledge-bases",
         json={"name": kb_name},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r_create.status_code == 200
     kb_id = r_create.json().get("data", {}).get("id")
@@ -199,7 +208,8 @@ def test_delete_kb_removes_kb_from_list(base_url, admin_headers, cdp_admin):
     # 删除 KB
     r_del = requests.delete(
         f"{base_url}/knowledge-bases/{kb_id}",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r_del.status_code == 200
 
@@ -207,20 +217,18 @@ def test_delete_kb_removes_kb_from_list(base_url, admin_headers, cdp_admin):
     r_list = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 100},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r_list.status_code == 200
     items = r_list.json().get("data", {}).get("items", [])
     kb_ids = [k["id"] for k in items]
-    assert kb_id not in kb_ids, (
-        f"Deleted KB {kb_id} still in KB list: {kb_ids}"
-    )
+    assert kb_id not in kb_ids, f"Deleted KB {kb_id} still in KB list: {kb_ids}"
 
     # 验证 GET /knowledge-bases/{kb_id} 返回 404
     r_get = requests.get(
         f"{base_url}/knowledge-bases/{kb_id}",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
-    assert r_get.status_code == 404, (
-        f"Deleted KB should return 404, got {r_get.status_code}"
-    )
+    assert r_get.status_code == 404, f"Deleted KB should return 404, got {r_get.status_code}"
