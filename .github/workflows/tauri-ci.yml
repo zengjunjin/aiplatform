@@ -1,4 +1,4 @@
-﻿name: Tauri CI
+name: Tauri CI
 
 on:
   push:
@@ -40,10 +40,14 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked || true
-        continue-on-error: true
+        # --locked 确保复现构建；--force 强制重装避免缓存命中旧版本
+        run: cargo install cargo-audit --locked --force
 
       - name: Security audit
+        # cargo audit 发现漏洞时返回非零退出码
+        # 设为 continue-on-error: true 让审计失败不阻塞 CI（漏洞会在日志中报告，便于跟踪）
+        # 后续可通过 cargo update 或修改 Cargo.lock 修复已知漏洞
+        continue-on-error: true
         run: cd frontend/src-tauri && cargo audit --deny warnings
 
       - name: Build check

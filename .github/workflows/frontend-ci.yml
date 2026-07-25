@@ -1,4 +1,4 @@
-﻿name: Frontend CI
+name: Frontend CI
 
 on:
   push:
@@ -162,6 +162,10 @@ jobs:
           retention-days: 30
 
       - name: Build production bundle
+        # 增加 Node.js 堆内存至 4GB，避免大型 React 项目构建时 OOM
+        # CI runner 默认堆内存约 1.5GB，vite/esbuild 在打包大型依赖时会触发 JavaScript heap out of memory
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
         run: npm run build
 
       - name: Upload build artifacts
