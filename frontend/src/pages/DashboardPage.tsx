@@ -145,8 +145,7 @@ export default function DashboardPage() {
       cancelled = true;
       controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- message/toastError 是稳定的 hook 返回值，仅初始化时执行
-  }, []);
+  }, [message, toastError]);
 
   const { healthy, totalDocs, totalChunks } = useMemo(() => ({
     healthy: isSystemHealthy(systemStatus),

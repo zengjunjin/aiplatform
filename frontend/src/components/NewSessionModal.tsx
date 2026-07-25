@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
 import { Modal, Form, Select, Input } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useKbOptions } from '../hooks/useKbOptions';
 import type { KnowledgeBase } from '../types';
 
 interface NewSessionValues {
@@ -30,10 +30,7 @@ export default function NewSessionModal({
   const { t } = useTranslation();
   const [form] = Form.useForm<NewSessionValues>();
 
-  const kbOptions = useMemo(() => knowledgeBases.map((kb) => ({
-    label: `${kb.name} (${kb.doc_count || 0} ${t('kb.documents', { count: kb.doc_count || 0 })})`,
-    value: kb.id,
-  })), [knowledgeBases, t]);
+  const kbOptions = useKbOptions(knowledgeBases, t);
 
   const handleOk = async () => {
     try {

@@ -14,6 +14,14 @@
 **告警来源**：Prometheus 抓取 backend `/metrics` 端点的 `rag_http_requests_total` 指标
 **通知渠道**：AlertManager → 配置的接收器（邮件 / IM webhook）
 
+## 可能原因
+
+1. **依赖服务故障**：PostgreSQL / Redis / Qdrant / Ollama 不可用或响应超时，导致请求链路失败
+2. **数据库连接池耗尽**：连接被慢查询或泄漏占用，新请求获取连接失败触发 500
+3. **应用代码 bug**：RAG 检索 / LLM 调用 / 文档解析等链路抛出未捕获异常
+4. **最近部署引入回归**：镜像更新或配置变更导致服务异常
+5. **资源瓶颈**：CPU / 内存不足导致请求超时或 OOM，返回 5xx
+
 ## 排查步骤
 
 ### 1. 确认告警有效性
@@ -116,3 +124,10 @@ docker compose up -d --scale backend=2
 4. **依赖熔断**：backend 配置 Qdrant / Ollama 调用超时与熔断，避免级联失败
 5. **告警前置**：4xx 异常增长（> 1/s）也接入告警，提前发现潜在问题
 6. **定期混沌演练**：每月模拟 PostgreSQL / Redis 故障，验证降级路径
+
+## 相关指标
+
+- `rag_http_requests_total{status=~"5.."}`：5xx 错误请求计数（告警核心指标）
+- `rag_http_requests_total`：HTTP 请求总数（配合计算错误率）
+- `rag_db_pool_in_use` / `rag_db_pool_size`：DB 连接池使用率（连接池耗尽会触发 5xx）
+- `rag_retrievals_total`：RAG 检索次数（检索失败可能引发 5xx）

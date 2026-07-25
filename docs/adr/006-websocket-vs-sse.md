@@ -75,7 +75,7 @@ ADR-004 已经确立了"流式生成用 SSE"的选型，但随着系统演进，
 
 ## 参考
 
-- [ADR-004: 选择 SSE 而非 WebSocket 做流式生成](./ADR-004-sse-over-websocket-for-streaming.md) — 确立 SSE 作为流式生成协议的选型依据
+- [ADR-004: 选择 SSE 而非 WebSocket 做流式生成](./004-sse-over-websocket-for-streaming.md) — 确立 SSE 作为流式生成协议的选型依据
 - 实现入口：
   - WebSocket：`backend/app/api/v1/ws.py`、`backend/app/core/notification_manager.py`
   - SSE：`backend/app/api/v1/chat.py` 的 `send_message` 端点

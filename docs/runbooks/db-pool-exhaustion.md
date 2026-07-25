@@ -1,12 +1,17 @@
-# DbPoolExhaustion Runbook
+# Runbook: DB 连接池耗尽
 
-## 告警含义
+## 告警描述
 
-数据库连接池使用率超过 80%（`rag_db_pool_in_use / rag_db_pool_size > 0.8`），持续 10 分钟。
+**告警名称**：`DbPoolExhaustion`
+**告警规则**：`rag_db_pool_in_use / rag_db_pool_size > 0.8`
+**触发条件**：数据库连接池使用率超过 80%，持续 10 分钟
+**严重级别**：critical
+**影响范围**：
+- 新请求获取数据库连接失败，触发 500 错误
+- API 5xx 错误率上升，可能触发 `HighErrorRate` 告警
+- Celery 异步任务（文档解析、评估）因无法获取连接而失败
 
-## 严重性
-
-critical
+**告警来源**：backend `/internal/metrics` 端点暴露的 `rag_db_pool_*` 指标
 
 ## 可能原因
 
@@ -37,18 +42,18 @@ ORDER BY duration DESC;
 ### 3. 检查慢查询日志
 
 ```bash
-docker logs rag-platform-backend --tail 1000 | grep "slow query"
+docker logs rag-platform-backend-1 --tail 1000 | grep "slow query"
 ```
 
 ### 4. 检查 Celery 任务
 
 ```bash
-docker logs rag-platform-celery-worker --tail 500
+docker logs rag-platform-celery_worker-1 --tail 500
 ```
 
 Celery 任务中的文档解析可能产生大量 DB 操作。
 
-## 处置方案
+## 应急处理
 
 ### 方案 A：终止慢查询
 
@@ -74,6 +79,32 @@ backend:
 - `app/api/v1/*.py` 中的 `get_db()` 依赖
 - `app/tasks/*.py` 中的 Celery 任务
 - `app/rag/*.py` 中的检索逻辑
+
+## 恢复验证
+
+1. **连接池使用率验证**：
+   ```bash
+   curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8000/internal/metrics | grep rag_db_pool
+   ```
+   期望：`rag_db_pool_in_use / rag_db_pool_size` < 0.8，持续 10 分钟以上
+
+2. **5xx 错误率验证**：
+   ```promql
+   rate(rag_http_requests_total{status=~"5.."}[5m])
+   ```
+   期望值：`0`（连接池恢复后 5xx 应归零）
+
+3. **健康端点验证**：
+   ```bash
+   curl -sf http://localhost:8000/readyz | jq .
+   ```
+   期望：postgres 依赖 status 为 healthy
+
+4. **Celery 任务验证**：
+   ```bash
+   docker exec rag-platform-celery_worker-1 celery -A app.tasks.celery_app inspect active
+   ```
+   期望：文档解析 / 评估任务正常调度，无 DB 连接错误
 
 ## 预防措施
 

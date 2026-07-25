@@ -5,6 +5,15 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 限流策略常量（路由层引用，避免魔法字符串散落）
+# 按宽松→严格排列；改动限流值时只需调整此处
+RATE_LIMIT_DEFAULT = "60/minute"  # 普通读写接口（绝大多数 GET/PUT/DELETE）
+RATE_LIMIT_MODERATE = "30/minute"  # 中等敏感写操作（创建/更新 session、取消生成、反馈提交、文档预览）
+RATE_LIMIT_STRICT = "20/minute"  # 较严格（发送消息等高频触发 LLM 的接口）
+RATE_LIMIT_VERY_STRICT = "10/hour"  # 很严格（文档上传：耗存储 + 异步任务）
+RATE_LIMIT_SEVERE = "5/hour"  # 严重限制（文档重解析：昂贵的重复处理）
+RATE_LIMIT_EXTREME = "3/hour"  # 极严格（评估触发：批量 LLM 调用，最昂贵）
+
 
 class LLMProviderConfig(BaseModel):
     name: str

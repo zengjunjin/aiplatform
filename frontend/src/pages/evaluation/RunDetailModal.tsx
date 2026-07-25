@@ -14,6 +14,39 @@ import MetricCard from './MetricCard';
 
 const { Text } = Typography;
 
+// 横向 mini-bar：宽度 ~70px，按值显示颜色（0-0.4 红 / 0.4-0.7 黄 / 0.7-1 绿）
+// 提取为模块级纯函数：不依赖任何 props/state/t，避免 useMemo 每次渲染重建与依赖数组 lint 告警
+const renderMiniBar = (v: number | null) => {
+  if (v == null) return <Text type="secondary">-</Text>;
+  const pct = Math.max(0, Math.min(1, v)) * 100;
+  const color =
+    v >= 0.7 ? 'var(--accent-success)' : v >= 0.4 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 120 }}>
+      <span style={{ fontSize: 12, minWidth: 44 }}>{(v * 100).toFixed(1)}%</span>
+      <div
+        style={{
+          flex: 1,
+          height: 6,
+          borderRadius: 3,
+          background: 'var(--bg-tertiary)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${pct}%`,
+            height: '100%',
+            background: color,
+            borderRadius: 3,
+            transition: 'width var(--transition-base)',
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
 interface RunDetailModalProps {
   open: boolean;
   selectedRun: EvaluationRunItem | null;
@@ -36,38 +69,6 @@ export default function RunDetailModal({
   onClose,
 }: RunDetailModalProps) {
   const { t } = useTranslation();
-
-  // 横向 mini-bar：宽度 ~70px，按值显示颜色（0-0.4 红 / 0.4-0.7 黄 / 0.7-1 绿）
-  const renderMiniBar = (v: number | null) => {
-    if (v == null) return <Text type="secondary">-</Text>;
-    const pct = Math.max(0, Math.min(1, v)) * 100;
-    const color =
-      v >= 0.7 ? 'var(--accent-success)' : v >= 0.4 ? 'var(--accent-warning)' : 'var(--accent-danger)';
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 120 }}>
-        <span style={{ fontSize: 12, minWidth: 44 }}>{(v * 100).toFixed(1)}%</span>
-        <div
-          style={{
-            flex: 1,
-            height: 6,
-            borderRadius: 3,
-            background: 'var(--bg-tertiary)',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${pct}%`,
-              height: '100%',
-              background: color,
-              borderRadius: 3,
-              transition: 'width var(--transition-base)',
-            }}
-          />
-        </div>
-      </div>
-    );
-  };
 
   const resultColumns = useMemo(() => [
     { title: '#', dataIndex: 'id', key: 'id', width: 60 },
@@ -113,8 +114,6 @@ export default function RunDetailModal({
       width: 140,
       render: (v: number | null) => renderMiniBar(v),
     },
-  // renderMiniBar 是组件内稳定闭包（仅依赖 t 间接），纳入依赖避免 lint 警告
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [t]);
 
   // 箱线图：展示 4 个指标在所有单题结果上的分布

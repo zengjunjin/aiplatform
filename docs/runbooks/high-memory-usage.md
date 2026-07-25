@@ -12,12 +12,14 @@
 - Ollama 模型加载失败，对话 / 检索不可用
 
 **告警来源**：node_exporter 采集的 `node_memory_*` 指标
-**潜在根因**：
-- Redis 缓存未设置 maxmemory 导致无限增长
-- PostgreSQL `shared_buffers` 设置过大
-- BM25 倒排索引常驻内存占用过高
-- Ollama 模型常驻（`OLLAMA_KEEP_ALIVE=24h`）累积占用
-- 容器内存泄漏
+
+## 可能原因
+
+1. **Redis 缓存未设置 maxmemory**：缓存无限增长，最终吃满内存
+2. **PostgreSQL `shared_buffers` 设置过大**：占用过多内存
+3. **BM25 倒排索引常驻内存**：索引占用过高
+4. **Ollama 模型常驻**：`OLLAMA_KEEP_ALIVE=24h` 导致多个模型累积占用
+5. **容器内存泄漏**：backend / celery_worker 进程内存持续增长不释放
 
 ## 排查步骤
 
@@ -132,3 +134,9 @@ docker compose restart backend celery_worker
 4. **Ollama 模型管理**：调小 `OLLAMA_KEEP_ALIVE`（如 30m），按需加载
 5. **内存监控告警**：在 80% 时设置 warning 告警，提前干预
 6. **容器内存泄漏检测**：定期对比容器 RSS 趋势，发现泄漏及时重启
+
+## 相关指标
+
+- `node_memory_MemAvailable_bytes` / `node_memory_MemTotal_bytes`：节点可用 / 总内存（告警核心指标）
+- `rag_db_pool_in_use` / `rag_db_pool_size`：DB 连接池使用率
+- `rag_http_requests_total{status=~"5.."}`：5xx 错误率（OOM 会触发 5xx）

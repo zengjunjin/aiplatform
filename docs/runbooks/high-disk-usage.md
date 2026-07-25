@@ -15,13 +15,15 @@
 - 日志写入失败，影响排查
 
 **告警来源**：node_exporter 采集的 `node_filesystem_*` 指标
-**潜在根因**：
-- 用户上传文档累积（`/app/storage` 目录）
-- Qdrant 向量数据增长（`qdrant_data` volume）
-- Prometheus TSDB 未配置 retention，历史指标堆积
-- 日志文件未轮转
-- E2E 测试报告累积（`tests/e2e/reports`）
-- Docker 镜像 / 容器 / 卷垃圾堆积
+
+## 可能原因
+
+1. **用户上传文档累积**：`/app/storage` 目录持续增长未清理
+2. **Qdrant 向量数据增长**：`qdrant_data` volume 随知识库 / 文档量增加
+3. **Prometheus TSDB 未配置 retention**：历史指标堆积，无自动过期
+4. **日志文件未轮转**：容器 json-file 日志无限增长
+5. **E2E 测试报告累积**：`tests/e2e/reports` 目录未清理
+6. **Docker 镜像 / 容器 / 卷垃圾堆积**：停止的容器、悬空镜像、无用 volume 未清理
 
 ## 排查步骤
 
@@ -166,3 +168,9 @@ rm -rf c:/Users/15116/Desktop/aiplatform/release/RAG知识库平台/backend/test
 4. **文档生命周期管理**：软删除文档 30 天后自动物理清理（Celery 定时任务）
 5. **Qdrant 容量监控**：在 70% 时设置 warning 告警，提前规划扩容
 6. **磁盘容量规划**：根据知识库 / 文档增长率预留 30% 余量，季度评估
+
+## 相关指标
+
+- `node_filesystem_avail_bytes` / `node_filesystem_size_bytes`：文件系统可用 / 总空间（告警核心指标）
+- `rag_http_requests_total{status=~"5.."}`：5xx 错误率（磁盘满会触发写入失败 → 5xx）
+- `rag_retrievals_total`：RAG 检索次数（Qdrant 写入失败会影响检索）

@@ -31,8 +31,7 @@ class ResizeObserverMock {
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
 // IntersectionObserver mock (jsdom 不实现, 但 ChatPage 流式滚动依赖它)
-// eslint-disable-next-line no-undef
-type IOCallback = IntersectionObserverCallback;
+type IOCallback = (entries: any[], observer: any) => void;
 class IntersectionObserverMock {
   callback: IOCallback;
   targets: Element[] = [];

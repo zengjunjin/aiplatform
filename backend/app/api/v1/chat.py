@@ -11,7 +11,12 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_user, get_current_user
-from app.config import settings
+from app.config import (
+    RATE_LIMIT_DEFAULT,
+    RATE_LIMIT_MODERATE,
+    RATE_LIMIT_STRICT,
+    settings,
+)
 from app.core.metrics import (
     RAG_E2E_LATENCY,
     RAG_LLM_TOKENS_PER_SECOND,
@@ -493,7 +498,7 @@ async def _run_sse_stream(
 
 
 @router.post("/sessions")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_MODERATE)
 async def create_session(
     req: SessionCreate,
     request: Request,
@@ -511,7 +516,7 @@ async def create_session(
 
 
 @router.get("/sessions")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_sessions(
     request: Request,
     page: int = Query(1, ge=1),
@@ -525,7 +530,7 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_session(
     request: Request,
     session_id: int,
@@ -543,7 +548,7 @@ async def get_session(
 
 
 @router.put("/sessions/{session_id}")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_MODERATE)
 async def update_session(
     session_id: int,
     req: SessionUpdate,
@@ -562,7 +567,7 @@ async def update_session(
 
 
 @router.delete("/sessions/{session_id}")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_MODERATE)
 async def delete_session(
     session_id: int,
     request: Request,
@@ -580,7 +585,7 @@ async def delete_session(
 
 
 @router.get("/sessions/{session_id}/messages")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_messages(
     request: Request,
     session_id: int,
@@ -595,7 +600,7 @@ async def get_messages(
 
 
 @router.post("/sessions/{session_id}/messages")
-@limiter.limit("20/minute")
+@limiter.limit(RATE_LIMIT_STRICT)
 async def send_message(
     request: Request,
     session_id: int,
@@ -637,7 +642,7 @@ async def send_message(
 
 
 @router.post("/sessions/{session_id}/cancel")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_MODERATE)
 async def cancel_generation(
     session_id: int,
     request: Request,
@@ -679,7 +684,7 @@ def _parse_date_range(start_date: str | None, end_date: str | None) -> tuple:
 
 
 @router.post("/messages/{message_id}/feedback")
-@limiter.limit("30/minute")  # Task 24: 反馈提交用更严格的限流
+@limiter.limit(RATE_LIMIT_MODERATE)  # Task 24: 反馈提交用更严格的限流
 async def submit_feedback(
     message_id: int,
     request: Request,
@@ -696,7 +701,7 @@ async def submit_feedback(
 
 
 @router.get("/messages/{message_id}/feedback")
-@limiter.limit("60/minute")  # Task 24: 反馈查询限流
+@limiter.limit(RATE_LIMIT_DEFAULT)  # Task 24: 反馈查询限流
 async def get_message_feedback(
     message_id: int,
     request: Request,
@@ -711,7 +716,7 @@ async def get_message_feedback(
 
 
 @router.get("/feedback/stats")
-@limiter.limit("60/minute")  # Task 24: 反馈统计限流
+@limiter.limit(RATE_LIMIT_DEFAULT)  # Task 24: 反馈统计限流
 async def get_feedback_stats(
     request: Request,
     kb_id: int | None = None,
@@ -726,7 +731,7 @@ async def get_feedback_stats(
 
 
 @router.get("/feedback/analysis")
-@limiter.limit("60/minute")  # Task 24: 反馈分析限流
+@limiter.limit(RATE_LIMIT_DEFAULT)  # Task 24: 反馈分析限流
 async def get_feedback_analysis(
     request: Request,
     kb_id: int | None = None,
@@ -750,7 +755,7 @@ async def get_feedback_analysis(
 
 
 @router.get("/feedback/low-rated")
-@limiter.limit("60/minute")  # Task 24: 低分反馈列表限流
+@limiter.limit(RATE_LIMIT_DEFAULT)  # Task 24: 低分反馈列表限流
 async def get_low_rated_feedbacks(
     request: Request,
     kb_id: int | None = None,

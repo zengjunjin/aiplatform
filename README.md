@@ -102,6 +102,8 @@ make restart   # 重启后端和 worker
 make init-models  # 拉取 Ollama 模型 (qwen2.5:7b 等)
 make test      # 运行后端单元测试
 make clean     # 清理所有容器和数据卷
+make backend-shell          # 进入 backend 容器交互式 shell
+make create-migration msg=<name>  # 生成新的 Alembic 迁移脚本
 ```
 
 > 提示: Makefile 会自动 `cd deploy && docker-compose ...`，无需手动切换目录。
@@ -183,11 +185,29 @@ npm run dev         # 仅 Web 模式
 - `POST /api/v1/auth/login` - 用户登录
 - `POST /api/v1/auth/logout` - 用户登出
 - `POST /api/v1/auth/refresh` - 刷新 Token
+- `GET /api/v1/auth/me` - 获取当前登录用户信息
+- `POST /api/v1/auth/password` - 修改当前用户密码
+
+### 用户
+- `GET /api/v1/users` - 用户列表（需管理员）
+- `POST /api/v1/users` - 创建用户（需管理员）
+- `GET /api/v1/users/{id}` - 用户详情
+- `PATCH /api/v1/users/{id}` - 更新用户信息
+- `DELETE /api/v1/users/{id}` - 删除用户（需管理员）
 
 ### 知识库
 - `GET /api/v1/knowledge-bases` - 知识库列表
 - `POST /api/v1/knowledge-bases` - 创建知识库
 - `DELETE /api/v1/knowledge-bases/{id}` - 删除知识库
+- `GET /api/v1/knowledge-bases/{id}/collaborators` - 知识库协作者列表
+- `POST /api/v1/knowledge-bases/{id}/collaborators` - 添加协作者
+- `DELETE /api/v1/knowledge-bases/{id}/collaborators/{user_id}` - 移除协作者
+
+### 评估
+- `POST /api/v1/evaluation/datasets` - 创建评估数据集
+- `GET /api/v1/evaluation/datasets` - 评估数据集列表
+- `POST /api/v1/evaluation/runs` - 发起评估任务
+- `GET /api/v1/evaluation/runs/{id}` - 查询评估任务结果
 
 ### 文档
 - `POST /api/v1/knowledge-bases/{kb_id}/documents/upload` - 上传文档
@@ -204,6 +224,7 @@ npm run dev         # 仅 Web 模式
 - `GET /healthz` - 存活探针 (liveness)
 - `GET /readyz` - 就绪探针 (readiness)
 - `GET /api/v1/system/status` - 系统状态（需管理员）
+- `GET /internal/metrics` - Prometheus 指标端点（需 `METRICS_TOKEN` 鉴权）
 
 ## 项目结构
 
@@ -320,7 +341,23 @@ aiplatform/
 ├── deploy/                   # 部署配置
 │   ├── Makefile
 │   ├── docker-compose.yml
-│   └── nginx.conf
+│   ├── nginx.conf
+│   ├── alertmanager.yml      # Alertmanager 告警路由与 webhook 接收器配置
+│   ├── prometheus.yml        # Prometheus 抓取配置
+│   ├── promtail.yml          # Promtail 日志采集配置
+│   ├── .env.example          # 部署环境变量示例
+│   ├── alertmanager-webhook-receiver/  # 自建 Alertmanager webhook 接收器（Flask + Gunicorn）
+│   ├── grafana/              # Grafana dashboard 与 provisioning 配置
+│   ├── prometheus/           # Prometheus 告警规则与 recording rules
+│   └── scripts/              # 部署 / 运维辅助脚本
+├── docs/                     # 项目文档
+│   ├── adr/                  # 架构决策记录 (ADR-001 ~ ADR-010)
+│   ├── runbooks/             # 运维手册（告警处理流程）
+│   ├── development.md        # 开发指南
+│   ├── deployment.md         # 部署指南
+│   ├── api_guide.md          # API 使用指南
+│   ├── api_errors.md         # API 错误码说明
+│   └── benchmark_report.md   # 性能基准报告
 └── docker-compose.yml
 ```
 
@@ -359,6 +396,8 @@ poetry run pytest tests/ -v --cov=app
 | `RETRIEVAL_TOP_K` | 检索返回数量 | 10 |
 | `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Celery 消息队列与结果后端 | redis://localhost:6379/1, redis://localhost:6379/2 |
 | `METRICS_TOKEN` | Prometheus metrics 抓取 token（`/internal/metrics` 鉴权） | - |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_RECYCLE` / `DB_POOL_TIMEOUT` | SQLAlchemy 连接池参数（大小 / 溢出上限 / 回收秒数 / 获取超时秒数） | 20 / 10 / 3600 / 30 |
+| `OTEL_TRACES_SAMPLER_ARG` | OpenTelemetry 采样率（`ParentBased(TraceIdRatioBased)` 的 ratio，0-1） | 0.1 |
 
 ## 安全说明
 
@@ -375,17 +414,22 @@ poetry run pytest tests/ -v --cov=app
 
 | ADR | 标题 | 决策 |
 |-----|------|------|
-| [ADR-001](docs/adr/ADR-001-fastapi-over-django-flask.md) | 为何选择 FastAPI 而非 Django/Flask | FastAPI：异步支持、高性能、自动文档生成 |
-| [ADR-002](docs/adr/ADR-002-qdrant-over-milvus-weaviate-pinecone.md) | 为何选择 Qdrant 而非 Milvus/Weaviate/Pinecone | Qdrant：轻量、Rust 实现、本地部署友好 |
-| [ADR-003](docs/adr/ADR-003-diy-rag-over-langchain-llamaindex.md) | 为何自建 RAG 管线而非使用 LangChain/LlamaIndex | 自建：避免框架锁定、深入理解原理 |
-| [ADR-004](docs/adr/ADR-004-sse-over-websocket-for-streaming.md) | 为何选择 SSE 而非 WebSocket 做流式生成 | SSE：单向数据流、HTTP 兼容、实现简单 |
-| [ADR-005](docs/adr/ADR-005-hybrid-retrieval-over-pure-vector.md) | 为何选择混合检索而非纯向量检索 | BM25 + 向量 + RRF：关键词与语义互补 |
-| [ADR-006](docs/adr/ADR-006-websocket-vs-sse.md) | 明确 WebSocket 与 SSE 的职责边界 | WebSocket 用于双向通知，SSE 用于流式生成 |
+| [ADR-001](docs/adr/001-fastapi-over-django-flask.md) | 为何选择 FastAPI 而非 Django/Flask | FastAPI：异步支持、高性能、自动文档生成 |
+| [ADR-002](docs/adr/002-qdrant-over-milvus-weaviate-pinecone.md) | 为何选择 Qdrant 而非 Milvus/Weaviate/Pinecone | Qdrant：轻量、Rust 实现、本地部署友好 |
+| [ADR-003](docs/adr/003-diy-rag-over-langchain-llamaindex.md) | 为何自建 RAG 管线而非使用 LangChain/LlamaIndex | 自建：避免框架锁定、深入理解原理 |
+| [ADR-004](docs/adr/004-sse-over-websocket-for-streaming.md) | 为何选择 SSE 而非 WebSocket 做流式生成 | SSE：单向数据流、HTTP 兼容、实现简单 |
+| [ADR-005](docs/adr/005-hybrid-retrieval-over-pure-vector.md) | 为何选择混合检索而非纯向量检索 | BM25 + 向量 + RRF：关键词与语义互补 |
+| [ADR-006](docs/adr/006-websocket-vs-sse.md) | 明确 WebSocket 与 SSE 的职责边界 | WebSocket 用于双向通知，SSE 用于流式生成 |
 | [ADR-007](docs/adr/007-observability-stack.md) | 可观测性技术栈选型 | OpenTelemetry（OTLP/HTTP）+ Jaeger all-in-one，环境变量驱动启用 |
 | [ADR-008](docs/adr/008-secret-management.md) | 密钥管理决策 | 环境变量 + Pydantic `model_post_init` 弱值黑名单校验（非 DEBUG 模式 raise） |
 | [ADR-009](docs/adr/009-tauri-updater.md) | Tauri 自动更新方案 | tauri-plugin-updater + 签名证书 thumbprint + 公钥校验 |
+| [ADR-010](docs/adr/010-alertmanager-webhook-receiver.md) | Alertmanager webhook 接收器自建实现 | 自建 Python Flask + Gunicorn + JSON Lines 文件持久化，替代第三方镜像 |
 
 新增 ADR 请使用 [TEMPLATE.md](docs/adr/TEMPLATE.md) 模板。
+
+## 运维手册
+
+告警处理与日常运维流程记录在 [`docs/runbooks/`](docs/runbooks/) 目录中，覆盖 API 5xx 高错误率、内存/CPU/磁盘使用率过高、DB 连接池耗尽、检索流量归零等场景。每份 runbook 包含告警描述、可能原因、排查步骤、应急处理、恢复验证与预防措施，配合 Alertmanager 告警摘要（由自建 [`deploy/alertmanager-webhook-receiver/`](deploy/alertmanager-webhook-receiver/) 接收并落盘）使用。
 
 ## Contributing
 

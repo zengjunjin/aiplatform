@@ -19,7 +19,6 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests  # noqa: F401  -- per task spec; async client used for HTTP
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 

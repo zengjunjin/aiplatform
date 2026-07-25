@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_user
+from app.config import RATE_LIMIT_DEFAULT, RATE_LIMIT_EXTREME
 from app.core.middleware import limiter
 from app.database import get_db
 from app.db.user import User
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
 
 @router.post("/runs")
-@limiter.limit("3/hour")
+@limiter.limit(RATE_LIMIT_EXTREME)
 async def trigger_evaluation(
     request: Request,
     kb_id: int = Query(..., description="Knowledge base ID"),
@@ -42,7 +43,7 @@ async def trigger_evaluation(
 
 
 @router.get("/runs")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_evaluation_runs(
     request: Request,
     kb_id: int | None = Query(None, description="Filter by knowledge base ID"),
@@ -77,7 +78,7 @@ async def list_evaluation_runs(
 
 
 @router.get("/runs/{run_id}")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_evaluation_run(
     run_id: int,
     request: Request,
@@ -107,7 +108,7 @@ async def get_evaluation_run(
 
 
 @router.get("/runs/{run_id}/results")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_evaluation_results(
     run_id: int,
     request: Request,
@@ -143,7 +144,7 @@ async def get_evaluation_results(
 
 
 @router.delete("/runs/{run_id}")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def delete_evaluation_run(
     run_id: int,
     request: Request,

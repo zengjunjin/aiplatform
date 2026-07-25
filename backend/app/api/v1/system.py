@@ -6,6 +6,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_user, get_current_user
+from app.config import RATE_LIMIT_DEFAULT
 from app.core.health_checks import check_db, check_redis
 from app.core.middleware import limiter
 from app.database import get_db
@@ -28,7 +29,7 @@ async def _probe(name: str, check: Callable[[], Awaitable[dict]]) -> dict:
 
 
 @router.get("/status")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def system_status(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -91,7 +92,7 @@ async def system_status(
 
 
 @router.get("/models")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_models(
     request: Request,
     current_user: User = Depends(get_current_user),

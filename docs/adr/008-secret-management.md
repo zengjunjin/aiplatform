@@ -14,7 +14,7 @@
 
 - **JWT_SECRET / POSTGRES_PASSWORD 默认弱值**：`config.py` 默认值 `"change-me-in-production"` / `"rag_password"` 容易被直接带入生产环境。
 - **CI/本地环境使用占位符**：CI workflows 使用 `JWT_SECRET=dev-secret-change-me` 这类占位符，与生产密钥混淆。
-- **`.env` 文件被提交到 release 目录**：`release/RAG知识库平台/backend/.env` 包含 `DEBUG=true` 与 `JWT_SECRET=change-me-in-production`，虽然有 `DEBUG=true` 兜底，但密钥泄露风险仍存在。
+- **`.env` 文件被提交到 release 目录**：早期 `release/RAG知识库平台/backend/.env` 包含 `DEBUG=true` 与 `JWT_SECRET=change-me-in-production`，release 目录已从仓库移除，但密钥泄露风险仍需在启动校验中防范。
 - **`/metrics` 端点引入新 token**：Task 10 新增 `METRICS_TOKEN` 配置项，无校验容易复用弱值。
 - **JWT 引入 iss/aud 校验**：Task 阶段二新增 `JWT_ISSUER=rag-platform` / `JWT_AUDIENCE=rag-client`，旧 token 全部失效（Breaking Change），需要明确文档化。
 
@@ -22,7 +22,7 @@
 
 - 不能引入 Vault / AWS Secrets Manager / SOPS 等外部密钥管理服务（本地部署优先）。
 - 必须在应用启动时（`config.py` `model_post_init`）强制校验，不依赖部署文档。
-- `DEBUG=true` 模式（开发/release 目录）允许弱值但必须告警；非 DEBUG 模式必须 raise。
+- **无论 DEBUG 模式与否，弱密钥一律 `raise ValueError` 阻止启动**（Task 31 移除了原 DEBUG 模式仅告警的分支，避免 JWT_SECRET 弱密钥在开发环境被误用导致生产泄漏）。
 - 必须覆盖 `JWT_SECRET` / `POSTGRES_PASSWORD` 两类核心密钥；其他密钥（`METRICS_TOKEN`/`OLLAMA_API_KEY` 等）暂不强制。
 
 ## 决策
@@ -47,14 +47,19 @@ KNOWN_WEAK_JWT_SECRETS = {
 
 ```python
 def model_post_init(self, __context):
+    # pytest 环境跳过校验，便于测试使用任意配置
+    if "pytest" in sys.modules:
+        return
+    problems: list[str] = []
+    if len(self.JWT_SECRET) < 32:
+        problems.append("JWT_SECRET 长度不足（最少 32 字符）")
     if self.JWT_SECRET in KNOWN_WEAK_JWT_SECRETS:
-        msg = "JWT_SECRET 命中已知弱值黑名单。"
-        if not self.DEBUG:
-            raise ValueError(msg)
-        logger.warning(f"{msg}（DEBUG 模式仅告警）")
+        problems.append("JWT_SECRET 命中已知弱值黑名单。")
     if self.POSTGRES_PASSWORD in KNOWN_WEAK_PG_PASSWORDS:
-        # 同上逻辑
-        ...
+        problems.append("POSTGRES_PASSWORD 命中已知弱值黑名单。")
+    if problems:
+        # Task 31: 无论 DEBUG 模式与否都 raise（移除 warning 分支）
+        raise ValueError("配置校验失败：\n  - " + "\n  - ".join(problems))
 ```
 
 ### 2. 环境变量优先级
@@ -72,9 +77,11 @@ def model_post_init(self, __context):
 | 可选       | `METRICS_TOKEN`      | 不强制（默认 `None` 时 `/internal/metrics` 403） |
 | 可选       | `OLLAMA_API_KEY`     | 不强制（默认 `None`）                         |
 
-### 4. release 目录策略
+### 4. release 目录策略（已废弃）
 
-- `release/RAG知识库平台/backend/.env` 必须包含 `DEBUG=true` 与 `JWT_SECRET=change-me-in-production`，确保 release 目录可直接启动演示环境。
+- 早期仓库中 `release/RAG知识库平台/backend/.env` 用于一键启动演示环境，包含 `DEBUG=true` 与 `JWT_SECRET=change-me-in-production`。
+- **该策略已废弃**：release 目录已从仓库移除，且 `change-me-in-production` 已被加入 `_WEAK_JWT_SECRETS` 黑名单，启动校验会直接 `raise ValueError` 拦截。
+- 如需本地演示，请使用 `backend/.env.example` 中的 `JWT_SECRET=please_replace_with_a_long_random_string_at_least_32_chars`（此值同样在黑名单中，需替换为真实强随机值后方可启动）。
 - 生产部署必须自行提供 `.env`，并将 `DEBUG=false` 与强随机 `JWT_SECRET`/`POSTGRES_PASSWORD` 写入。
 
 ### 5. JWT iss/aud Breaking Change
@@ -92,7 +99,7 @@ Task 阶段二已引入：
 ### 正面影响
 
 - **启动即校验**：弱密钥在应用启动阶段就被拦截，避免带入生产。
-- **DEBUG 模式兼容 release 目录**：release 目录可继续使用 `DEBUG=true` + 弱密钥，方便本地演示。
+- **DEBUG 模式同样严格**：Task 31 起无论 DEBUG 与否都阻止弱密钥启动，避免开发环境误用弱密钥后被带入生产。
 - **统一密钥分类**：明确了哪些密钥必须强随机、哪些可选，未来新增配置可对号入座。
 - **JWT 安全性提升**：iss/aud 校验让 token 不能跨服务复用，降低 token 泄露后的横向攻击面。
 

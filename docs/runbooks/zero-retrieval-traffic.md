@@ -1,12 +1,17 @@
-# ZeroRetrievalTraffic Runbook
+# Runbook: 检索流量归零
 
-## 告警含义
+## 告警描述
 
-过去 30 分钟内 RAG 检索次数为 0（`sum(rate(rag_retrievals_total[5m])) == 0`）。
+**告警名称**：`ZeroRetrievalTraffic`
+**告警规则**：`sum(rate(rag_retrievals_total[5m])) == 0`
+**触发条件**：过去 30 分钟内 RAG 检索次数为 0
+**严重级别**：critical
+**影响范围**：
+- 用户问答 / 检索功能不可用或无流量
+- 可能是 backend 宕机、前端故障或 Nginx 路由错误
+- 若为非工作时间，可能是正常无流量
 
-## 严重性
-
-critical
+**告警来源**：backend `/internal/metrics` 端点暴露的 `rag_retrievals_total` 指标
 
 ## 可能原因
 
@@ -30,7 +35,7 @@ curl http://localhost:8000/readyz
 
 ```bash
 docker ps | grep rag-platform
-docker logs rag-platform-backend --tail 100
+docker logs rag-platform-backend-1 --tail 100
 ```
 
 ### 3. 检查 Nginx 路由
@@ -51,7 +56,7 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8000/internal/me
 
 如果指标存在但值为 0，说明确实无流量；如果指标不存在，说明 backend 未暴露指标或 Prometheus 未抓取。
 
-## 处置方案
+## 应急处理
 
 ### 方案 A：重启 backend
 
@@ -71,6 +76,30 @@ docker compose restart postgres redis qdrant
 
 如果是在非工作时间触发告警，且确认服务正常运行，可以调整告警规则的 `for` 持续时间，或在 Alertmanager 中配置静默规则。
 
+## 恢复验证
+
+1. **检索流量验证**：
+   ```promql
+   sum(rate(rag_retrievals_total[5m]))
+   ```
+   期望值：> 0（用户发起检索后流量恢复）
+
+2. **健康端点验证**：
+   ```bash
+   curl -sf http://localhost:8000/readyz | jq .
+   ```
+   期望：所有依赖 healthy
+
+3. **前端检索验证**：
+   - 在前端页面发起一次问答检索
+   - 监控 Grafana 检索面板确认 `rag_retrievals_total` 指标恢复增长
+
+4. **Prometheus 抓取验证**：
+   ```bash
+   curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8000/internal/metrics | grep rag_retrievals_total
+   ```
+   期望：指标存在且随检索请求增长
+
 ## 预防措施
 
 1. 配置 uptime 监控（外部 ping 检测）
@@ -79,6 +108,6 @@ docker compose restart postgres redis qdrant
 
 ## 相关指标
 
-- `rag_retrievals_total`：RAG 检索总次数
+- `rag_retrievals_total`：RAG 检索总次数（告警核心指标）
 - `rag_http_requests_total`：HTTP 请求总数
 - `rag_active_sessions`：活跃会话数

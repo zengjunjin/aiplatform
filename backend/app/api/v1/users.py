@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_user, get_current_user
+from app.config import RATE_LIMIT_DEFAULT
 from app.core.middleware import limiter
 from app.database import get_db
 from app.db.user import User
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/search")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def search_users(
     request: Request,
     q: str = Query(..., min_length=1, max_length=100, description="用户名搜索关键词"),
@@ -27,7 +28,7 @@ async def search_users(
 
 
 @router.get("")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_users(
     request: Request,
     page: int = Query(1, ge=1),
@@ -41,7 +42,7 @@ async def list_users(
 
 
 @router.put("/{user_id}/role")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def update_role(
     user_id: int,
     req: UpdateRoleRequest,
@@ -54,7 +55,7 @@ async def update_role(
 
 
 @router.put("/{user_id}/status")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def update_status(
     user_id: int,
     req: UpdateStatusRequest,

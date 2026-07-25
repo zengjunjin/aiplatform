@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import statistics
+from typing import cast
 
 from loguru import logger
 from ragas import evaluate
@@ -307,7 +308,7 @@ def aggregate_metrics(results: list[dict]) -> dict[str, dict[str, float]]:
     for key in keys:
         # mypy: r.get(key) 推断为 Any | None，列表推导式不会因 if 条件收窄类型，
         # 用 cast 显式声明为 list[float]（运行时已过滤 None）。
-        values: list[float] = [r.get(key) for r in results if r.get(key) is not None]  # type: ignore[assignment]
+        values = cast(list[float], [r.get(key) for r in results if r.get(key) is not None])
         if values:
             aggregated[key] = {
                 "mean": round(statistics.mean(values), 4),

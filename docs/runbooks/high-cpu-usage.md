@@ -12,11 +12,13 @@
 - Ollama 模型推理延迟上升，对话首 token 延迟增加
 
 **告警来源**：node_exporter 采集的 `node_cpu_seconds_total` 指标
-**潜在根因**：
-- Celery worker 并发过高
-- Ollama 并发推理请求过多
-- BM25 索引重建或大文档批量解析
-- 某容器出现死循环或异常重试
+
+## 可能原因
+
+1. **Celery worker 并发过高**：文档解析 / 评估任务堆积，worker 满载运行
+2. **Ollama 并发推理请求过多**：多个 LLM / Embedding / Reranker 请求抢占 CPU
+3. **BM25 索引重建或大文档批量解析**：CPU 密集型任务突发负载
+4. **某容器出现死循环或异常重试**：代码 bug 导致 CPU 空转
 
 ## 排查步骤
 
@@ -122,3 +124,9 @@ docker compose restart ollama  # 释放卡死的推理进程
 4. **任务限流**：批量评估 / 解析任务接入令牌桶限流
 5. **CPU 预留**：宿主机保留 20% CPU 余量，避免满载
 6. **自动扩容**：接入 HPA（如使用 K8s）或基于队列长度的自动扩容脚本
+
+## 相关指标
+
+- `node_cpu_seconds_total{mode="idle"}`：CPU idle 时间（告警核心指标，反算使用率）
+- `rag_http_requests_total`：HTTP 请求总数（CPU 高会影响吞吐）
+- `rag_retrievals_total`：RAG 检索次数（检索 / Reranker 是 CPU 密集型）

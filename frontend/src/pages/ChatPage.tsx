@@ -70,6 +70,9 @@ export default function ChatPage() {
     // Task 70: typeof 校验防止 localStorage 被篡改为非 string 类型
     return typeof val === 'string' ? val : '';
   });
+  // ref 用于在 mount-only effect 中读取最新 selectedModel，避免将其加入 deps 导致每次切换模型重新拉取
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
 
   const pendingSessionId = useRef<number | null>(null);
 
@@ -84,8 +87,7 @@ export default function ChatPage() {
     [sessionMsgs]
   );
 
-  // 仅挂载时初始化默认模型，故意省略 selectedModel
-  // 避免每次 selectedModel 变化时重新加载模型列表
+  // 仅挂载时初始化默认模型，通过 ref 读取 selectedModel 避免将其加入 deps
   useEffect(() => {
     let mounted = true;
     fetchSessions();
@@ -95,14 +97,13 @@ export default function ChatPage() {
       if (!mounted) return;
       setModels(res.models || []);
       // 如果当前没有选中模型，使用默认模型
-      if (!selectedModel && res.default_model) {
+      if (!selectedModelRef.current && res.default_model) {
         setSelectedModel(res.default_model);
       }
     }).catch(() => {
       // 模型列表加载失败不影响聊天功能
     });
     return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅初始化时检查 selectedModel，避免每次切换模型重新拉取
   }, [fetchSessions, fetchKBs]);
 
   // localStorage 写入下沉到独立 useEffect，避免 onChange 中重复写入

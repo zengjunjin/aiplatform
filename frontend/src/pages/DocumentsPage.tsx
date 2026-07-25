@@ -25,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { documentApi } from '../api';
 import { useKBStore } from '../store/kb';
+import { useKbOptions } from '../hooks/useKbOptions';
 import { formatFileSize, formatDateTime, getStatusColor, getStatusTextKey } from '../utils/format';
 import type { Document } from '../types';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
@@ -165,10 +166,7 @@ export default function DocumentsPage() {
     return kb?.name || t('document.kbLabel', { kbId });
   }, [knowledgeBases, t]);
 
-  const kbOptions = useMemo(() => knowledgeBases.map((kb) => ({
-    label: `${kb.name} (${kb.doc_count || 0} ${t('kb.documents', { count: kb.doc_count || 0 })})`,
-    value: kb.id,
-  })), [knowledgeBases, t]);
+  const kbOptions = useKbOptions(knowledgeBases, t);
 
   const columns = useMemo(() => [
     {

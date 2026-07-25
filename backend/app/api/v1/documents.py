@@ -3,6 +3,12 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.config import (
+    RATE_LIMIT_DEFAULT,
+    RATE_LIMIT_MODERATE,
+    RATE_LIMIT_SEVERE,
+    RATE_LIMIT_VERY_STRICT,
+)
 from app.core.exceptions import ConflictError
 from app.core.middleware import limiter
 from app.database import get_db
@@ -15,7 +21,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.post("/upload")
-@limiter.limit("10/hour")
+@limiter.limit(RATE_LIMIT_VERY_STRICT)
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
@@ -36,7 +42,7 @@ async def upload_document(
 
 
 @router.get("")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_documents(
     request: Request,
     kb_id: int | None = None,
@@ -51,7 +57,7 @@ async def list_documents(
 
 
 @router.get("/{doc_id}")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_document(
     doc_id: int,
     request: Request,
@@ -63,7 +69,7 @@ async def get_document(
 
 
 @router.get("/{doc_id}/progress")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_progress(
     doc_id: int,
     request: Request,
@@ -77,7 +83,7 @@ async def get_progress(
 
 
 @router.delete("/{doc_id}")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def delete_document(
     doc_id: int,
     request: Request,
@@ -94,7 +100,7 @@ async def delete_document(
 
 
 @router.post("/{doc_id}/reparse")
-@limiter.limit("5/hour")
+@limiter.limit(RATE_LIMIT_SEVERE)
 async def reparse_document(
     doc_id: int,
     request: Request,
@@ -108,7 +114,7 @@ async def reparse_document(
 
 
 @router.get("/{doc_id}/preview")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_MODERATE)
 async def preview_document(
     doc_id: int,
     request: Request,

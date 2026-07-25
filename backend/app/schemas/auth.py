@@ -51,3 +51,18 @@ class UserResponse(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LoginUserInfo(BaseModel):
+    """登录返回的用户精简信息（不含 is_active 等敏感字段）。"""
+
+    id: int
+    username: str
+    email: str
+    role: str
+
+
+class LoginResponse(TokenResponse):
+    """登录/刷新 token 的完整响应（含用户信息）。"""
+
+    user: LoginUserInfo
