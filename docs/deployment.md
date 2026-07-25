@@ -103,7 +103,7 @@ graph TB
 | celery_worker | 自定义构建 | — | 异步文档解析 |
 | postgres | postgres:16-alpine | 5432 | 关系型数据库 |
 | redis | redis:7-alpine | 6379 | 缓存与消息队列 |
-| qdrant | qdrant/qdrant:v1.10.1 | 6333, 6334 | 向量数据库 |
+| qdrant | qdrant/qdrant:v1.18.3 | 6333, 6334 | 向量数据库 |
 | ollama | ollama/ollama:0.3.14 | 11434 | 本地 LLM 推理 |
 
 ### 1.5 首次启动后操作
@@ -186,10 +186,10 @@ sudo systemctl start redis-server
 docker run -d --name qdrant \
   -p 6333:6333 -p 6334:6334 \
   -v qdrant_data:/qdrant/storage \
-  qdrant/qdrant:v1.10.1
+  qdrant/qdrant:v1.18.3
 
 # 方式二：二进制安装
-wget https://github.com/qdrant/qdrant/releases/download/v1.10.1/qdrant-x86_64-unknown-linux-gnu.tar.gz
+wget https://github.com/qdrant/qdrant/releases/download/v1.18.3/qdrant-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz
 ./qdrant
 ```

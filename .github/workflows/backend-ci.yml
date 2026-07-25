@@ -38,6 +38,10 @@ jobs:
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Install poetry-plugin-export
+        # Poetry 2.x 不再内置 export 命令，需要单独安装插件
+        run: poetry self add poetry-plugin-export
+
       - name: Cache Poetry virtualenv
         uses: actions/cache@v4
         id: cache-poetry
@@ -241,8 +245,9 @@ jobs:
           --health-start-period 5s
 
       qdrant:
-        # 固定版本避免 latest 漂移
-        image: qdrant/qdrant:v1.10.1
+        # v1.18.3 (2026-07-17 发布)：最新稳定版，含安全修复
+        # 旧版 v1.10.1 在新 runner 上初始化失败
+        image: qdrant/qdrant:v1.18.3
         ports:
           - 6333:6333
         options: >-

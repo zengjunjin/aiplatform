@@ -94,7 +94,7 @@ jobs:
 
       - name: Start services (Qdrant + Redis)
         run: |
-          docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant:v1.10.1 || true
+          docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant:v1.18.3 || true
           docker run -d --name redis -p 6379:6379 redis:7-alpine || true
           sleep 5
 

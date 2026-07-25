@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   qdrant:
-    image: qdrant/qdrant:v1.10.1
+    image: qdrant/qdrant:v1.18.3
     ports:
       - "${QDRANT_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
@@ -46,7 +46,8 @@ services:
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
+      # qdrant 镜像不含 curl，改用 wget（alpine 自带）
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:6333/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
