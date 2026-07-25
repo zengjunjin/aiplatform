@@ -49,11 +49,14 @@ jobs:
       - name: Check Alertmanager config
         # 使用与 docker-compose 中相同版本的官方 Docker 镜像运行 amtool，
         # 避免系统 apt 包版本过旧导致语法不兼容
+        # --config.expand-env: 展开 ${VAR:default} 语法（alertmanager v0.22+ 支持）
+        #   alertmanager.yml 中使用 ${SMTP_SMARTHOST:smtp.your-domain.com:587} 等
+        #   带默认值的 env var 引用，不展开会被 amtool 当作无效 host:port 拒绝
         run: |
           docker run --rm \
             -v "${PWD}/deploy/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
             prom/alertmanager:v0.27.0 \
-            amtool check-config /etc/alertmanager/alertmanager.yml
+            amtool check-config --config.expand-env /etc/alertmanager/alertmanager.yml
 
   grafana-dashboards:
     name: Grafana Dashboard JSON Validation
@@ -78,9 +81,17 @@ jobs:
       - uses: actions/checkout@v5
       - name: Check docker-compose config
         # docker-compose.yml 中使用 ${VAR:?...} 语法强制要求环境变量
-        # CI 环境中提供测试值以通过配置校验
+        # backend/celery_worker 服务使用 env_file: - .env 引用 .env 文件
+        # CI 环境中创建临时 .env 文件并提供所有必填变量的测试值
         run: |
           cd deploy
+          # 创建临时 .env 文件（backend/celery_worker 的 env_file 引用）
+          cat > .env <<'ENVEOF'
+          POSTGRES_PASSWORD=ci-test-password
+          GRAFANA_ADMIN_PASSWORD=ci-test-password
+          JWT_SECRET=ci-test-secret-key-at-least-32-chars-long
+          ENVEOF
+          # 提供所有 ${VAR:?...} 必填变量
           GRAFANA_ADMIN_PASSWORD=ci-test-password \
           POSTGRES_PASSWORD=ci-test-password \
           docker compose -f docker-compose.yml config -q

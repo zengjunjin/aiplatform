@@ -46,8 +46,9 @@ services:
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      # qdrant 镜像不含 curl，改用 wget（alpine 自带）
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:6333/healthz"]
+      # qdrant 镜像（debian:bookworm-slim）不含 curl/wget
+      # 使用 bash /dev/tcp 检测端口连通性
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
