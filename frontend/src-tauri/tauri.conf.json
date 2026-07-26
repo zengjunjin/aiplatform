@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "RAG 知识库平台",
         "width": 1200,
         "height": 800,
@@ -23,8 +24,14 @@
         "additionalBrowserArgs": "--remote-debugging-port=9223 --allow-running-insecure-content"
       }
     ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "tooltip": "RAG 知识库平台",
+      "menuOnLeftClick": false
+    },
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:8000 wss://localhost:8000",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; font-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:8000 wss://localhost:8000 https://github.com",
       "dangerousDisableAssetCspModification": false
     },
     "withGlobalTauri": false
@@ -50,5 +57,17 @@
       }
     }
   },
-  "plugins": {}
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["rag-platform"]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/rag-platform/rag-platform-desktop/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
+    }
+  }
 }
