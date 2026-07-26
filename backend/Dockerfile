@@ -23,9 +23,12 @@ COPY pyproject.toml poetry.lock* ./
 # 注意：pyarrow 15+ 移除了 PyExtensionType，导致 datasets/ragas 无法导入
 # 因此 poetry install 后必须降级 pyarrow 到 14.x 保证兼容性
 # 同时 pyarrow 14.x 不支持 numpy 2.x，需降级 numpy 到 1.26.x
+# scipy 1.14+ 要求 numpy 2.0+ 并引用 np.long（在 1.26 中已移除），
+# 需降级 scipy 到 1.13.x（最后兼容 numpy 1.26 的分支），否则
+# sentence_transformers -> sklearn -> scipy 加载失败，reranker 无法工作
 RUN poetry config virtualenvs.in-project true \
     && poetry install --without dev --no-interaction --no-ansi --no-root \
-    && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2'
+    && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2' 'scipy>=1.13,<1.14'
 
 # 复制源码（.dockerignore 会排除 tests/ storage/ .git/ 等）
 COPY . .

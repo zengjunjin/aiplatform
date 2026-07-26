@@ -157,6 +157,44 @@ async def lifespan(app: FastAPI):
     await health_checker.start()
     logger.info("Model health checker started")
 
+    # 模型预热：异步发起 dummy LLM 请求，让 Ollama 将模型加载到内存
+    # 避免首次用户请求遇到冷启动（CPU 推理下 1.5b 模型加载约 5s）
+    # 不阻塞启动，后台执行；失败仅记录日志不影响服务可用性
+    async def _warmup_llm():
+        try:
+            from app.core.model_router import ModelRouter
+
+            router = ModelRouter()
+            llm = await router.select(None)
+            logger.info(f"Warming up LLM model: {llm.model_name}")
+            # 短 prompt 预热，仅触发模型加载
+            async for _ in llm.chat_stream(
+                [{"role": "user", "content": "hi"}], temperature=0.1
+            ):
+                break  # 只取第一个 token 即可确认模型已加载
+            router.release(llm.provider_name)
+            logger.info(f"LLM warmup done: {llm.model_name}")
+        except Exception as exc:
+            logger.warning(f"LLM warmup failed (non-blocking): {exc}")
+
+    asyncio.create_task(_warmup_llm())
+
+    # Reranker 模型预热：bge-reranker-base 加载耗时较长（CPU 上约 2-3 分钟）
+    # 若不预热，首次 chat 请求会同步等待加载，导致 SSE 流超时
+    # 后台异步加载，加载完成后首次 rerank 调用即可直接使用
+    async def _warmup_reranker():
+        try:
+            from app.models.factory import ModelFactory
+
+            provider = ModelFactory.create_reranker()
+            logger.info("Warming up reranker model (bge-reranker-base)...")
+            await provider._ensure_model()
+            logger.info("Reranker warmup done")
+        except Exception as exc:
+            logger.warning(f"Reranker warmup failed (non-blocking): {exc}")
+
+    asyncio.create_task(_warmup_reranker())
+
     metrics_task = asyncio.create_task(metrics_collector_loop(settings.METRICS_COLLECTOR_INTERVAL))
     logger.info("Metrics collector started")
 
