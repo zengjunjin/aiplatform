@@ -181,6 +181,7 @@ async def _stream_llm_with_fallback(
     model_router,
     session_id: int,
     state: dict,
+    message_id: int | None = None,
 ) -> AsyncIterator[str]:
     """流式生成 LLM 回答，支持 fallback 与取消。
 
@@ -192,6 +193,8 @@ async def _stream_llm_with_fallback(
 
     primary_llm: 已通过 model_router.select() 选定的 LLM Provider
     model_router: ModelRouter 实例（用于 release primary provider）
+    message_id: H6 助手消息占位记录 ID，会在每个 provider 的首个 delta 事件中携带，
+        便于客户端在流式过程中即可拿到 message_id 用于反馈提交。
     """
     primary_provider = primary_llm.provider_name
     # 用于计算 TTFT 与 tokens/s 指标
@@ -213,11 +216,17 @@ async def _stream_llm_with_fallback(
                 "display_name": primary_llm.model_name,
             }
         )
+        first_delta = True
         async for token in primary_llm.chat_stream(messages):
             _record_ttft(primary_llm.provider_name)
             state["full_answer"] += token
             state["token_count"] += 1
-            yield _send_sse({"event": "delta", "content": token})
+            # H6: 首个 delta 事件携带 message_id，方便客户端尽早用于反馈
+            evt: dict = {"event": "delta", "content": token}
+            if first_delta and message_id is not None:
+                evt["message_id"] = message_id
+                first_delta = False
+            yield _send_sse(evt)
             # SIM102: 合并嵌套 if（外层周期性检查 + 内层取消检查）
             if state[
                 "token_count"
@@ -256,11 +265,17 @@ async def _stream_llm_with_fallback(
                         "fallback": True,
                     }
                 )
+                first_delta = True
                 async for token in fallback_llm.chat_stream(messages):
                     _record_ttft(fallback_llm.provider_name)
                     state["full_answer"] += token
                     state["token_count"] += 1
-                    yield _send_sse({"event": "delta", "content": token})
+                    # H6: fallback 首个 delta 事件同样携带 message_id
+                    evt = {"event": "delta", "content": token}
+                    if first_delta and message_id is not None:
+                        evt["message_id"] = message_id
+                        first_delta = False
+                    yield _send_sse(evt)
                     # SIM102: 合并嵌套 if（外层周期性检查 + 内层取消检查）
                     if state[
                         "token_count"
@@ -298,11 +313,36 @@ async def _save_assistant_msg(
     summary_text: str | None,
     token_input: int,
     token_output: int,
+    message_id: int | None = None,
 ) -> int | None:
-    """保存助手消息到 DB，失败时尝试保存错误 fallback 消息。
+    """保存或回填助手消息到 DB，失败时尝试保存错误 fallback 消息。
 
+    H6: 若 message_id 不为 None，则视为已预创建的占位消息，执行 UPDATE 回填；
+    否则降级为旧的 INSERT 行为（兼容占位创建失败的场景）。
     返回 saved_msg.id（彻底失败时返回 None）。
     """
+    if message_id is not None:
+        try:
+            async with async_session() as stream_db:
+                updated = await chat_service.update_assistant_message(
+                    message_id,
+                    stream_db,
+                    content,
+                    references=references,
+                    token_input=token_input,
+                    token_output=token_output,
+                    latency_ms=latency_ms,
+                    summary_snapshot=summary_text,
+                )
+            if updated:
+                return message_id
+            logger.warning(
+                f"Placeholder message_id={message_id} not found, falling back to INSERT"
+            )
+        except Exception as update_err:
+            logger.error(
+                f"Failed to update placeholder message_id={message_id} for session {session_id}: {update_err}"
+            )
     try:
         async with async_session() as stream_db:
             saved_msg = await chat_service.save_message(
@@ -445,10 +485,26 @@ async def _run_sse_stream(
             yield _send_sse_error(str(e))
             return
 
+        # H6: 在 LLM 流式开始前预创建助手消息占位记录，获取 message_id。
+        # 这样首个 delta 事件即可携带 message_id，便于客户端流式过程中提交反馈。
+        # 占位创建失败时降级为 msg_id=None（流后走旧 INSERT 路径，保持向后兼容）。
+        msg_id: int | None = None
+        try:
+            async with async_session() as placeholder_db:
+                placeholder_msg = await chat_service.create_assistant_placeholder(
+                    session_id, placeholder_db
+                )
+            msg_id = placeholder_msg.id
+        except Exception as placeholder_err:
+            logger.warning(
+                f"Failed to create assistant placeholder for session {session_id}: {placeholder_err}"
+            )
+            msg_id = None
+
         # 5. Stream LLM with fallback (state 收集 full_answer/cancelled/token_count)
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
         async for sse_evt in _stream_llm_with_fallback(
-            messages, llm, model_router, session_id, state
+            messages, llm, model_router, session_id, state, message_id=msg_id
         ):
             yield sse_evt
 
@@ -460,7 +516,8 @@ async def _run_sse_stream(
         cancelled = state["cancelled"]
         references = parse_references(full_answer, chunks) if chunks and not cancelled else []
         latency_ms = int((time.time() - start_time) * 1000)
-        msg_id = await _save_assistant_msg(
+        # H6: 若占位消息已创建，传入 message_id 执行 UPDATE 回填；否则降级 INSERT
+        saved_msg_id = await _save_assistant_msg(
             session_id,
             full_answer,
             references,
@@ -468,7 +525,11 @@ async def _run_sse_stream(
             summary_text,
             count_tokens(content),
             count_tokens(full_answer),
+            message_id=msg_id,
         )
+        # 占位创建失败但后续 INSERT 成功时，使用 INSERT 返回的 id
+        if saved_msg_id is not None:
+            msg_id = saved_msg_id
         await chat_service.append_to_context(session_id, "assistant", full_answer)
 
         # 7. Final event

@@ -65,3 +65,68 @@ groups:
           summary: "High disk usage"
           description: "Disk usage is {{ $value }}%"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-disk-usage.md"
+
+  # Phase 5 / H34: 业务与基础设施深化告警规则（5 条新增，规则总数 11 条）
+  - name: phase5-business-alerts
+    rules:
+      # 1. KB 创建异常：5 分钟内创建超过 10 个 KB（可能存在脚本滥用或自动化攻击）
+      - alert: KBCreateAnomaly
+        expr: sum(rate(rag_kb_created_total[5m])) * 300 > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Knowledge base creation rate anomaly"
+          description: "More than 10 KBs created in 5 minutes (rate={{ $value }}) — possible script abuse"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-error-rate.md"
+
+      # 2. 文档解析失败率：5 分钟内失败率 > 30%
+      # 使用 clamp_min 避免 success+failure 均为 0 时除零
+      - alert: DocParseHighFailureRate
+        expr: |
+          sum(rate(rag_doc_parse_failure_total[5m]))
+            / clamp_min(
+                sum(rate(rag_doc_parse_success_total[5m]))
+              + sum(rate(rag_doc_parse_failure_total[5m])),
+                1
+              ) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Document parse failure rate > 30%"
+          description: "Parse failure rate is {{ $value | humanizePercentage }} over the last 10 minutes"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-error-rate.md"
+
+      # 3. 聊天响应慢：P95 > 30s（影响用户体验）
+      - alert: ChatResponseSlowP95
+        expr: histogram_quantile(0.95, sum(rate(rag_chat_response_duration_seconds_bucket[5m])) by (le)) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Chat response P95 latency > 30s"
+          description: "P95 chat response latency is {{ $value }}s (threshold 30s)"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-cpu-usage.md"
+
+      # 4. Redis 内存高：使用率 > 90%（可能导致 OOM 或驱逐）
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis memory usage > 90%"
+          description: "Redis memory usage is {{ $value | humanizePercentage }} of max — risk of OOM/eviction"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-memory-usage.md"
+
+      # 5. LLM 推理超时：P99 > 120s（模型卡死或队列堆积）
+      - alert: LLMInferenceTimeoutP99
+        expr: histogram_quantile(0.99, sum(rate(rag_llm_inference_duration_seconds_bucket[5m])) by (le, model)) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM inference P99 > 120s"
+          description: "P99 LLM inference latency is {{ $value }}s (threshold 120s) — model may be stuck or queue backed up"
+          runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-cpu-usage.md"

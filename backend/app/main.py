@@ -105,6 +105,24 @@ def _setup_opentelemetry() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME}...")
+
+    # OpenTelemetry 追踪初始化（仅当 OTEL_EXPORTER_OTLP_ENDPOINT 配置时启用）
+    # 必须在 init_redis() / EventBus.init() 之前调用：
+    # RedisInstrumentor().instrument() 通过 monkey-patching redis.Redis /
+    # redis.asyncio.Redis 类工作，已创建的客户端实例不会被 instrument，
+    # 因此要在任何 Redis 客户端实例化之前完成 instrumentation。
+    _setup_opentelemetry()
+    # FastAPI 仪器化需在 app 创建后执行；lifespan 在 app 创建后才被调用，安全
+    # 使用 settings.OTEL_EXPORTER_OTLP_ENDPOINT 与 _setup_opentelemetry() 保持一致
+    if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
+        try:
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+            FastAPIInstrumentor.instrument_app(app)
+            logger.info("FastAPI OpenTelemetry instrumentation enabled")
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"FastAPI instrumentation failed: {exc}")
+
     init_redis()
     logger.info("Redis initialized")
 
@@ -141,19 +159,6 @@ async def lifespan(app: FastAPI):
 
     metrics_task = asyncio.create_task(metrics_collector_loop(settings.METRICS_COLLECTOR_INTERVAL))
     logger.info("Metrics collector started")
-
-    # OpenTelemetry 追踪初始化（仅当 OTEL_EXPORTER_OTLP_ENDPOINT 配置时启用）
-    _setup_opentelemetry()
-    # FastAPI 仪器化需在 app 创建后执行；lifespan 在 app 创建后才被调用，安全
-    # 使用 settings.OTEL_EXPORTER_OTLP_ENDPOINT 与 _setup_opentelemetry() 保持一致
-    if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
-        try:
-            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-            FastAPIInstrumentor.instrument_app(app)
-            logger.info("FastAPI OpenTelemetry instrumentation enabled")
-        except Exception as exc:  # pragma: no cover
-            logger.warning(f"FastAPI instrumentation failed: {exc}")
 
     try:
         yield

@@ -77,6 +77,13 @@ htmlcov/
 # Temporary files
 *.tmp
 *.temp
+*.bak
+*.bak.*
+# 临时调试/CI 诊断脚本（一次性使用）
+check_ci.py
+check_main_ci.py
+fetch_ci_logs.py
+ci_failure_report.txt
 screenshot-*.png
 task*.png
 chat-verify-*.png

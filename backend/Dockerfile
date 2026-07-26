@@ -20,8 +20,12 @@ COPY pyproject.toml poetry.lock* ./
 
 # 安装依赖到项目内 .venv（virtualenvs.in-project=true）
 # --no-root: 不安装当前项目包本身（runtime 阶段会以源码方式运行）
+# 注意：pyarrow 15+ 移除了 PyExtensionType，导致 datasets/ragas 无法导入
+# 因此 poetry install 后必须降级 pyarrow 到 14.x 保证兼容性
+# 同时 pyarrow 14.x 不支持 numpy 2.x，需降级 numpy 到 1.26.x
 RUN poetry config virtualenvs.in-project true \
-    && poetry install --without dev --no-interaction --no-ansi --no-root
+    && poetry install --without dev --no-interaction --no-ansi --no-root \
+    && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2'
 
 # 复制源码（.dockerignore 会排除 tests/ storage/ .git/ 等）
 COPY . .

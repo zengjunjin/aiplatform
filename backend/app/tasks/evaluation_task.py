@@ -28,6 +28,10 @@ from app.tasks.celery_app import celery_app
     bind=True,
     max_retries=settings.TASK_MAX_RETRIES_EVALUATION,
     name="app.tasks.evaluation_task.run_evaluation",
+    # H4: RAGAS 评估需要多次 LLM 调用（4 指标 * N 问题），qwen2.5:1.5b 响应较慢，
+    # 默认 300s/240s 不够。放宽到 1800s/1500s（30/25 分钟）。
+    time_limit=1800,
+    soft_time_limit=1500,
 )
 def run_evaluation_task(self, run_id: int):
     """Run evaluation asynchronously in Celery worker.

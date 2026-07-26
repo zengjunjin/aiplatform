@@ -1,7 +1,7 @@
 import json
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -175,6 +175,52 @@ async def save_message(
     await db.commit()
     await db.refresh(msg)
     return msg
+
+
+async def create_assistant_placeholder(session_id: int, db: AsyncSession) -> ChatMessage:
+    """H6: 预创建助手消息占位记录（空内容），用于在 LLM 流式开始前获取 message_id。
+
+    客户端可在首个 delta 事件中拿到 message_id，便于流式过程中提交反馈。
+    流式结束后由 update_assistant_message() 回填完整内容与元数据。
+    """
+    from app.rag.prompt_builder import get_prompt_version
+
+    msg = ChatMessage(
+        session_id=session_id,
+        role="assistant",
+        content="",
+        prompt_version=get_prompt_version(),
+    )
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    return msg
+
+
+async def update_assistant_message(
+    message_id: int,
+    db: AsyncSession,
+    content: str,
+    references: list | None = None,
+    token_input: int | None = None,
+    token_output: int | None = None,
+    latency_ms: int | None = None,
+    summary_snapshot: str | None = None,
+) -> bool:
+    """H6: 回填占位助手消息的完整内容与元数据。返回 True 表示更新成功。"""
+    values: dict = {
+        "content": content,
+        "referenced_chunks": references,
+        "token_input": token_input,
+        "token_output": token_output,
+        "latency_ms": latency_ms,
+    }
+    if summary_snapshot is not None:
+        values["summary_snapshot"] = summary_snapshot
+    stmt = sa_update(ChatMessage).where(ChatMessage.id == message_id).values(**values)
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.rowcount > 0
 
 
 # ---------- Phase F3: 流式生成取消 ----------

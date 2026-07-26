@@ -12,13 +12,6 @@ import statistics
 from typing import cast
 
 from loguru import logger
-from ragas import evaluate
-from ragas.metrics import (
-    answer_relevancy,
-    context_precision,
-    context_recall,
-    faithfulness,
-)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -248,8 +241,27 @@ async def _compute_ragas_metrics(
     """Compute RAGAS metrics for a single question-answer pair.
 
     Requires the ragas library to be installed; ImportError propagates.
+
+    注意：ragas 的导入必须延迟到函数内部，因为 ragas.executor 在模块加载时
+    调用 nest_asyncio.apply()，而 nest_asyncio 不支持 uvloop.Loop，
+    会导致 backend 启动失败（ValueError: Can't patch loop of type uvloop.Loop）。
+
+    H4: RAGAS 默认使用 OpenAI LLM/embeddings，但本平台使用本地 Ollama。
+    通过 LangchainLLMWrapper + LangchainEmbeddingsWrapper 包装本地 Ollama，
+    避免依赖 OPENAI_API_KEY。
     """
     from datasets import Dataset
+    from ragas import evaluate
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
+    from ragas.metrics import (
+        answer_relevancy,
+        context_precision,
+        context_recall,
+        faithfulness,
+    )
+
+    from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
 
     # Build a single-row dataset
     ds = Dataset.from_dict(
@@ -261,19 +273,60 @@ async def _compute_ragas_metrics(
         }
     )
 
+    # H4: 使用本地 Ollama LLM + embeddings，避免依赖 OpenAI API key
+    ollama_llm = ChatOllama(model=settings.LLM_MODEL, host=settings.OLLAMA_HOST)
+    ollama_embeddings = OllamaEmbeddings(
+        model=settings.EMBEDDING_MODEL or settings.LLM_MODEL,
+        host=settings.OLLAMA_HOST,
+    )
+    ragas_llm = LangchainLLMWrapper(ollama_llm)
+    ragas_embeddings = LangchainEmbeddingsWrapper(ollama_embeddings)
+
+    # H4: 增加 timeout + 限制 max_workers（qwen2.5:1.5b 在 CPU 上响应较慢，
+    # RAGAS 默认 max_workers=16 会让 Ollama 过载导致 TimeoutError，所有指标返回 None）。
+    # max_workers=2 + OLLAMA_NUM_PARALLEL=4 平衡并行度与 Ollama 处理能力。
+    from ragas.run_config import RunConfig
+    run_config = RunConfig(timeout=600, max_retries=1, max_wait=30, max_workers=2)
+
     result = evaluate(
         ds,
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
+        llm=ragas_llm,
+        embeddings=ragas_embeddings,
+        run_config=run_config,
+        raise_exceptions=False,
     )
 
+    # H4: RAGAS 0.3.2 的 EvaluationResult 用 scores (list[dict]) 而非 get()
+    import math
+
     metrics = {}
-    for key in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
-        val = result.get(key)
-        if val is not None:
-            try:
-                metrics[key] = float(val[0]) if hasattr(val, "__getitem__") else float(val)
-            except (TypeError, ValueError, IndexError):
+    keys = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+    scores = getattr(result, "scores", None) or []
+    if scores and isinstance(scores, list) and len(scores) > 0:
+        score_dict = scores[0] if isinstance(scores[0], dict) else {}
+        for key in keys:
+            val = score_dict.get(key)
+            if val is not None:
+                try:
+                    # RAGAS 可能返回 numpy 类型或 list
+                    if hasattr(val, "item"):
+                        val = val.item()
+                    elif isinstance(val, list) and val:
+                        val = val[0]
+                    # H4: nan 值转为 None（RAGAS 评估失败时返回 nan）
+                    if isinstance(val, float) and math.isnan(val):
+                        metrics[key] = None
+                    else:
+                        metrics[key] = float(val) if not isinstance(val, type(None)) else None
+                except (TypeError, ValueError, IndexError):
+                    metrics[key] = None
+            else:
                 metrics[key] = None
+    else:
+        # 无 scores，返回全 None
+        for key in keys:
+            metrics[key] = None
 
     return metrics
 
@@ -301,14 +354,23 @@ def aggregate_metrics(results: list[dict]) -> dict[str, dict[str, float]]:
 
     Shared by both the async :func:`run_evaluation` pipeline and the
     synchronous Celery task :mod:`app.tasks.evaluation_task`.
+
+    H4: 过滤 nan 值（RAGAS 评估失败时可能返回 nan，statistics.stdev 对 nan 报错）。
     """
+    import math
+
     keys = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
     aggregated = {}
 
     for key in keys:
         # mypy: r.get(key) 推断为 Any | None，列表推导式不会因 if 条件收窄类型，
         # 用 cast 显式声明为 list[float]（运行时已过滤 None）。
-        values = cast(list[float], [r.get(key) for r in results if r.get(key) is not None])
+        # H4: 同时过滤 nan 值，避免 statistics.stdev 报错
+        raw_values = [r.get(key) for r in results if r.get(key) is not None]
+        values = cast(
+            list[float],
+            [v for v in raw_values if isinstance(v, (int, float)) and not math.isnan(v)],
+        )
         if values:
             aggregated[key] = {
                 "mean": round(statistics.mean(values), 4),

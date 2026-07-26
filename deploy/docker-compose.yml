@@ -64,12 +64,15 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_KEEP_ALIVE=24h
+      # H4: 允许 Ollama 同时处理 4 个并发请求（默认 1），配合 RAGAS max_workers=2
+      # 提升评估吞吐量，避免 RAGAS 超时导致指标返回 None
+      - OLLAMA_NUM_PARALLEL=4
     # 资源限制（docker compose 非 swarm mode 使用 mem_limit/cpus，
     # deploy.resources.limits 在 `docker compose up` 时会被忽略）
     mem_limit: 4g
     cpus: 2
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -148,6 +151,9 @@ services:
       - OTEL_SERVICE_NAME=rag-platform-celery
       # LOG_JSON=true 时 loguru 输出 JSON 结构化日志（含 trace_id/span_id）
       - LOG_JSON=true
+      # H4: ragas 0.3.2 通过 ragas.experiment 间接 import git，容器内无 git 可执行文件时
+      # GitPython 抛 ImportError；设为 quiet 抑制（ragas 评估本身不依赖 git）
+      - GIT_PYTHON_REFRESH=quiet
     depends_on:
       postgres:
         condition: service_healthy
@@ -356,7 +362,7 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -1,10 +1,12 @@
 global:
   resolve_timeout: 5m
-  # Task 4.2: SMTP 配置（密码通过环境变量 SMTP_PASSWORD 注入）
-  smtp_smarthost: '${SMTP_SMARTHOST:smtp.your-domain.com:587}'
-  smtp_from: '${SMTP_FROM:alertmanager@your-domain.com}'
-  smtp_auth_username: '${SMTP_USER:alertmanager@your-domain.com}'
-  smtp_auth_password: '${SMTP_PASSWORD}'
+  # Task 4.2: SMTP 配置（生产环境部署时通过环境变量覆盖 alertmanager.yml 注入）
+  # 注意：alertmanager 不支持 ${VAR:default} 语法，必须使用字面值或通过 docker config/scripts 替换
+  # 当前验收测试不使用邮件通知，仅使用 webhook receiver
+  # smtp_smarthost: 'smtp.your-domain.com:587'
+  # smtp_from: 'alertmanager@your-domain.com'
+  # smtp_auth_username: 'alertmanager@your-domain.com'
+  # smtp_auth_password: 'CHANGE_ME_IN_PRODUCTION'
 
 route:
   group_by: ['alertname', 'severity']
@@ -19,7 +21,7 @@ route:
       continue: true
     - matchers:
         - severity = warning
-      receiver: 'warning-email'
+      receiver: 'warning-webhook'
 
 receivers:
   - name: 'default'
@@ -32,18 +34,11 @@ receivers:
     webhook_configs:
       - url: 'http://alertmanager-webhook-receiver:5001/webhook'
         send_resolved: true
-    email_configs:
-      - to: '${ALERT_EMAIL_TO:ops@your-domain.com}'
-        send_resolved: true
-        headers:
-          Subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
 
-  - name: 'warning-email'
-    email_configs:
-      - to: '${ALERT_EMAIL_TO:ops@your-domain.com}'
+  - name: 'warning-webhook'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-receiver:5001/webhook'
         send_resolved: true
-        headers:
-          Subject: '[WARNING] {{ .GroupLabels.alertname }}'
 
 # Task 89: 抑制规则 — backend down 时抑制 HighErrorRate
 inhibit_rules:

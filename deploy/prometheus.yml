@@ -9,9 +9,10 @@ rule_files:
 scrape_configs:
   - job_name: 'rag-platform-backend'
     metrics_path: '/internal/metrics'
-    # bearer token 通过环境变量 METRICS_TOKEN 注入（使用 envsubst 或 docker secrets）
-    # 在 deploy/.env.example 中配置 METRICS_TOKEN
-    bearer_token: '${METRICS_TOKEN}'
+    # 注意：Prometheus 不支持 ${VAR} 变量替换，bearer_token 必须是字面值
+    # 测试环境直接写入 token 值（与 .env 中 METRICS_TOKEN 保持一致）
+    # 生产环境应通过 entrypoint + envsubst 在容器启动时替换
+    bearer_token: 'acceptance-test-metrics-token-2026-xyz-abc-123'
     static_configs:
       - targets: ['backend:8000']
 
@@ -38,7 +39,5 @@ scrape_configs:
     static_configs:
       - targets: ['nginx-exporter:9113']
 
-  # Task 88: Ollama 抓取 LLM 推理服务指标（默认 /metrics 端点）
-  - job_name: 'ollama'
-    static_configs:
-      - targets: ['ollama:11434']
+  # 注：Ollama 0.3.14 不暴露 /metrics 端点，暂不抓取。
+  # 后续可升级 ollama 镜像或部署 ollama-exporter sidecar 补齐 LLM 推理指标。

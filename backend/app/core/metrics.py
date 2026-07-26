@@ -100,6 +100,53 @@ EMBEDDING_CACHE_ERRORS = Counter(
     "Total number of embedding cache errors (Redis connection/decode failures)",
 )
 
+# ---------------------------------------------------------------------------
+# Phase 5 / H33: 业务自定义指标
+# ---------------------------------------------------------------------------
+
+# KB 创建数（按用户角色细分，用于审计与配额监控）
+KB_CREATED_TOTAL = Counter(
+    "rag_kb_created_total",
+    "Total number of knowledge bases created",
+    ["user_role"],
+)
+
+# 文档解析成功 / 失败计数（失败按原因细分，用于解析质量监控）
+DOC_PARSE_SUCCESS_TOTAL = Counter(
+    "rag_doc_parse_success_total",
+    "Total documents successfully parsed",
+)
+
+DOC_PARSE_FAILURE_TOTAL = Counter(
+    "rag_doc_parse_failure_total",
+    "Total documents failed to parse",
+    ["failure_reason"],
+)
+
+# 聊天端到端响应时间直方图（与 RAG_E2E_LATENCY 区别：
+# RAG_E2E_LATENCY 按 kb_id 细分用于定位单 KB 性能瓶颈；
+# 本指标不细分标签，用于整体 P95/P99 SRE SLO 监控，桶覆盖 0.5s~120s）
+CHAT_RESPONSE_DURATION = Histogram(
+    "rag_chat_response_duration_seconds",
+    "Chat response duration in seconds",
+    buckets=[0.5, 1, 2, 5, 10, 30, 60, 120],
+)
+
+# 活跃用户数（5 分钟内活跃用户，由 metrics_collector 周期性 set）
+ACTIVE_USERS = Gauge(
+    "rag_active_users",
+    "Number of active users in last 5 minutes",
+)
+
+# LLM 推理耗时直方图（按模型细分，P99 用于推理超时告警）
+# 与 RAG_LLM_TTFT 区别：TTFT 衡量首 token 延迟，本指标衡量完整推理耗时
+LLM_INFERENCE_DURATION = Histogram(
+    "rag_llm_inference_duration_seconds",
+    "LLM inference duration in seconds",
+    ["model"],
+    buckets=[0.5, 1, 2, 5, 10, 30, 60, 120],
+)
+
 
 def get_metrics_content():
     return generate_latest()
