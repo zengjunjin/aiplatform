@@ -14,7 +14,7 @@ export function useDeepLink() {
       if (!isTauri()) return () => {};
       try {
         const mod = await import(/* @vite-ignore */ TAURI_EVENT);
-        const unlisten = await mod.listen<DeepLinkPayload>('deep-link', (e) => {
+        const unlisten = await mod.listen('deep-link', (e: { payload: DeepLinkPayload }) => {
           callback(e.payload);
         });
         return unlisten;

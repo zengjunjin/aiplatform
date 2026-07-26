@@ -377,9 +377,17 @@ def parse_document_task(self, doc_id: int) -> dict | None:
         except Exception as e:
             logger.warning(f"Failed to publish DOCUMENT_PARSED event: {e}")
 
+        # Phase 5 / H49: 业务指标 - 文档解析成功计数
+        from app.core.metrics import DOC_PARSE_SUCCESS_TOTAL
+
+        DOC_PARSE_SUCCESS_TOTAL.inc()
         return {"doc_id": doc_id, "chunk_count": len(chunks), "status": "done"}
     except Exception as e:
         logger.exception(f"Document parse failed for doc_id={doc_id}")
+        # Phase 5 / H49: 业务指标 - 文档解析失败计数
+        from app.core.metrics import DOC_PARSE_FAILURE_TOTAL
+
+        DOC_PARSE_FAILURE_TOTAL.labels(failure_reason=type(e).__name__).inc()
         retry_count = self.request.retries
         if retry_count >= self.max_retries:
             _update_progress(doc_id, "failed", 100, error="文档解析失败，请重试或联系管理员")

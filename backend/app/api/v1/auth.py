@@ -44,6 +44,10 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
     """
     try:
         tokens = await auth_service.login(req, db)
+        # Phase 5 / H49: 业务指标 - 活跃用户数
+        from app.core.metrics import ACTIVE_USERS
+
+        ACTIVE_USERS.inc()
         await log_audit(action="user.login", user_id=tokens["user"]["id"], request=request)
         return ok(data=tokens)
     except Exception as e:
@@ -124,6 +128,10 @@ async def logout(
     except Exception as e:
         logger.warning(f"Failed to parse refresh_token from logout body: {e}", exc_info=True)
     await log_audit(action="user.logout", user_id=user.id, request=request)
+    # Phase 5 / H49: 业务指标 - 活跃用户数
+    from app.core.metrics import ACTIVE_USERS
+
+    ACTIVE_USERS.dec()
     return ok(message="Logged out")
 
 

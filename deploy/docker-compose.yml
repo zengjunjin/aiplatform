@@ -114,6 +114,9 @@ services:
     volumes:
       - ../backend/storage:/app/storage
       - ../backend/alembic:/app/alembic
+      # 开发环境源码实时挂载：改代码后 docker compose restart backend 即生效
+      # 无需重建镜像，解决 docker cp 同步割裂问题
+      - ../backend/app:/app/app
     restart: unless-stopped
     mem_limit: 2g
     cpus: "2"
@@ -163,6 +166,8 @@ services:
         condition: service_healthy
     volumes:
       - ../backend/storage:/app/storage
+      # 开发环境源码实时挂载：改代码后 docker compose restart celery_worker 即生效
+      - ../backend/app:/app/app
     healthcheck:
       test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping"]
       interval: 30s

@@ -299,6 +299,10 @@ async def _stream_llm_with_fallback(
             RAG_LLM_TOKENS_PER_SECOND.labels(model=primary_llm.provider_name).set(
                 state["token_count"] / elapsed
             )
+        # Phase 5 / H49: 业务指标 - LLM 推理耗时直方图
+        from app.core.metrics import LLM_INFERENCE_DURATION
+
+        LLM_INFERENCE_DURATION.labels(model=primary_llm.provider_name).observe(elapsed)
         # 释放 least_busy 策略的请求计数
         # 仅 release primary_provider (走了 select()), fallback provider 未走 select() 不 release
         # release() 内部有 >0 检查, 非 least_busy 策略下 _request_counts 为空, 无副作用
@@ -550,6 +554,10 @@ async def _run_sse_stream(
         RAG_E2E_LATENCY.labels(kb_id=str(kb_id) if kb_id is not None else "none").observe(
             time.perf_counter() - e2e_t0
         )
+        # Phase 5 / H49: 业务指标 - 聊天端到端响应时间直方图
+        from app.core.metrics import CHAT_RESPONSE_DURATION
+
+        CHAT_RESPONSE_DURATION.observe(time.perf_counter() - e2e_t0)
         # 清理取消标志（避免残留影响下次生成）
         await chat_service.clear_cancel(session_id)
         # 递减 SSE 并发计数器（无论正常结束、异常或客户端断开都会执行）

@@ -13,7 +13,7 @@ export function useTauriTray() {
       if (!isTauri()) return () => {};
       try {
         const mod = await import(/* @vite-ignore */ TAURI_EVENT);
-        const unlisten = await mod.listen<TrayMenuEvent>('tray://menu-click', (e) => {
+        const unlisten = await mod.listen('tray://menu-click', (e: { payload: TrayMenuEvent }) => {
           callback(e.payload);
         });
         return unlisten;

@@ -27,6 +27,10 @@ async def create_kb(
     返回创建的知识库对象。
     """
     kb = await kb_service.create_kb(req, user.id, db)
+    # Phase 5 / H49: 业务指标 - KB 创建计数
+    from app.core.metrics import KB_CREATED_TOTAL
+
+    KB_CREATED_TOTAL.labels(user_role=user.role).inc()
     return ok(data=KBOut.model_validate(kb).model_dump())
 
 

@@ -13,7 +13,7 @@ export function useGlobalShortcuts() {
       if (!isTauri()) return () => {};
       try {
         const mod = await import(/* @vite-ignore */ TAURI_EVENT);
-        const unlisten = await mod.listen<ShortcutEvent>('shortcut', (e) => {
+        const unlisten = await mod.listen('shortcut', (e: { payload: ShortcutEvent }) => {
           callback(e.payload);
         });
         return unlisten;

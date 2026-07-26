@@ -1,4 +1,4 @@
-use tauri::{Manager, Window};
+use tauri::Window;
 
 #[tauri::command]
 pub async fn minimize_window(window: Window) -> Result<(), String> {
