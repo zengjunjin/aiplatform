@@ -104,9 +104,11 @@ def cdp_kb_doc(admin_token, base_url, cdp_test_kb):
 
 
 def _navigate_to_documents(cdp):
-    """导航到文档管理页并等待加载。"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """导航到文档管理页并等待加载。
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)，避免全页导航导致 zustand 重新
+    rehydrate 期间 AdminRoute 重定向。改为仅用 hash 导航。
+    """
     cdp.evaluate("window.location.hash = '#/documents'")
     wait_for_url_change(cdp, "#/documents", timeout=10)
     wait_for_element(cdp, ".ant-table, .ant-empty, .ant-select", timeout=15)

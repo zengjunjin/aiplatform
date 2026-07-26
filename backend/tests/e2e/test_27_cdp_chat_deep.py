@@ -63,7 +63,11 @@ def _inject_auth_token(cdp, admin_token):
 
 @pytest.fixture(scope="module")
 def logged_in_cdp(admin_token):
-    """登录后的 CDP 客户端（用 API token 注入 localStorage，避免限流）"""
+    """登录后的 CDP 客户端（用 API token 注入 localStorage，避免限流）
+
+    H14 修复：token 注入后用 Page.reload 代替 cdp.navigate(TAURI_HOME)，
+    避免 zustand 重新 rehydrate 期间 AdminRoute 重定向到 #/login。
+    """
     client = CdpClient(cdp_port=CDP_PORT)
     try:
         client.connect(timeout=30)
@@ -72,8 +76,11 @@ def logged_in_cdp(admin_token):
     client.navigate(TAURI_HOME)
     wait_for_dom_ready(client, timeout=10)
     _inject_auth_token(client, admin_token)
-    client.navigate(TAURI_HOME)
-    wait_for_dom_ready(client, timeout=15)
+    client.send("Page.reload")
+    # 必要固定等待：reload 后 zustand persist rehydrate
+    time.sleep(3)
+    client.evaluate("window.location.hash = '#/dashboard'")
+    wait_for_url_change(client, "#/dashboard", timeout=15)
     yield client
     client.close()
 
@@ -123,11 +130,24 @@ def ollama_available(base_url, admin_headers):
 
 
 def _navigate_to_chat(cdp):
-    """导航到对话页并等待渲染"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """导航到对话页并等待渲染
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)，避免全页导航导致 zustand 重新
+    rehydrate 期间 AdminRoute 重定向。改为仅用 hash 导航。
+    """
     cdp.evaluate("window.location.hash = '#/chat'")
     wait_for_url_change(cdp, "#/chat", timeout=15)
+
+
+def _navigate_to_chat_session(cdp, session_id):
+    """导航到指定会话页并等待渲染
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)（全页导航会导致 zustand 重新
+    rehydrate 期间 AdminRoute 重定向）。改为仅用 hash 导航 + 等待 DOM 就绪。
+    """
+    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
+    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    wait_for_dom_ready(cdp, timeout=5)
 
 
 def _fill_textarea(cdp, text):
@@ -151,13 +171,13 @@ def test_chat_page_loads(logged_in_cdp, chat_sessions):
     """ChatPage 加载：导航到 /#/chat/{sessionId}，验证 SessionSider + 消息区 + ChatInput 渲染
 
     注意: /chat 路由渲染 SessionsPage (会话列表页), /chat/:sessionId 才渲染 ChatPage。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)，避免全页导航导致
+    zustand 重新 rehydrate 期间 AdminRoute 重定向。
     """
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 验证 ChatInput 的 textarea 存在
     has_input = cdp.evaluate("!!document.querySelector('textarea')")
     assert has_input, "ChatInput textarea not found"
@@ -183,13 +203,12 @@ def test_session_sider_renders(logged_in_cdp, chat_sessions):
     """SessionSider 渲染会话列表：验证会话项渲染
 
     /chat/:sessionId 渲染 ChatPage, SessionSider 在 ChatPage 内左侧栏。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 验证会话列表项渲染（chat-session-item class）
     session_count = cdp.evaluate("""
         document.querySelectorAll('.chat-session-item').length
@@ -203,13 +222,12 @@ def test_switch_session(logged_in_cdp, chat_sessions):
     """切换会话：点击另一个会话，验证历史消息加载（URL 变化）
 
     /chat/:sessionId 渲染 ChatPage, SessionSider 中的会话项可点击切换。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 点击第一个会话项
     clicked = cdp.evaluate("""
         (function() {
@@ -230,16 +248,15 @@ def test_send_message(logged_in_cdp, chat_sessions, ollama_available):
     """发送消息：在 ChatInput 输入消息，发送，验证消息出现在消息区
 
     依赖 Ollama，不可达则跳过。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     if not ollama_available:
         pytest.skip("Ollama not available (no healthy models)")
     cdp = logged_in_cdp
     # 导航到第一个会话
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 输入消息
     msg = f"CDP测试消息_{uuid.uuid4().hex[:6]}"
     _fill_textarea(cdp, msg)
@@ -272,16 +289,15 @@ def test_regenerate_response(logged_in_cdp, chat_sessions, ollama_available):
     """重新生成回复：点击重新生成按钮，验证新回复追加
 
     依赖 Ollama，不可达则跳过。需要已有 assistant 回复。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     if not ollama_available:
         pytest.skip("Ollama not available (no healthy models)")
     cdp = logged_in_cdp
     # 导航到第一个会话
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 检查是否有重新生成按钮（aria-label="重新生成"）
     has_regenerate = cdp.evaluate("""
         (function() {
@@ -329,13 +345,12 @@ def test_references_drawer(logged_in_cdp, chat_sessions):
 
     需要会话中有带 references 的 assistant 消息（依赖 RAG 检索）。
     若无引用标签则跳过。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     cdp = logged_in_cdp
     session_id = chat_sessions[0]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 查找"查看参考来源"标签（ChatPage.parts.tsx 中的 Tag）
     has_ref_tag = cdp.evaluate("""
         (function() {
@@ -364,15 +379,14 @@ def test_stop_generation(logged_in_cdp, chat_sessions, ollama_available):
     """停止生成：发送消息后立即点击停止，验证消息内容不再增长
 
     依赖 Ollama，不可达则跳过。对比点击停止前后消息内容长度。
+
+    H14 修复：用 hash 导航代替 cdp.navigate(TAURI_HOME)。
     """
     if not ollama_available:
         pytest.skip("Ollama not available (no healthy models)")
     cdp = logged_in_cdp
     session_id = chat_sessions[1]["id"]
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    cdp.evaluate(f"window.location.hash = '#/chat/{session_id}'")
-    wait_for_url_change(cdp, f"#/chat/{session_id}", timeout=15)
+    _navigate_to_chat_session(cdp, session_id)
     # 输入消息并发送
     _fill_textarea(cdp, "请详细介绍一下人工智能的发展历史")
     cdp.evaluate("""

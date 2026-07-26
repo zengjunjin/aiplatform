@@ -37,13 +37,13 @@ def logged_in_cdp(admin_token):
 def _reset_kb_page(cdp):
     """重置 KB 页面 React state：完整重新加载页面（清除所有 React state 和 Modal Portal）
 
-    token 已由 logged_in_cdp fixture 注入到 localStorage，页面重载后 zustand 会
-    自动 rehydrate，无需重新登录。
+    H14 修复：用 Page.reload 代替 cdp.navigate(TAURI_HOME)，避免全页导航导致
+    zustand 重新 rehydrate 期间 AdminRoute 重定向。先设置 hash 再 reload，
+    确保 reload 后 SPA 直接进入目标路由。
     """
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
-    # 导航到 KB 页面
     cdp.evaluate("window.location.hash = '#/knowledge-bases'")
+    cdp.send("Page.reload")
+    wait_for_dom_ready(cdp, timeout=10)
     wait_for_element(cdp, "button, .ant-card, .ant-empty", timeout=8)
 
 

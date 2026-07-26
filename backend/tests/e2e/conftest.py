@@ -68,10 +68,22 @@ def base_url():
 def admin_token(base_url):
     """登录 admin 获取 token
 
-    admin 密码通过环境变量 E2E_ADMIN_PASSWORD 注入（CI secret），
-    默认值 "admin123" 仅用于本地开发环境。
+    admin 密码优先级：
+    1. E2E_ADMIN_PASSWORD 环境变量（CI secret 注入）
+    2. INITIAL_ADMIN_PASSWORD 环境变量（本地 .env 文件配置）
+    3. 默认值 "admin123"（仅用于未配置的本地开发环境）
+
+    H14 修复：原默认值 "admin123" 与 deploy/.env 中实际配置的
+    INITIAL_ADMIN_PASSWORD=AdminAcceptance2026!StrongPwd 不匹配，导致
+    admin_token fixture 触发 401 错误，所有依赖 admin_token 的 CDP 测试
+    因 fixture 初始化失败而 error。增加 INITIAL_ADMIN_PASSWORD 回退，
+    与 init_db.py 创建 admin 时使用的环境变量保持一致。
     """
-    admin_password = os.getenv("E2E_ADMIN_PASSWORD", "admin123")
+    admin_password = (
+        os.getenv("E2E_ADMIN_PASSWORD")
+        or os.getenv("INITIAL_ADMIN_PASSWORD")
+        or "admin123"
+    )
     r = requests.post(
         f"{base_url}/auth/login",
         json={

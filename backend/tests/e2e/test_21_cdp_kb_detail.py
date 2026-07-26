@@ -65,7 +65,11 @@ def _inject_auth_token(cdp, admin_token):
 
 @pytest.fixture(scope="module")
 def logged_in_cdp(admin_token):
-    """登录后的 CDP 客户端（注入 token 到 localStorage，避免 /auth/login 限流）"""
+    """登录后的 CDP 客户端（注入 token 到 localStorage，避免 /auth/login 限流）
+
+    H14 修复：token 注入后用 Page.reload 代替 cdp.navigate(TAURI_HOME)，
+    避免 zustand 重新 rehydrate 期间 AdminRoute 重定向到 #/login。
+    """
     client = CdpClient(cdp_port=CDP_PORT)
     try:
         client.connect(timeout=30)
@@ -74,8 +78,11 @@ def logged_in_cdp(admin_token):
     client.navigate(TAURI_HOME)
     wait_for_dom_ready(client, timeout=10)
     _inject_auth_token(client, admin_token)
-    client.navigate(TAURI_HOME)
-    wait_for_dom_ready(client, timeout=15)
+    client.send("Page.reload")
+    # 必要固定等待：reload 后 zustand persist rehydrate
+    time.sleep(3)
+    client.evaluate("window.location.hash = '#/dashboard'")
+    wait_for_url_change(client, "#/dashboard", timeout=15)
     yield client
     client.close()
 
@@ -129,9 +136,11 @@ def cdp_kb_doc(admin_token, base_url, cdp_test_kb):
 
 
 def _navigate_to_kb_detail(cdp, kb_id):
-    """导航到 KB 详情页并等待加载。"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """导航到 KB 详情页并等待加载。
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)，避免全页导航导致 zustand 重新
+    rehydrate 期间 AdminRoute 重定向。改为仅用 hash 导航。
+    """
     cdp.evaluate(f"window.location.hash = '#/knowledge-bases/{kb_id}'")
     wait_for_url_change(cdp, f"#/knowledge-bases/{kb_id}", timeout=15)
 

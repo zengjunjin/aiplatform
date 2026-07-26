@@ -56,7 +56,19 @@ def test_login_flow(cdp):
 
     /auth/login 限流 5/minute，完整 E2E 套件中可能触发 429。
     登录后检查 URL 是否离开 /login，若未离开则等待 60s 重试，最多 2 次。
+
+    H14 修复：使用 ID 选择器（#login_username / #login_password）代替
+    input[type='text']:first-of-type，更可靠地定位 Ant Design Form name="login"
+    生成的字段（Form.Item name="username" → id="login_username"）。
+    H14 修复：admin 密码通过 E2E_ADMIN_PASSWORD / INITIAL_ADMIN_PASSWORD 环境变量
+    注入，与 conftest.py 保持一致（原硬编码 "admin123" 与 deploy/.env 中的
+    INITIAL_ADMIN_PASSWORD 不匹配导致 401 登录失败）。
     """
+    admin_password = (
+        os.getenv("E2E_ADMIN_PASSWORD")
+        or os.getenv("INITIAL_ADMIN_PASSWORD")
+        or "admin123"
+    )
     cdp.navigate(TAURI_HOME)
     wait_for_dom_ready(cdp, timeout=10)
     for attempt in range(3):  # 最多 3 次（首次 + 2 次重试）
@@ -69,13 +81,13 @@ def test_login_flow(cdp):
         """)
         # 导航到登录页
         cdp.evaluate("window.location.hash = '#/login'")
-        # 等待登录表单出现
-        wait_for_element(cdp, "input[type='text'], input[id*='username']", timeout=15)
-        # 填写用户名（Ant Design Input 第一个通常是用户名）
-        cdp.fill_input("input[type='text']:first-of-type", "admin")
-        wait_for_element(cdp, "input[type='password']", timeout=5)
-        # 填写密码
-        cdp.fill_input("input[type='password']", "admin123")
+        # 等待登录表单出现（Ant Design Form name="login" 生成 id="login_username"）
+        wait_for_element(cdp, "#login_username, input[id*='username']", timeout=15)
+        # 填写用户名（Ant Design Form name="login" → id="login_username"）
+        cdp.fill_input("#login_username", "admin")
+        wait_for_element(cdp, "#login_password, input[type='password']", timeout=5)
+        # 填写密码（Ant Design Input.Password → id="login_password"）
+        cdp.fill_input("#login_password", admin_password)
         wait_for_element(cdp, "button[type='submit'], button.ant-btn-primary", timeout=5)
         # 点击登录按钮（Ant Design Button htmlType="submit" class="ant-btn-primary"）
         cdp.evaluate("""

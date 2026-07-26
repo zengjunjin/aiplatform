@@ -9,10 +9,21 @@ API:
 - PUT  /auth/password   -> 修改密码（需 confirm_password）
 """
 
+import os
+
 import jwt
 import requests
 
 from tests.e2e.conftest import extract_data
+
+
+def _admin_password() -> str:
+    """获取 admin 密码（H14: 与 conftest.py 保持一致的多级回退）"""
+    return (
+        os.getenv("E2E_ADMIN_PASSWORD")
+        or os.getenv("INITIAL_ADMIN_PASSWORD")
+        or "admin123"
+    )
 
 
 def test_login_admin_success(admin_token):
@@ -22,8 +33,12 @@ def test_login_admin_success(admin_token):
     assert "refresh_token" in data
     assert data["user"]["role"] == "admin"
     assert data["user"]["username"] == "admin"
-    # expires_in 应为 ACCESS_TOKEN_EXPIRE_MINUTES * 60（默认 30*60=1800）
-    assert data["expires_in"] == 1800
+    # expires_in 应为 ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    # H14 修复：支持环境配置覆盖（默认 30*60=1800，部署 .env 可能设为 60*60=3600）
+    expected_expires = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")) * 60
+    assert data["expires_in"] == expected_expires, (
+        f"Expected expires_in={expected_expires}, got {data['expires_in']}"
+    )
 
 
 def test_login_wrong_password(base_url):
@@ -66,7 +81,7 @@ def test_refresh_token_flow_and_single_use(base_url):
         f"{base_url}/auth/login",
         json={
             "username": "admin",
-            "password": "admin123",
+            "password": _admin_password(),
         },
         timeout=10,
     )
@@ -121,7 +136,7 @@ def test_logout_blacklists_token(base_url):
             f"{base_url}/auth/login",
             json={
                 "username": "admin",
-                "password": "admin123",
+                "password": _admin_password(),
             },
             timeout=10,
         )

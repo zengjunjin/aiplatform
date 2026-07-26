@@ -102,11 +102,14 @@ def delete_test_session(base_url, admin_headers, kb_with_doc):
 
 
 def _reset_sessions_page(cdp):
-    """重置会话列表页：重新加载并导航到 /#/chat（SessionsPage 路由）"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """重置会话列表页：重新加载并导航到 /#/chat（SessionsPage 路由）
+
+    H14 修复：用 Page.reload 代替 cdp.navigate(TAURI_HOME)，避免全页导航导致
+    zustand 重新 rehydrate 期间 AdminRoute 重定向。
+    """
     cdp.evaluate("window.location.hash = '#/chat'")
-    wait_for_url_change(cdp, "#/chat", timeout=10)
+    cdp.send("Page.reload")
+    wait_for_dom_ready(cdp, timeout=10)
     wait_for_element(cdp, ".ant-list, .ant-empty, .ant-btn", timeout=15)
 
 

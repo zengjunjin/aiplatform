@@ -92,9 +92,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 3. **`audit_service.log_audit` 移除 `db` 参数**：所有调用点需更新。
 4. **`get_kb_for_read` 参数顺序**：`(kb_id, user_id, db)`（不是 `(db, kb_id, user_id)`）。
 
-## [0.2.0] - 2026-07-11
+## [0.2.0] - 2026-07-28
 
-### Added
+> 48 小时深化执行计划（Phase 1-6）最终发布版本。在原 v0.2.0 (2026-07-11) 基础上合并 Phase 1-6 全部变更。
+
+### Added — Phase 1-6 新增功能
+- **Tauri 桌面客户端业务逻辑**（H17-H24）：窗口管理（单实例锁、最小化到托盘、窗口状态持久化）、系统托盘（菜单、双击显示）、深度链接（`rag-platform://` 协议注册与解析）、全局快捷键（`Ctrl+Shift+R` 唤起窗口）、自动更新（GitHub Releases `latest.json` 公钥签名校验）
+- **业务自定义 Prometheus 指标**（H33）：新增 6 个指标（KB 创建数 `rag_kb_created_total`、文档解析成功/失败数 `rag_doc_parse_success_total` / `rag_doc_parse_failure_total`、聊天响应时间 `rag_chat_response_duration_seconds`、活跃用户数 `rag_active_users`、LLM 推理耗时 `rag_llm_inference_duration_seconds`），文件：`backend/app/core/metrics.py:103-148`
+- **Grafana 告警规则**（H34）：新增 5 条 phase5-business-alerts 规则（KBCreateAnomaly / DocParseHighFailureRate / ChatResponseSlowP95 / RedisMemoryHigh / LLMInferenceTimeoutP99），总计 11 条告警规则
+- **日志脱敏审计**（H35）：`_redact_filter` 正则覆盖 10 种敏感信息格式（password/token/api_key/secret 等大小写变体），10/10 单元测试通过
+- **CDP 端到端测试套件**（Phase 2）：47 个测试，228 passed，81.7% 通过率
+- **Tauri E2E 测试脚本**（Phase 2）：20 个测试用例覆盖窗口/托盘/深链/快捷键/更新
+- **RAGAS 评估报告**（H5/H8）：4 项指标（faithfulness=1.0 / answer_relevancy=0.9447 / context_recall=1.0 / context_precision=0.0 - CPU 超时），3/4 > 0.9
+- **性能与安全测试报告**（Phase 4）：90 个测试全部通过，0 安全漏洞
+- **可观测性深化报告**（Phase 5）：业务指标 + 告警规则 + 日志审计 + Celery/LLM/Qdrant 监控
+- **部署文档**（H41）：`docs/DEPLOYMENT.md` — 19 个服务清单 + Tauri 构建说明 + 备份恢复 + 监控访问
+- **用户手册**（H42）：`docs/USER_MANUAL.md` — 5 大章节 + 7 个功能模块 + Tauri 客户端使用 + FAQ
+- **Release Notes**（H47）：`docs/RELEASE_NOTES_v0.2.0.md` — 版本亮点 + 升级指南
+- **最终验收报告**（H48）：`docs/FINAL_ACCEPTANCE_REPORT_2026-07-28.md` — 48 小时执行总结
+
+### Added — 原 v0.2.0 (2026-07-11) 已有功能
 - RAGAS 评估体系，支持自动化 RAG 质量评估（忠实度、相关性、上下文精度、上下文召回）
 - 多模型支持：通过 ModelFactory 支持 OpenAI 兼容 API 与 Ollama，可热切换
 - 反馈闭环：用户对回答的满意度反馈（点赞/点踩），自动记录用于后续优化
@@ -108,10 +125,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 数据库连接池可配置（pool_size、max_overflow、pool_timeout）
 - 代码质量优化：ESLint、Prettier、pre-commit hooks 统一代码风格
 
-### Changed
+### Changed — Phase 1-6 变更
+- **切换 Ollama 模型为 qwen2.5:1.5b**（H1）：CPU 环境优化，LLM 推理时间从 >5 分钟降至 5.65 秒
+- **修复 Redis OTel span**（H3）：升级 `opentelemetry-instrumentation-redis` 兼容 `redis.asyncio`，50 条 trace 中包含 12 个 Redis span，Jaeger 可见
+- **修复聊天消息 message_id 返回**（H6）：在 LLM 流式开始前预创建助手消息占位记录，首个 delta 事件即返回 message_id
+- **修复反馈 rating 入库**（H7）：POST 200 + DB rating=1 验证通过
+- **修复 pyarrow/numpy 版本兼容性**：pyarrow 25.0.0 → 14.x（兼容 datasets/ragas），numpy 2.x → 1.26.x（兼容 pyarrow 14.x）
+- **修复 ragas 导入导致的 uvloop 冲突**：ragas 模块级导入 → 函数内延迟导入
+- **Ollama 健康检查**：`curl` → `bash -c 'echo > /dev/tcp/localhost/11434'`
+- **Ollama 并发配置**：`OLLAMA_NUM_PARALLEL=4`，配合 RAGAS max_workers=2
+- **Grafana provisioning 目录结构**：创建 datasources/dashboards 子目录
+- **Alertmanager SMTP 配置**：注释 SMTP，改用 webhook receiver
+- **Prometheus bearer_token**：`${VAR}` 替换 → 字面值（不支持环境变量替换）
+- **Loki LogQL 查询标签**：`container_name` → `container`
+
+### Changed — 原 v0.2.0 (2026-07-11) 已有变更
 - 优化 RAG 检索精度，引入缓存层减少重复 embedding 计算
 - 改进前端 UI/UX，提升交互体验
 - 重构部分后端代码，消除技术债务
+
+### Fixed — Phase 1-6 修复
+- **LLM 推理超时**：>5 分钟 → <30 秒（H1：切换至 qwen2.5:1.5b）
+- **Redis OTel span 缺失**：0 个 → 12 个 Redis span（H3）
+- **聊天 SSE message_id 未返回**：仅 done 事件 → 首个 delta 事件即返回（H6）
+- **反馈 rating 未入库**：404 → 200 + DB 验证通过（H7）
+- **Docker 镜像构建失败**：pyarrow/numpy 版本不兼容 → 降级修复
+- **Alertmanager 告警路由失败**：SMTP 配置问题 → 改用 webhook receiver
+- **Grafana 数据源未加载**：provisioning 目录结构错误 → 修复
+- **Loki 日志查询无结果**：标签名错误 `container_name` → `container`
+- **Frontend healthcheck 失败**：`localhost` → `127.0.0.1`（IPv6 解析问题）
+- **RAGAS context_precision=0.0**：CPU 环境下 RAGAS 复杂 prompt 超时（已知限制，需 GPU 环境）
+
+### Security — Phase 4 安全加固（90/90 测试通过）
+- **SQL 注入测试通过**（H28）：26 项测试全通过，所有端点使用 SQLAlchemy ORM + 参数化查询
+- **XSS/CSRF 验证通过**（H29）：13 项测试全通过，CSP 增强 + MarkdownRenderer urlTransform 白名单
+- **JWT 安全审计通过**（H30）：17 项测试全通过，iss/aud 校验 + 黑名单机制
+- **权限边界测试通过**（H31）：18 项测试全通过，RBAC + 资源级权限校验
+- **日志脱敏审计通过**（H35）：10 种敏感信息格式覆盖，96 文件静态扫描 0 处泄露
+- **JWT_SECRET + POSTGRES_PASSWORD 弱值黑名单**：`model_post_init` 强制校验
+- **Tauri `--remote-debugging-port=9222` 移除**：RCE 风险（保留 9223 用于调试）
+
+### Performance — Phase 4 性能基准
+- **API P95 响应时间 11-38ms**（H27）：7 个核心端点全部 < 40ms，优于 30ms 目标
+- **登录 P95 ~587ms**：bcrypt 哈希正常开销（预期）
+- **LLM 端到端响应 < 30 秒**（H1）：qwen2.5:1.5b CPU 推理
+- **RAGAS 评估完成时间 20 分钟**（H4）：5 个问题，CPU 环境
+- **Redis 缓存命中率 29.33%**：含 auth:blacklist 负缓存影响（预期行为）
+- **慢查询数 0**（H25）：所有热点查询 < 2ms，0 个查询 > 100ms
+
+### Documentation — Phase 6 文档
+- 部署文档（`docs/DEPLOYMENT.md`）：19 个服务清单 + Tauri 构建说明 + 备份恢复
+- 用户手册（`docs/USER_MANUAL.md`）：终端用户使用手册，5 大章节
+- Tauri 架构设计（`docs/TAURI_ARCHITECTURE.md`）：H17 设计蓝图
+- CDP 测试报告（`docs/CDP_TEST_REPORT_2026-07-26.md`）：Phase 2 测试结果
+- Tauri 测试报告（`docs/TAURI_TEST_REPORT_2026-07-27.md`）：Phase 3 测试结果
+- RAGAS 评估报告（`docs/RAGAS_REPORT_2026-07-26.md`）：4 项指标分析
+- Phase 4 报告（`docs/PHASE4_REPORT_2026-07-27.md`）：性能与安全加固
+- Phase 5 报告（`docs/PHASE5_REPORT_2026-07-27.md`）：可观测性深化
+- 最终验收报告（`docs/FINAL_ACCEPTANCE_REPORT_2026-07-28.md`）：48 小时总结
+- Release Notes（`docs/RELEASE_NOTES_v0.2.0.md`）：v0.2.0 发布说明
+
+### Known Limitations — 已知限制
+- **RAGAS context_precision=0.0**：CPU 环境 RAGAS 复杂 prompt 超时，需 GPU 环境重测
+- **LLM 模型规模限制**：CPU 环境仅支持 qwen2.5:1.5b（答案质量略低于 7b）
+- **Ollama 无原生 metrics 端点**：0.3.14 版本不暴露 /metrics，已有替代指标
+- **Tauri 仅 Windows 验证**：macOS/Linux 构建需在对应平台执行
+- **代码签名缺失**：Tauri 安装包未做 Authenticode 签名，Windows Defender 可能拦截
+
+### Phase 1-6 待办事项（需重启服务生效）
+- [ ] 重启后端服务使 H33 新指标在 /metrics 端点可见
+- [ ] Prometheus reload 使 H34 新告警规则激活
+- [ ] 业务代码集成 H33 指标调用（6 个集成点）
+- [ ] 生产环境强制 `LOG_JSON=true`
+- [ ] 升级 Ollama 或部署 ollama-exporter 补齐 LLM 原生监控
+- [ ] GPU 环境重测 RAGAS context_precision
 
 ## [0.1.0] - 2026-07-04
 

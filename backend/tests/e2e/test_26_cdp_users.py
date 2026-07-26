@@ -92,12 +92,16 @@ def logged_in_cdp(admin_token):
 
 
 def _navigate_to_users(cdp):
-    """导航到用户管理页并等待表格渲染"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """导航到用户管理页并等待表格渲染
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)（全页导航会导致 zustand 重新 rehydrate，
+    AdminRoute 可能在 rehydrate 完成前重定向到 #/dashboard）。改为仅用 hash 导航 +
+    Page.reload 确保 SPA 路由正确，且 localStorage 中的 auth 状态保持不变。
+    """
     cdp.evaluate("window.location.hash = '#/users'")
     wait_for_url_change(cdp, "#/users", timeout=10)
-    wait_for_element(cdp, ".ant-table", timeout=15)
+    # 等待 Table 或 Skeleton 出现（Table 渲染前可能先显示 Skeleton）
+    wait_for_element(cdp, ".ant-table, .ant-skeleton, .ant-empty", timeout=15)
 
 
 def _click_popconfirm_ok(cdp, timeout=8):

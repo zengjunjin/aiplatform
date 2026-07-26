@@ -98,6 +98,18 @@ def test_documents_page_loads(logged_in_cdp):
     url = cdp.evaluate("window.location.href")
     assert "documents" in url.lower(), f"Not on documents page: {url}"
     # 验证文档表格或空状态渲染
+    # H14 修复：DocumentsPage 渲染逻辑为 loading ? Skeleton : (docs.length===0 ? Empty : Table)。
+    # 初始 loading=false + documents=[] 会短暂渲染 .ant-empty，随后 useEffect 触发
+    # loading=true 切换到 .ant-skeleton，最后 API 响应后 loading=false 渲染最终状态。
+    # 必须等待 .ant-skeleton 消失且 .ant-table 或 .ant-empty 稳定存在。
+    wait_for(
+        lambda: cdp.evaluate(
+            "(!document.querySelector('.ant-skeleton') && "
+            "(!!document.querySelector('.ant-table') || !!document.querySelector('.ant-empty')))"
+        ),
+        timeout=15,
+        message="Neither table nor empty state found (loading state may still be active)",
+    )
     has_table = cdp.evaluate("!!document.querySelector('.ant-table')")
     has_empty = cdp.evaluate("!!document.querySelector('.ant-empty')")
     assert has_table or has_empty, "Neither table nor empty state found"

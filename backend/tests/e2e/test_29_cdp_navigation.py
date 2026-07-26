@@ -62,6 +62,8 @@ def logged_in_cdp(admin_token):
 
     必须用 Page.reload 触发整页重载，否则 zustand persist 不会重新 rehydrate，
     内存 store 仍是旧状态（修复 auth.ts onRehydrateStorage 后必须 reload）。
+
+    H14 修复：reload 后显式设置 hash 到 #/dashboard，确保 SPA 路由进入已认证页面。
     """
     client = CdpClient(cdp_port=CDP_PORT)
     try:
@@ -74,14 +76,19 @@ def logged_in_cdp(admin_token):
     client.send("Page.reload")
     # 必要固定等待：reload 后 zustand persist rehydrate
     time.sleep(3)
+    # H14: reload 后显式导航到 #/dashboard，确保进入已认证页面
+    client.evaluate("window.location.hash = '#/dashboard'")
+    wait_for_url_change(client, "#/dashboard", timeout=15)
     yield client
     client.close()
 
 
 def _navigate_home(cdp):
-    """导航到首页并等待侧边栏渲染"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """导航到首页并等待侧边栏渲染
+
+    H14 修复：不调用 cdp.navigate(TAURI_HOME)（全页导航会导致 zustand 重新 rehydrate，
+    AdminRoute 可能在 rehydrate 完成前重定向）。改为仅用 hash 导航。
+    """
     cdp.evaluate("window.location.hash = '#/dashboard'")
     wait_for_url_change(cdp, "#/dashboard", timeout=15)
 
@@ -257,6 +264,9 @@ def test_theme_toggle(logged_in_cdp):
 
     App.tsx 将 themeMode 同步到 document.documentElement data-theme 属性。
     themeMode 持久化于 localStorage 'rag-auth' key 的 state.themeMode 字段。
+
+    H14 修复：用 Page.reload 代替 cdp.navigate(TAURI_HOME)，避免全页导航导致
+    zustand 重新 rehydrate 期间 SPA 被重定向到 #/login，toggle 按钮找不到。
     """
     cdp = logged_in_cdp
     _navigate_home(cdp)
@@ -282,16 +292,21 @@ def test_theme_toggle(logged_in_cdp):
     assert (
         theme_after != theme_before
     ), f"Theme did not change after toggle: before={theme_before}, after={theme_after}"
-    # 刷新页面验证持久化
-    cdp.navigate(TAURI_HOME)
+    # 刷新页面验证持久化（H14: 用 Page.reload 保留当前 URL 和 hash）
+    cdp.send("Page.reload")
     # 必要固定等待：reload 后 zustand persist rehydrate 读取 themeMode
     time.sleep(3)
+    # reload 后重新设置 hash（reload 可能丢失 hash）
+    cdp.evaluate("window.location.hash = '#/dashboard'")
+    wait_for_url_change(cdp, "#/dashboard", timeout=10)
     theme_persisted = cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light"
     assert (
         theme_persisted == theme_after
     ), f"Theme not persisted after reload: expected={theme_after}, got={theme_persisted}"
     # 恢复为 light 主题（避免影响后续测试）
     if theme_persisted != "light":
+        # 等待 toggle 按钮渲染（reload 后 HeaderActions 可能需要时间渲染）
+        wait_for_element(cdp, "button[aria-label='切换主题']", timeout=10)
         cdp.evaluate("""
             (function() {
                 const btn = Array.from(document.querySelectorAll('button[aria-label]'))
@@ -302,7 +317,7 @@ def test_theme_toggle(logged_in_cdp):
         wait_for(
             lambda: (cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light")
             == "light",
-            timeout=5,
+            timeout=10,
             message="Theme did not restore to light",
         )
 

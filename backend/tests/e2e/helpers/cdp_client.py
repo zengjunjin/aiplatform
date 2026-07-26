@@ -7,6 +7,7 @@
 import base64
 import contextlib
 import json
+import os
 import time
 
 import requests
@@ -14,17 +15,31 @@ import websocket  # websocket-client
 
 
 class CdpClient:
-    def __init__(self, cdp_port: int = 9223, host: str = "localhost"):
-        self.cdp_port = cdp_port
-        self.host = host
+    def __init__(self, cdp_port: int = None, host: str = None):
+        self.cdp_port = cdp_port if cdp_port is not None else int(os.getenv("CDP_PORT", "9223"))
+        self.host = host if host is not None else os.getenv("CDP_HOST", "localhost")
         self.ws: websocket.WebSocket | None = None
         self.msg_id = 0
         self.target_id: str | None = None
 
     def connect(self, timeout: int = 10) -> None:
-        """连接到 Tauri WebView2"""
+        """连接到 Tauri WebView2
+
+        H14 修复：CDP 服务器（Edge WebView2）要求 Host 头为 "localhost" 或 IP 地址，
+        当容器通过 host.docker.internal 访问宿主 CDP 时，Host 头会被设为
+        host.docker.internal，导致 500 Internal Server Error。此处显式发送
+        Host: localhost 头绕过该限制。同时 webSocketDebuggerUrl 中的 host
+        也需要替换为实际连接 host，否则容器内无法访问 ws://localhost/...
+        """
         # 1. 获取调试目标列表
-        r = requests.get(f"http://{self.host}:{self.cdp_port}/json", timeout=timeout)
+        # 当 host 不是 localhost 时（如容器内 host.docker.internal），
+        # 必须显式设置 Host: localhost 头，否则 CDP 返回 500。
+        headers = {"Host": "localhost"} if self.host not in ("localhost", "127.0.0.1") else None
+        r = requests.get(
+            f"http://{self.host}:{self.cdp_port}/json",
+            timeout=timeout,
+            headers=headers,
+        )
         r.raise_for_status()
         targets = r.json()
         page_target = next((t for t in targets if t.get("type") == "page"), None)
@@ -32,11 +47,23 @@ class CdpClient:
             raise RuntimeError(f"No page target found in CDP: {targets}")
         self.target_id = page_target["id"]
         ws_url = page_target["webSocketDebuggerUrl"]
+        # ws_url 通常为 ws://localhost/devtools/page/{id}（无端口），
+        # 容器内需替换为 ws://{host}:{port}/devtools/page/{id}，
+        # 否则连接会命中 nginx 的 80 端口而非 CDP 服务器。
+        if self.host not in ("localhost", "127.0.0.1"):
+            ws_url = ws_url.replace("ws://localhost", f"ws://{self.host}:{self.cdp_port}").replace(
+                "ws://127.0.0.1", f"ws://{self.host}:{self.cdp_port}"
+            )
 
         # 2. 建立 WebSocket 连接
         # suppress_origin=True: 不发送 Origin 头，避免 Edge/Chromium 的
         # --remote-allow-origins 检查导致 403 Forbidden（新版 WebView2 安全限制）
-        self.ws = websocket.create_connection(ws_url, timeout=timeout, suppress_origin=True)
+        # 当 host 不是 localhost 时（容器内 host.docker.internal），
+        # 需设置 host="localhost" 头绕过 CDP 的 Host 头检查（500 错误）。
+        ws_kwargs = {"timeout": timeout, "suppress_origin": True}
+        if self.host not in ("localhost", "127.0.0.1"):
+            ws_kwargs["host"] = "localhost"
+        self.ws = websocket.create_connection(ws_url, **ws_kwargs)
         # 3. 启用必要的域
         self.send("Page.enable")
         self.send("Runtime.enable")

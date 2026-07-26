@@ -83,11 +83,14 @@ def eval_run(base_url, admin_headers, kb_with_doc):
 
 
 def _reset_evaluation_page(cdp):
-    """重置评测页：重新加载并导航到 /#/evaluation"""
-    cdp.navigate(TAURI_HOME)
-    wait_for_dom_ready(cdp, timeout=10)
+    """重置评测页：重新加载并导航到 /#/evaluation
+
+    H14 修复：用 Page.reload 代替 cdp.navigate(TAURI_HOME)，避免全页导航导致
+    zustand 重新 rehydrate 期间 AdminRoute 重定向。
+    """
     cdp.evaluate("window.location.hash = '#/evaluation'")
-    wait_for_url_change(cdp, "#/evaluation", timeout=10)
+    cdp.send("Page.reload")
+    wait_for_dom_ready(cdp, timeout=10)
     wait_for_element(cdp, ".ant-card, .ant-table, .ant-empty", timeout=15)
 
 

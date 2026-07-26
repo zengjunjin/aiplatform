@@ -35,9 +35,15 @@ def logged_in_cdp(base_url):
 
     使用独立 admin 登录而非共享 admin_token fixture，避免其他 CDP 测试
     中 refresh token 轮换或 logout 黑名单导致本 fixture 的 token 失效。
-    admin 密码通过环境变量 E2E_ADMIN_PASSWORD 注入（与 conftest 一致）。
+    admin 密码优先级：E2E_ADMIN_PASSWORD（CI secret）> INITIAL_ADMIN_PASSWORD
+    （本地 .env 配置）> "admin123"（默认值）。
+    H14 修复：增加 INITIAL_ADMIN_PASSWORD 回退，与 conftest.py 保持一致。
     """
-    admin_password = os.getenv("E2E_ADMIN_PASSWORD", "admin123")
+    admin_password = (
+        os.getenv("E2E_ADMIN_PASSWORD")
+        or os.getenv("INITIAL_ADMIN_PASSWORD")
+        or "admin123"
+    )
     r = requests.post(
         f"{base_url}/auth/login",
         json={
@@ -232,8 +238,12 @@ def test_system_component_tags(logged_in_cdp):
     SystemPage 每个组件 Card 的 Statistic valueRender 渲染 Tag，
     color={healthy ? 'green' : 'red'}, 文本为"健康"或"故障"
     （i18n: system.status.healthy / system.status.unhealthy）。
+
+    H14 修复：显式导航到 /#/system，避免依赖前一个测试的页面状态。
     """
     cdp = logged_in_cdp
+    cdp.evaluate("window.location.hash = '#/system'")
+    time.sleep(2)
     wait_for_element(cdp, ".ant-tag", timeout=20)
     tags = (
         cdp.evaluate("""
@@ -256,8 +266,12 @@ def test_system_refresh(logged_in_cdp):
 
     SystemPage Title 内含"刷新"按钮（i18n: evaluation.refresh = "刷新"），
     onClick 调用 fetchStatus() 重新拉取组件状态。
+
+    H14 修复：显式导航到 /#/system，避免依赖前一个测试的页面状态。
     """
     cdp = logged_in_cdp
+    cdp.evaluate("window.location.hash = '#/system'")
+    time.sleep(2)
     wait_for_element(cdp, ".ant-card", timeout=20)
     # 点击刷新按钮
     clicked = cdp.evaluate("""
