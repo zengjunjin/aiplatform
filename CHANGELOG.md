@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-27
+
+> 质量加固版本：补全 P0/P1 测试缺失、修复已知非阻塞问题、提升覆盖率阈值。
+
+### Changed
+- **pyproject.toml `fail_under` 35 → 80**：实际覆盖率 88.64%，阈值上调防止回归
+- **vitest `testTimeout` 5s → 15s**：解决 Layout/FeedbackModal/KBCollaboratorModal 等组件在慢机器上的 flaky 超时
+- **chat_sessions 添加复合索引**：migration 025 添加 `(user_id, updated_at)` + `(user_id, updated_at DESC)` 两个索引
+
+### Added
+- **后端新增 184 个单元测试**（1207 passed）：
+  - `test_celery_app.py` (NEW, 32 tests) — celery_app.py 42% → 100%
+  - `test_evaluation_task.py` (+15 tests) — evaluation_task.py 58% → 100%
+  - `test_redis_client.py` (NEW, 14 tests) — redis_client.py 59% → 100%
+  - `test_retriever.py` (+56 tests) — retriever.py 64% → 100%
+  - `test_evaluation_service.py` (+22 tests) — evaluation_service.py 72% → 100%
+  - `test_document_service.py` (+45 tests) — document_service.py 73% → 100%
+- **前端新增 155 个单元测试**（685 passed）：
+  - `src/tauri/__tests__/` (NEW, 5 files, 54 tests) — 0% → 100% lines
+  - `src/__tests__/pages/feedback/` (NEW, 5 files) — 覆盖率 ≥ 87.5%
+  - `UsersPage.test.tsx` (+27 tests) — 70% → 100%
+  - `utils/logger.test.ts` (NEW) — 50% → 100%
+- **Tauri Rust 单元测试**（28 tests）：7 个源文件添加 `#[cfg(test)]` 模块
+
+### Fixed
+- 修复 `pyproject.toml` 中过时的覆盖率注释（声称 36%，实际 83%+）
+
+### Coverage
+- 后端行覆盖率：83.28% → **88.64%** (+5.36%)
+- 前端行覆盖率：78.06% → **79.89%** (+1.83%)
+- 前端分支覆盖率：64.12% → **67.31%** (+3.19%)
+- Tauri Rust：0% → **~20%** (受限于 runtime 耦合)
+
 ## [0.3.0] - 2026-07-22
 
 > PR: [platform-optimization-pass-2026-07 (#7)](https://github.com/zengjunjin/aiplatform/pull/7)

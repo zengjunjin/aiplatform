@@ -9,6 +9,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.db.document_chunk import DocumentChunk
+from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
 from app.services import evaluation_service
 
@@ -348,3 +349,421 @@ class TestGetRagAnswer:
         assert captured_top_k == [settings.RETRIEVAL_TOP_K]
         # 确保不是旧的硬编码值 5（除非 settings 恰好配置为 5）
         assert settings.RETRIEVAL_TOP_K == 10  # 默认值
+
+
+# ---------- _generate_ground_truth ----------
+
+
+class TestGenerateGroundTruth:
+    @pytest.mark.asyncio
+    async def test_normal_path_returns_stripped_response(self):
+        fake_llm = AsyncMock()
+        fake_llm.chat = AsyncMock(return_value="  参考答案  ")
+
+        result = await evaluation_service._generate_ground_truth(
+            fake_llm, "什么是 RAG？", "KB 描述"
+        )
+
+        assert result == "参考答案"
+        fake_llm.chat.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_response_raises_runtime_error(self):
+        fake_llm = AsyncMock()
+        fake_llm.chat = AsyncMock(return_value="   ")
+
+        with pytest.raises(RuntimeError, match="empty ground_truth"):
+            await evaluation_service._generate_ground_truth(
+                fake_llm, "什么是 RAG？", "KB 描述"
+            )
+
+    @pytest.mark.asyncio
+    async def test_none_response_raises_runtime_error(self):
+        fake_llm = AsyncMock()
+        fake_llm.chat = AsyncMock(return_value=None)
+
+        with pytest.raises(RuntimeError, match="empty ground_truth"):
+            await evaluation_service._generate_ground_truth(
+                fake_llm, "什么是 RAG？", "KB 描述"
+            )
+
+
+# ---------- trigger_evaluation ----------
+
+
+def _make_eval_db(run_id: int = 42, refresh_id: int | None = None):
+    """构造一个用于 evaluation_service 的 mock AsyncSession。
+
+    - db.add: 同步 mock（用于 EvaluationRun 创建）
+    - db.commit / db.refresh: AsyncMock，refresh 将 run.id 设置为指定值
+    """
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+
+    expected_id = refresh_id if refresh_id is not None else run_id
+
+    async def fake_refresh(obj, *args, **kwargs):
+        obj.id = expected_id
+
+    db.refresh = AsyncMock(side_effect=fake_refresh)
+    return db
+
+
+class TestTriggerEvaluation:
+    @pytest.mark.asyncio
+    async def test_normal_path_dispatches_celery_task(self):
+        db = _make_eval_db(run_id=42)
+        fake_task = MagicMock()
+        fake_task.id = "task-uuid"
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch("app.rag.prompt_builder.get_prompt_version", return_value="v1.0"),
+            patch(
+                "app.tasks.evaluation_task.run_evaluation_task.delay",
+                return_value=fake_task,
+            ) as mock_delay,
+        ):
+            run, task = await evaluation_service.trigger_evaluation(
+                kb_id=1, num_questions=10, user_id=1, db=db, trigger_source="manual"
+            )
+
+        assert run.id == 42
+        assert run.status == EvaluationStatus.PENDING
+        assert run.trigger_source == "manual"
+        assert run.prompt_version == "v1.0"
+        assert run.total_questions == 10
+        assert run.created_by == 1
+        assert task.id == "task-uuid"
+        db.add.assert_called_once()
+        db.commit.assert_awaited()
+        db.refresh.assert_awaited()
+        mock_delay.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    async def test_default_trigger_source_is_manual(self):
+        db = _make_eval_db(run_id=42)
+        fake_task = MagicMock()
+        fake_task.id = "task-uuid"
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch("app.rag.prompt_builder.get_prompt_version", return_value="v1.0"),
+            patch("app.tasks.evaluation_task.run_evaluation_task.delay", return_value=fake_task),
+        ):
+            run, _ = await evaluation_service.trigger_evaluation(
+                kb_id=1, num_questions=10, user_id=1, db=db
+            )
+
+        assert run.trigger_source == "manual"
+
+    @pytest.mark.asyncio
+    async def test_scheduled_trigger_source_propagates(self):
+        db = _make_eval_db(run_id=42)
+        fake_task = MagicMock()
+        fake_task.id = "task-uuid"
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch("app.rag.prompt_builder.get_prompt_version", return_value="v1.0"),
+            patch("app.tasks.evaluation_task.run_evaluation_task.delay", return_value=fake_task),
+        ):
+            run, _ = await evaluation_service.trigger_evaluation(
+                kb_id=1, num_questions=10, user_id=1, db=db, trigger_source="scheduled"
+            )
+
+        assert run.trigger_source == "scheduled"
+
+    @pytest.mark.asyncio
+    async def test_prompt_version_fallback_on_exception(self):
+        """get_prompt_version 抛异常时回退到 None，run 仍创建成功。"""
+        db = _make_eval_db(run_id=42)
+        fake_task = MagicMock()
+        fake_task.id = "task-uuid"
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch(
+                "app.rag.prompt_builder.get_prompt_version",
+                side_effect=RuntimeError("no version"),
+            ),
+            patch("app.tasks.evaluation_task.run_evaluation_task.delay", return_value=fake_task),
+        ):
+            run, _ = await evaluation_service.trigger_evaluation(
+                kb_id=1, num_questions=10, user_id=1, db=db
+            )
+
+        assert run.prompt_version is None
+
+    @pytest.mark.asyncio
+    async def test_celery_dispatch_failure_marks_run_failed_and_reraises(self):
+        """Celery 派发失败：run 标记为 FAILED，commit 成功后重新抛出原异常。"""
+        db = _make_eval_db(run_id=42)
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch("app.rag.prompt_builder.get_prompt_version", return_value="v1.0"),
+            patch(
+                "app.tasks.evaluation_task.run_evaluation_task.delay",
+                side_effect=RuntimeError("celery down"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="celery down"):
+                await evaluation_service.trigger_evaluation(
+                    kb_id=1, num_questions=10, user_id=1, db=db
+                )
+
+        # 验证 commit 被调用至少 2 次：1) 创建 run 2) 标记 FAILED
+        assert db.commit.await_count >= 2
+        db.rollback.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_celery_dispatch_failure_with_commit_error_triggers_rollback(self):
+        """Celery 派发失败且 commit 也失败时执行 rollback，仍重新抛出原异常。"""
+        db = _make_eval_db(run_id=42)
+        # 第一次 commit（创建 run）成功；第二次 commit（标记 FAILED）失败
+        db.commit = AsyncMock(side_effect=[None, RuntimeError("commit failed")])
+
+        with (
+            patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
+            patch("app.rag.prompt_builder.get_prompt_version", return_value="v1.0"),
+            patch(
+                "app.tasks.evaluation_task.run_evaluation_task.delay",
+                side_effect=RuntimeError("celery down"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="celery down"):
+                await evaluation_service.trigger_evaluation(
+                    kb_id=1, num_questions=10, user_id=1, db=db
+                )
+
+        db.rollback.assert_awaited()
+
+
+# ---------- list_evaluation_runs ----------
+
+
+def _make_runs_db(runs: list, total: int):
+    """构造用于 list_evaluation_runs 的 mock AsyncSession。
+
+    list_evaluation_runs 调用 db.execute 两次：
+    1. count_query -> scalar_one() 返回 total
+    2. query -> scalars().all() 返回 runs
+    """
+    db = AsyncMock()
+    count_result = MagicMock()
+    count_result.scalar_one.return_value = total
+    runs_result = MagicMock()
+    runs_result.scalars.return_value.all.return_value = runs
+    db.execute = AsyncMock(side_effect=[count_result, runs_result])
+    return db
+
+
+class TestListEvaluationRuns:
+    @pytest.mark.asyncio
+    async def test_list_without_kb_filter(self):
+        runs = [MagicMock(id=1), MagicMock(id=2)]
+        db = _make_runs_db(runs, total=2)
+
+        result_runs, total = await evaluation_service.list_evaluation_runs(db)
+
+        assert result_runs == runs
+        assert total == 2
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_list_with_kb_filter(self):
+        runs = [MagicMock(id=1)]
+        db = _make_runs_db(runs, total=1)
+
+        result_runs, total = await evaluation_service.list_evaluation_runs(
+            db, kb_id=5, page=1, page_size=20
+        )
+
+        assert result_runs == runs
+        assert total == 1
+
+    @pytest.mark.asyncio
+    async def test_list_with_pagination(self):
+        runs = [MagicMock(id=21)]
+        db = _make_runs_db(runs, total=100)
+
+        result_runs, total = await evaluation_service.list_evaluation_runs(
+            db, page=2, page_size=20
+        )
+
+        assert result_runs == runs
+        assert total == 100
+
+    @pytest.mark.asyncio
+    async def test_list_empty_result(self):
+        db = _make_runs_db(runs=[], total=0)
+
+        result_runs, total = await evaluation_service.list_evaluation_runs(db)
+
+        assert result_runs == []
+        assert total == 0
+
+
+# ---------- get_evaluation_run ----------
+
+
+class TestGetEvaluationRun:
+    @pytest.mark.asyncio
+    async def test_run_found(self):
+        run = MagicMock(id=42)
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = run
+        db.execute = AsyncMock(return_value=result)
+
+        got = await evaluation_service.get_evaluation_run(run_id=42, user_id=1, db=db)
+
+        assert got is run
+
+    @pytest.mark.asyncio
+    async def test_run_not_found_raises(self):
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        with pytest.raises(NotFoundError):
+            await evaluation_service.get_evaluation_run(run_id=999, user_id=1, db=db)
+
+
+# ---------- delete_evaluation_run ----------
+
+
+class TestDeleteEvaluationRun:
+    @pytest.mark.asyncio
+    async def test_run_not_found_raises(self):
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        with pytest.raises(NotFoundError):
+            await evaluation_service.delete_evaluation_run(run_id=999, user_id=1, db=db)
+
+    @pytest.mark.asyncio
+    async def test_normal_delete_removes_results_and_run(self):
+        run = MagicMock()
+        run.id = 42
+        run.knowledge_base_id = 7
+
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = run
+        db.execute = AsyncMock(return_value=run_result)
+        db.delete = AsyncMock()
+        db.commit = AsyncMock()
+
+        with patch(
+            "app.services.kb_service.get_kb_for_admin", new=AsyncMock()
+        ) as mock_admin:
+            await evaluation_service.delete_evaluation_run(run_id=42, user_id=1, db=db)
+
+        # kb admin 权限校验
+        mock_admin.assert_awaited_once_with(7, 1, db)
+        # 显式删除关联 EvaluationResult + 删除 run
+        assert db.execute.await_count == 2  # 查 run + delete EvaluationResult
+        db.delete.assert_awaited_once_with(run)
+        db.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_kb_admin_permission_failure_propagates(self):
+        run = MagicMock()
+        run.id = 42
+        run.knowledge_base_id = 7
+
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = run
+        db.execute = AsyncMock(return_value=run_result)
+
+        with patch(
+            "app.services.kb_service.get_kb_for_admin",
+            new=AsyncMock(side_effect=PermissionError("forbidden")),
+        ):
+            with pytest.raises(PermissionError):
+                await evaluation_service.delete_evaluation_run(run_id=42, user_id=1, db=db)
+
+
+# ---------- get_evaluation_results ----------
+
+
+class TestGetEvaluationResults:
+    @pytest.mark.asyncio
+    async def test_run_not_found_raises(self):
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=run_result)
+
+        with pytest.raises(NotFoundError):
+            await evaluation_service.get_evaluation_results(run_id=999, user_id=1, db=db)
+
+    @pytest.mark.asyncio
+    async def test_normal_returns_results_with_total(self):
+        run = MagicMock(id=42)
+        results_list = [MagicMock(id=1), MagicMock(id=2)]
+
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = run
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 2
+        page_result = MagicMock()
+        page_result.scalars.return_value.all.return_value = results_list
+        db.execute = AsyncMock(side_effect=[run_result, count_result, page_result])
+
+        results, total = await evaluation_service.get_evaluation_results(
+            run_id=42, user_id=1, db=db
+        )
+
+        assert results == results_list
+        assert total == 2
+
+    @pytest.mark.asyncio
+    async def test_pagination_uses_offset_and_limit(self):
+        run = MagicMock(id=42)
+        results_list = [MagicMock(id=21)]
+
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = run
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 100
+        page_result = MagicMock()
+        page_result.scalars.return_value.all.return_value = results_list
+        db.execute = AsyncMock(side_effect=[run_result, count_result, page_result])
+
+        results, total = await evaluation_service.get_evaluation_results(
+            run_id=42, user_id=1, db=db, page=2, page_size=20
+        )
+
+        assert results == results_list
+        assert total == 100
+
+    @pytest.mark.asyncio
+    async def test_empty_results(self):
+        run = MagicMock(id=42)
+
+        db = AsyncMock()
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = run
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        page_result = MagicMock()
+        page_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[run_result, count_result, page_result])
+
+        results, total = await evaluation_service.get_evaluation_results(
+            run_id=42, user_id=1, db=db
+        )
+
+        assert results == []
+        assert total == 0

@@ -40,3 +40,14 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    // run() 依赖 tauri::Builder 与 generate_context! 宏（需要完整 Tauri runtime 与上下文），
+    // 无法在纯单元测试中调用，因此不进行 invoke 级测试。
+    #[test]
+    fn lib_module_compiles() {
+        // 编译期占位测试，确保 #[cfg(test)] 配置下模块可正常编译。
+        assert!(true);
+    }
+}

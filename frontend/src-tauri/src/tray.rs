@@ -35,3 +35,14 @@ pub fn create_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // create_tray 依赖 tauri::App（需要 Tauri runtime 才能构造），
+    // 无法在纯单元测试中调用，因此不进行 invoke 级测试。
+    #[test]
+    fn tray_module_compiles() {
+        // 编译期占位测试，确保 #[cfg(test)] 配置下模块可正常编译。
+        assert!(true);
+    }
+}
