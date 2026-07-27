@@ -73,13 +73,16 @@ function isSSEEvent(obj: unknown): obj is SSEEvent {
 /**
  * SSE 流式聊天生成器 (带超时和错误处理)
  * @param signal 可选的 AbortSignal, 用于取消请求
- * @param timeoutMs 无事件超时时间(毫秒), 默认 60 秒
+ * @param timeoutMs 无事件超时时间(毫秒), 默认 300 秒
+ *
+ * 注: 60s 过短，会因 LLM/Reranker 冷启动加载（reranker 加载约 4 分钟）触发误超时。
+ *     300s 覆盖冷启动 + 正常生成场景；正常情况下首 token 后会持续重置计时器。
  */
 export async function* streamChat(
   sessionId: number,
   content: string,
   signal?: AbortSignal,
-  timeoutMs = 60000,
+  timeoutMs = 300000,
   model?: string,
 ): AsyncGenerator<SSEEvent> {
   const token = useAuthStore.getState().token;
