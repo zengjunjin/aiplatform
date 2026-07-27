@@ -8,6 +8,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // 默认 5s 在 CI/慢机器上会 flaky（Layout, FeedbackModal, KBCollaboratorModal 等）
+    testTimeout: 15000,
+    hookTimeout: 15000,
     coverage: {
       exclude: [
         'src/api/index.ts',

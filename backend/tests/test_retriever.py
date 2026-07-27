@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import settings
 from app.rag.retriever import HybridRetriever, retriever
 
 
@@ -563,3 +564,793 @@ class TestAddChunks:
             points = args.kwargs.get("points") or args.args[1]
             assert points[0].id == 100
             assert points[1].id == 2  # i+1
+
+
+# ---------- _load_chunks_for_bm25: DB 加载 + 异常分支 (205-250) ----------
+class TestLoadChunksForBM25:
+    """覆盖 _load_chunks_for_bm25 的 DB 加载成功路径与异常分类日志"""
+
+    @pytest.mark.asyncio
+    async def test_load_chunks_success(self):
+        """正常 DB 查询 → 返回 chunks 列表"""
+        r = HybridRetriever()
+        fake_rows = [(1, 100, "content1", 0), (2, 100, "content2", 1)]
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = fake_rows
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_session
+        mock_cm.__aexit__.return_value = None
+        mock_async_session = MagicMock(return_value=mock_cm)
+
+        with patch("app.database.async_session", mock_async_session):
+            result = await r._load_chunks_for_bm25(kb_id=1)
+
+        assert len(result) == 2
+        assert result[0] == {
+            "chunk_id": 1,
+            "doc_id": 100,
+            "content": "content1",
+            "chunk_index": 0,
+        }
+        assert result[1]["chunk_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_load_chunks_empty(self):
+        """DB 返回空 → 空列表"""
+        r = HybridRetriever()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_session
+        mock_cm.__aexit__.return_value = None
+        mock_async_session = MagicMock(return_value=mock_cm)
+
+        with patch("app.database.async_session", mock_async_session):
+            result = await r._load_chunks_for_bm25(kb_id=1)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_load_chunks_connection_error_logged_as_error(self):
+        """OperationalError → logger.error + 返回空列表"""
+        from sqlalchemy.exc import OperationalError
+
+        r = HybridRetriever()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=OperationalError("stmt", {}, Exception("orig"))
+        )
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_session
+        mock_cm.__aexit__.return_value = None
+        mock_async_session = MagicMock(return_value=mock_cm)
+
+        with (
+            patch("app.database.async_session", mock_async_session),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._load_chunks_for_bm25(kb_id=1)
+
+        assert result == []
+        mock_logger.error.assert_called_once()
+        mock_logger.warning.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_load_chunks_data_error_logged_as_warning(self):
+        """非连接异常（如 ValueError）→ logger.warning + 返回空列表"""
+        r = HybridRetriever()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=ValueError("bad data"))
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_session
+        mock_cm.__aexit__.return_value = None
+        mock_async_session = MagicMock(return_value=mock_cm)
+
+        with (
+            patch("app.database.async_session", mock_async_session),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._load_chunks_for_bm25(kb_id=1)
+
+        assert result == []
+        mock_logger.warning.assert_called_once()
+        mock_logger.error.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_load_chunks_oserror_logged_as_error(self):
+        """OSError → logger.error（属于连接异常分支）"""
+        r = HybridRetriever()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=OSError("net error"))
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_session
+        mock_cm.__aexit__.return_value = None
+        mock_async_session = MagicMock(return_value=mock_cm)
+
+        with (
+            patch("app.database.async_session", mock_async_session),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._load_chunks_for_bm25(kb_id=1)
+
+        assert result == []
+        mock_logger.error.assert_called_once()
+
+
+# ---------- _build_qdrant_filter (305-316) ----------
+class TestBuildQdrantFilter:
+    def test_none_filters_returns_none(self):
+        r = HybridRetriever()
+        assert r._build_qdrant_filter(None) is None
+
+    def test_empty_filters_returns_none(self):
+        r = HybridRetriever()
+        assert r._build_qdrant_filter({}) is None
+
+    def test_doc_id_filter(self):
+        r = HybridRetriever()
+        f = r._build_qdrant_filter({"doc_id": 123})
+        assert f is not None
+        assert len(f.must) == 1
+        assert f.must[0].key == "doc_id"
+        assert f.must[0].match.value == 123
+
+    def test_source_page_maps_to_page(self):
+        """source_page → payload key 'page'"""
+        r = HybridRetriever()
+        f = r._build_qdrant_filter({"source_page": 3})
+        assert f.must[0].key == "page"
+        assert f.must[0].match.value == 3
+
+    def test_file_type_filter(self):
+        r = HybridRetriever()
+        f = r._build_qdrant_filter({"file_type": "pdf"})
+        assert f.must[0].key == "file_type"
+        assert f.must[0].match.value == "pdf"
+
+    def test_unknown_key_used_as_is(self):
+        """未识别的 key 原样作为 payload key"""
+        r = HybridRetriever()
+        f = r._build_qdrant_filter({"custom_field": "val"})
+        assert f.must[0].key == "custom_field"
+
+    def test_multiple_filters_combined_with_and(self):
+        """多条件以 must(AND) 组合"""
+        r = HybridRetriever()
+        f = r._build_qdrant_filter(
+            {"doc_id": 1, "file_type": "pdf", "source_page": 3, "heading": "x"}
+        )
+        assert len(f.must) == 4
+        keys = {c.key for c in f.must}
+        assert keys == {"doc_id", "file_type", "page", "heading"}
+
+    def test_truthy_filters_with_empty_items_returns_none(self):
+        """filters 真值但 items() 为空 → 返回 None（防御性边界）"""
+
+        class EmptyItemsObj:
+            def __bool__(self):
+                return True
+
+            def items(self):
+                return []
+
+        r = HybridRetriever()
+        assert r._build_qdrant_filter(EmptyItemsObj()) is None
+
+
+# ---------- _filter_bm25_results (331-344) ----------
+class TestFilterBM25Results:
+    def test_none_filters_returns_original(self):
+        r = HybridRetriever()
+        results = [{"chunk_id": 1}]
+        assert r._filter_bm25_results(results, None) is results
+
+    def test_empty_filters_returns_original(self):
+        r = HybridRetriever()
+        results = [{"chunk_id": 1}]
+        assert r._filter_bm25_results(results, {}) is results
+
+    def test_filters_by_doc_id(self):
+        r = HybridRetriever()
+        results = [
+            {"chunk_id": 1, "doc_id": 100},
+            {"chunk_id": 2, "doc_id": 200},
+        ]
+        filtered = r._filter_bm25_results(results, {"doc_id": 100})
+        assert len(filtered) == 1
+        assert filtered[0]["chunk_id"] == 1
+
+    def test_filters_by_source_page_maps_to_page(self):
+        """source_page → page 字段"""
+        r = HybridRetriever()
+        results = [
+            {"chunk_id": 1, "page": 3},
+            {"chunk_id": 2, "page": 5},
+        ]
+        filtered = r._filter_bm25_results(results, {"source_page": 3})
+        assert len(filtered) == 1
+        assert filtered[0]["chunk_id"] == 1
+
+    def test_chunk_missing_filter_field_is_kept(self):
+        """chunk 缺少被过滤字段 → 保留（兼容旧数据）"""
+        r = HybridRetriever()
+        results = [
+            {"chunk_id": 1},  # 无 doc_id
+            {"chunk_id": 2, "doc_id": 100},
+        ]
+        filtered = r._filter_bm25_results(results, {"doc_id": 100})
+        assert len(filtered) == 2  # 1 保留（跳过）+ 2 保留（匹配）
+
+    def test_multiple_filters_all_must_match(self):
+        """多条件 AND：所有条件需满足"""
+        r = HybridRetriever()
+        results = [
+            {"chunk_id": 1, "doc_id": 100, "file_type": "pdf"},
+            {"chunk_id": 2, "doc_id": 100, "file_type": "md"},  # file_type 不匹配
+            {"chunk_id": 3, "doc_id": 200, "file_type": "pdf"},  # doc_id 不匹配
+        ]
+        filtered = r._filter_bm25_results(results, {"doc_id": 100, "file_type": "pdf"})
+        assert len(filtered) == 1
+        assert filtered[0]["chunk_id"] == 1
+
+    def test_all_filtered_out(self):
+        r = HybridRetriever()
+        results = [{"chunk_id": 1, "doc_id": 999}]
+        filtered = r._filter_bm25_results(results, {"doc_id": 100})
+        assert filtered == []
+
+
+# ---------- _normalize (508-514) ----------
+class TestNormalize:
+    def test_empty_dict(self):
+        r = HybridRetriever()
+        assert r._normalize({}) == {}
+
+    def test_single_element(self):
+        """单元素 → 1.0（避免除零）"""
+        r = HybridRetriever()
+        result = r._normalize({1: 5.0})
+        assert result == {1: 1.0}
+
+    def test_all_equal_values(self):
+        """所有值相等 → 全 1.0"""
+        r = HybridRetriever()
+        result = r._normalize({1: 5.0, 2: 5.0, 3: 5.0})
+        assert result == {1: 1.0, 2: 1.0, 3: 1.0}
+
+    def test_min_max_normalization(self):
+        r = HybridRetriever()
+        result = r._normalize({1: 0.0, 2: 5.0, 3: 10.0})
+        assert result[1] == pytest.approx(0.0)
+        assert result[2] == pytest.approx(0.5)
+        assert result[3] == pytest.approx(1.0)
+
+    def test_negative_values(self):
+        """BM25 可能有负分"""
+        r = HybridRetriever()
+        result = r._normalize({1: -2.0, 2: 0.0, 3: 2.0})
+        assert result[1] == pytest.approx(0.0)
+        assert result[2] == pytest.approx(0.5)
+        assert result[3] == pytest.approx(1.0)
+
+
+# ---------- _weighted_fuse (524-564) ----------
+class TestWeightedFuse:
+    def test_empty_inputs(self):
+        r = HybridRetriever()
+        assert r._weighted_fuse([], [], alpha=0.5) == []
+
+    def test_only_vector_results(self):
+        r = HybridRetriever()
+        vec = [{"chunk_id": 1, "score": 0.9}, {"chunk_id": 2, "score": 0.5}]
+        result = r._weighted_fuse(vec, [], alpha=1.0)
+        assert len(result) == 2
+        assert result[0]["chunk_id"] == 1  # 更高分排前
+        assert "fused_score" in result[0]
+
+    def test_only_bm25_results(self):
+        r = HybridRetriever()
+        bm25 = [{"chunk_id": 1, "score": 5.0, "content": "x"}]
+        result = r._weighted_fuse([], bm25, alpha=0.0)
+        assert len(result) == 1
+        assert result[0]["chunk_id"] == 1
+        assert result[0]["source"] == "bm25"
+
+    def test_overlapping_chunk_ids(self):
+        """vec 和 bm25 命中相同 chunk → 加权融合"""
+        r = HybridRetriever()
+        vec = [{"chunk_id": 1, "score": 0.9}]
+        bm25 = [{"chunk_id": 1, "score": 5.0}]
+        result = r._weighted_fuse(vec, bm25, alpha=0.5)
+        assert len(result) == 1
+        # 两个都归一化为 1.0（单元素），fused = 0.5*1 + 0.5*1 = 1.0
+        assert result[0]["fused_score"] == pytest.approx(1.0)
+
+    def test_bm25_missing_chunk_id_skipped(self):
+        """bm25 结果无 chunk_id → 跳过"""
+        r = HybridRetriever()
+        bm25 = [
+            {"content": "no id", "score": 1.0},
+            {"chunk_id": 5, "content": "with id", "score": 2.0},
+        ]
+        result = r._weighted_fuse([], bm25, alpha=0.0)
+        assert len(result) == 1
+        assert result[0]["chunk_id"] == 5
+
+    def test_alpha_one_pure_vector(self):
+        """alpha=1.0 → 纯向量，bm25 不影响排序"""
+        r = HybridRetriever()
+        vec = [{"chunk_id": 1, "score": 0.9}, {"chunk_id": 2, "score": 0.1}]
+        bm25 = [{"chunk_id": 2, "score": 100.0}]  # bm25 高分但 alpha=1 忽略
+        result = r._weighted_fuse(vec, bm25, alpha=1.0)
+        assert result[0]["chunk_id"] == 1  # vec 高分排前
+
+    def test_alpha_zero_pure_bm25(self):
+        """alpha=0.0 → 纯 BM25"""
+        r = HybridRetriever()
+        vec = [{"chunk_id": 1, "score": 100.0}]  # vec 高分但 alpha=0 忽略
+        bm25 = [{"chunk_id": 2, "score": 5.0}, {"chunk_id": 3, "score": 1.0}]
+        result = r._weighted_fuse(vec, bm25, alpha=0.0)
+        assert result[0]["chunk_id"] == 2  # bm25 高分排前
+
+    def test_preserves_vector_metadata(self):
+        """weighted_fuse 保留 vec 路径 metadata"""
+        r = HybridRetriever()
+        vec = [{"chunk_id": 1, "filename": "doc.md", "page": 3, "score": 0.9}]
+        result = r._weighted_fuse(vec, [], alpha=1.0)
+        assert result[0]["filename"] == "doc.md"
+        assert result[0]["page"] == 3
+
+
+# ---------- retrieve with alpha (153) ----------
+class TestRetrieveWithAlpha:
+    @pytest.mark.asyncio
+    async def test_retrieve_with_alpha_calls_weighted_fuse(self):
+        """alpha 显式传入 → 走 _weighted_fuse 而非 RRF"""
+        r = HybridRetriever()
+        vec_results = [{"chunk_id": 1, "content": "a", "score": 0.9}]
+        bm25_results = [{"chunk_id": 2, "content": "b", "score": 5.0}]
+
+        with (
+            patch.object(r, "_vector_search", AsyncMock(return_value=vec_results)),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+            patch.object(r, "_weighted_fuse") as mock_weighted,
+            patch.object(r, "_rrf_fuse") as mock_rrf,
+            patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"),
+        ):
+            mock_bm25.search = AsyncMock(return_value=bm25_results)
+            mock_weighted.return_value = [{"chunk_id": 1, "fused_score": 1.0}]
+            result = await r.retrieve("query", kb_id=1, top_k=5, alpha=0.5)
+
+        mock_weighted.assert_called_once()
+        mock_rrf.assert_not_called()
+        assert result == [{"chunk_id": 1, "fused_score": 1.0}]
+
+    @pytest.mark.asyncio
+    async def test_retrieve_with_alpha_none_calls_rrf(self):
+        """alpha=None → 走 _rrf_fuse（默认）"""
+        r = HybridRetriever()
+
+        with (
+            patch.object(r, "_vector_search", AsyncMock(return_value=[])),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+            patch.object(r, "_weighted_fuse") as mock_weighted,
+            patch.object(r, "_rrf_fuse") as mock_rrf,
+            patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"),
+        ):
+            mock_bm25.search = AsyncMock(return_value=[])
+            mock_rrf.return_value = []
+            await r.retrieve("query", kb_id=1, top_k=5)  # alpha 默认 None
+
+        mock_rrf.assert_called_once()
+        mock_weighted.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_retrieve_with_filters_passes_qdrant_filter(self):
+        """retrieve 传入 filters → _vector_search 收到 Qdrant Filter"""
+        r = HybridRetriever()
+        captured_filter = []
+
+        async def fake_vec(query, kb_id, top_k, qdrant_filter=None):
+            captured_filter.append(qdrant_filter)
+            return []
+
+        with (
+            patch.object(r, "_vector_search", side_effect=fake_vec),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+            patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"),
+        ):
+            mock_bm25.search = AsyncMock(return_value=[])
+            await r.retrieve("query", kb_id=1, top_k=5, filters={"doc_id": 100})
+
+        assert captured_filter[0] is not None
+        assert captured_filter[0].must[0].key == "doc_id"
+
+    @pytest.mark.asyncio
+    async def test_retrieve_with_filters_filters_bm25_results(self):
+        """retrieve 传入 filters → BM25 结果在内存中过滤"""
+        r = HybridRetriever()
+        bm25_results = [
+            {"chunk_id": 1, "doc_id": 100, "content": "a", "score": 5.0},
+            {"chunk_id": 2, "doc_id": 200, "content": "b", "score": 4.0},
+        ]
+
+        with (
+            patch.object(r, "_vector_search", AsyncMock(return_value=[])),
+            patch.object(r, "_load_chunks_for_bm25", AsyncMock(return_value=[])),
+            patch("app.rag.retriever.bm25_store") as mock_bm25,
+            patch("app.rag.retriever.RAG_RETRIEVAL_TOTAL"),
+        ):
+            mock_bm25.search = AsyncMock(return_value=bm25_results)
+            result = await r.retrieve("query", kb_id=1, top_k=5, filters={"doc_id": 100})
+
+        # doc_id=200 的 bm25 结果被过滤
+        chunk_ids = {c["chunk_id"] for c in result}
+        assert 2 not in chunk_ids
+        assert 1 in chunk_ids
+
+
+# ---------- _get_cached_query_embedding (263-267, 277-279) ----------
+class TestGetCachedQueryEmbedding:
+    @pytest.mark.asyncio
+    async def test_redis_cache_hit(self):
+        """Redis 命中 → 直接返回缓存，不计算 embedding"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(return_value='[0.5, 0.6]')
+
+        with patch("app.rag.retriever.get_redis", return_value=fake_redis):
+            result = await r._get_cached_query_embedding("query", "model")
+
+        assert result == [0.5, 0.6]
+        fake_embedding.embed.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_redis_cache_miss_computes_and_writes(self):
+        """Redis 未命中 → 计算 embedding + 写回缓存"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(return_value=None)
+        fake_redis.setex = AsyncMock()
+
+        with patch("app.rag.retriever.get_redis", return_value=fake_redis):
+            result = await r._get_cached_query_embedding("query", "model")
+
+        assert result == [0.1, 0.2]
+        fake_embedding.embed.assert_awaited_once()
+        fake_redis.setex.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_none_falls_back_to_compute(self):
+        """Redis 不可用（None）→ 直接计算，不写缓存"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        with patch("app.rag.retriever.get_redis", return_value=None):
+            result = await r._get_cached_query_embedding("query", "model")
+
+        assert result == [0.1, 0.2]
+        fake_embedding.embed.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_read_exception_falls_back_to_compute(self):
+        """Redis 读异常 → fallback 计算"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(side_effect=Exception("redis down"))
+        fake_redis.setex = AsyncMock()
+
+        with (
+            patch("app.rag.retriever.get_redis", return_value=fake_redis),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._get_cached_query_embedding("query", "model")
+
+        assert result == [0.1, 0.2]
+        fake_embedding.embed.assert_awaited_once()
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_redis_write_exception_does_not_raise(self):
+        """Redis 写异常 → 不抛出，返回计算结果"""
+        r = HybridRetriever()
+        fake_embedding = MagicMock()
+        fake_embedding.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        r._embedding = fake_embedding
+
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(return_value=None)
+        fake_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+
+        with (
+            patch("app.rag.retriever.get_redis", return_value=fake_redis),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._get_cached_query_embedding("query", "model")
+
+        assert result == [0.1, 0.2]
+        mock_logger.warning.assert_called()
+
+
+# ---------- _ensure_collection (92-97) ----------
+class TestEnsureCollection:
+    @pytest.mark.asyncio
+    async def test_creates_collection_when_not_found(self):
+        """collection 不存在 → 创建"""
+        r = HybridRetriever()
+        fake_qdrant = MagicMock()
+        fake_qdrant.get_collection = MagicMock(side_effect=Exception("not found"))
+        fake_qdrant.create_collection = MagicMock()
+        r._qdrant_client = fake_qdrant
+
+        await r._ensure_collection(kb_id=1)
+
+        fake_qdrant.create_collection.assert_called_once()
+        # 验证创建参数
+        args = fake_qdrant.create_collection.call_args
+        assert args.kwargs["collection_name"] == "chunks_kb_1"
+        assert args.kwargs["vectors_config"].size == settings.EMBEDDING_DIM
+
+    @pytest.mark.asyncio
+    async def test_skips_create_when_collection_exists(self):
+        """collection 已存在 → 不创建"""
+        r = HybridRetriever()
+        fake_qdrant = MagicMock()
+        fake_qdrant.get_collection = MagicMock(return_value=MagicMock())
+        fake_qdrant.create_collection = MagicMock()
+        r._qdrant_client = fake_qdrant
+
+        await r._ensure_collection(kb_id=1)
+
+        fake_qdrant.get_collection.assert_called_once_with("chunks_kb_1")
+        fake_qdrant.create_collection.assert_not_called()
+
+
+# ---------- qdrant / embedding property lazy init (75, 84) ----------
+class TestLazyInit:
+    def test_qdrant_lazy_init(self):
+        """qdrant property 首次访问创建 QdrantClient"""
+        r = HybridRetriever()
+        assert r._qdrant_client is None
+        with patch("app.rag.retriever.QdrantClient") as mock_qdrant_cls:
+            _ = r.qdrant
+            mock_qdrant_cls.assert_called_once()
+
+    def test_qdrant_cached_after_first_access(self):
+        r = HybridRetriever()
+        with patch("app.rag.retriever.QdrantClient") as mock_qdrant_cls:
+            _ = r.qdrant
+            _ = r.qdrant
+            assert mock_qdrant_cls.call_count == 1
+
+    def test_embedding_lazy_init(self):
+        """embedding property 首次访问通过 ModelFactory 创建"""
+        r = HybridRetriever()
+        assert r._embedding is None
+        with patch("app.rag.retriever.ModelFactory") as mock_factory:
+            mock_factory.create_embedding.return_value = "fake_embedding"
+            emb = r.embedding
+            assert emb == "fake_embedding"
+            mock_factory.create_embedding.assert_called_once()
+
+    def test_embedding_cached_after_first_access(self):
+        r = HybridRetriever()
+        with patch("app.rag.retriever.ModelFactory") as mock_factory:
+            mock_factory.create_embedding.return_value = "fake"
+            _ = r.embedding
+            _ = r.embedding
+            assert mock_factory.create_embedding.call_count == 1
+
+
+# ---------- vector search 连接异常分支 (395) ----------
+class TestVectorSearchConnectionErrors:
+    @pytest.mark.asyncio
+    async def test_connection_error_logged_as_error(self):
+        """ConnectionError → logger.error"""
+        r = HybridRetriever()
+        r._embedding = MagicMock()
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(side_effect=ConnectionError("refused"))
+        r._qdrant_client = fake_qdrant
+
+        with (
+            patch.object(r, "_ensure_collection"),
+            patch.object(
+                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
+            ),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._vector_search("query", kb_id=1, top_k=5)
+
+        assert result == []
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_oserror_logged_as_error(self):
+        r = HybridRetriever()
+        r._embedding = MagicMock()
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(side_effect=OSError("net"))
+        r._qdrant_client = fake_qdrant
+
+        with (
+            patch.object(r, "_ensure_collection"),
+            patch.object(
+                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
+            ),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._vector_search("query", kb_id=1, top_k=5)
+
+        assert result == []
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_response_handling_exception_logged_as_error(self):
+        """ResponseHandlingException → logger.error"""
+        from qdrant_client.http.exceptions import ResponseHandlingException
+
+        r = HybridRetriever()
+        r._embedding = MagicMock()
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(
+            side_effect=ResponseHandlingException("timeout")
+        )
+        r._qdrant_client = fake_qdrant
+
+        with (
+            patch.object(r, "_ensure_collection"),
+            patch.object(
+                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
+            ),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._vector_search("query", kb_id=1, top_k=5)
+
+        assert result == []
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_logged_as_warning(self):
+        """非连接异常 → logger.warning"""
+        r = HybridRetriever()
+        r._embedding = MagicMock()
+        fake_qdrant = MagicMock()
+        fake_qdrant.query_points = MagicMock(side_effect=ValueError("bad data"))
+        r._qdrant_client = fake_qdrant
+
+        with (
+            patch.object(r, "_ensure_collection"),
+            patch.object(
+                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
+            ),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._vector_search("query", kb_id=1, top_k=5)
+
+        assert result == []
+        mock_logger.warning.assert_called_once()
+        mock_logger.error.assert_not_called()
+
+
+# ---------- _chunks_cache LRU + 大 KB 跳过缓存 (184-190, 194) ----------
+class TestChunksCacheLRU:
+    @pytest.mark.asyncio
+    async def test_chunks_exceeding_max_chunks_per_kb_not_cached(self, monkeypatch):
+        """chunks 数量超 BM25_CACHE_MAX_CHUNKS_PER_KB → 返回但不缓存"""
+        monkeypatch.setattr("app.rag.retriever.settings.BM25_CACHE_MAX_CHUNKS_PER_KB", 5)
+        r = HybridRetriever()
+        big_chunks = [{"chunk_id": i, "content": f"c{i}"} for i in range(10)]
+
+        async def fake_load(kb_id):
+            return big_chunks
+
+        with (
+            patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load),
+            patch("app.rag.retriever.logger") as mock_logger,
+        ):
+            result = await r._get_chunks_for_bm25(kb_id=1)
+
+        assert result == big_chunks  # 返回数据
+        assert 1 not in r._chunks_cache  # 但不缓存
+        mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_chunks_cache_evicts_oldest_when_exceed_max_kbs(self, monkeypatch):
+        """缓存 KB 数超过 BM25_CACHE_MAX_KB → LRU 淘汰最久未访问"""
+        monkeypatch.setattr("app.rag.retriever.settings.BM25_CACHE_MAX_KB", 2)
+        r = HybridRetriever()
+
+        async def fake_load(kb_id):
+            return [{"chunk_id": 1, "content": f"kb{kb_id}"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            await r._get_chunks_for_bm25(kb_id=1)
+            await r._get_chunks_for_bm25(kb_id=2)
+            await r._get_chunks_for_bm25(kb_id=3)  # 触发淘汰 kb_id=1
+
+        assert 1 not in r._chunks_cache  # 最久未访问被淘汰
+        assert 2 in r._chunks_cache
+        assert 3 in r._chunks_cache
+        assert len(r._chunks_cache) == 2
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_updates_lru_order(self, monkeypatch):
+        """缓存命中时 move_to_end 更新访问顺序"""
+        monkeypatch.setattr("app.rag.retriever.settings.BM25_CACHE_MAX_KB", 2)
+        r = HybridRetriever()
+
+        async def fake_load(kb_id):
+            return [{"chunk_id": 1, "content": f"kb{kb_id}"}]
+
+        with patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load):
+            await r._get_chunks_for_bm25(kb_id=1)
+            await r._get_chunks_for_bm25(kb_id=2)
+            # 重新访问 kb_id=1，使其成为最近访问
+            await r._get_chunks_for_bm25(kb_id=1)
+            # 插入 kb_id=3，应淘汰 kb_id=2（最久未访问）
+            await r._get_chunks_for_bm25(kb_id=3)
+
+        assert 1 in r._chunks_cache  # 最近访问的保留
+        assert 2 not in r._chunks_cache  # 最久未访问的被淘汰
+        assert 3 in r._chunks_cache
+
+    @pytest.mark.asyncio
+    async def test_double_check_cache_hit_inside_lock(self):
+        """slow path 锁内 double-check：等待锁期间缓存被填充 → 不加载"""
+        r = HybridRetriever()
+        load_count = 0
+
+        async def fake_load(kb_id):
+            nonlocal load_count
+            load_count += 1
+            return [{"chunk_id": 1, "content": "loaded"}]
+
+        # 自定义锁：acquire 时模拟另一个请求已填充缓存
+        class CustomLock:
+            async def __aenter__(self):
+                r._chunks_cache[999] = [{"chunk_id": 1, "content": "filled by other"}]
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def locked(self):
+                return False
+
+        with (
+            patch.object(r, "_load_chunks_for_bm25", side_effect=fake_load),
+            patch.object(r, "_get_chunks_lock", return_value=CustomLock()),
+        ):
+            result = await r._get_chunks_for_bm25(kb_id=999)
+
+        # double-check 命中，不调用 _load_chunks_for_bm25
+        assert load_count == 0
+        assert result[0]["content"] == "filled by other"
