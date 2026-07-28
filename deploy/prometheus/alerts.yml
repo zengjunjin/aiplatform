@@ -1,15 +1,19 @@
 # Task 3: 告警规则 — 拆分 critical / warning 两组，修正指标名，添加 runbook_url
+# 修复（v0.4.0）：修复告警阈值/除零问题
 groups:
   - name: critical-alerts
     rules:
+      # 修复：绝对速率 → 比率，避免低流量时误报
       - alert: HighErrorRate
-        expr: rate(rag_http_requests_total{status=~"5.."}[5m]) > 0.1
+        expr: |
+          sum(rate(rag_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(rag_http_requests_total[5m])), 1) > 0.05
         for: 10m
         labels:
           severity: critical
         annotations:
           summary: "High 5xx error rate"
-          description: "5xx error rate is {{ $value }} per second"
+          description: "5xx error rate is {{ $value | humanizePercentage }} (> 5%)"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-error-rate.md"
 
       - alert: HighMemoryUsage
@@ -19,12 +23,13 @@ groups:
           severity: critical
         annotations:
           summary: "High memory usage"
-          description: "Memory usage is {{ $value }}%"
+          description: "Memory usage is {{ $value}}%"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-memory-usage.md"
 
       # Task 3.5: 数据库连接池使用率告警
+      # 修复：clamp_min 防止除零（启动初期 pool_size=0）
       - alert: DbPoolExhaustion
-        expr: rag_db_pool_in_use / rag_db_pool_size > 0.8
+        expr: rag_db_pool_in_use / clamp_min(rag_db_pool_size, 1) > 0.8
         for: 10m
         labels:
           severity: critical
@@ -33,12 +38,13 @@ groups:
           description: "Pool usage {{ $value | humanizePercentage }} > 80%"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/db-pool-exhaustion.md"
 
-      # Task 3.6: 检索服务零流量告警（持续 30 分钟无检索请求，可能服务异常）
+      # Task 3.6: 检索服务零流量告警
+      # 修复：severity 降为 warning，避免夜间/周末正常零流量时误报
       - alert: ZeroRetrievalTraffic
         expr: sum(rate(rag_retrievals_total[5m])) == 0
         for: 30m
         labels:
-          severity: critical
+          severity: warning
         annotations:
           summary: "Zero retrieval traffic for 30 minutes"
           description: "No retrieval requests detected — service may be down or unreachable"
@@ -53,7 +59,7 @@ groups:
           severity: warning
         annotations:
           summary: "High CPU usage"
-          description: "CPU usage is {{ $value }}%"
+          description: "CPU usage is {{ $value}}%"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-cpu-usage.md"
 
       - alert: HighDiskUsage
@@ -63,7 +69,7 @@ groups:
           severity: warning
         annotations:
           summary: "High disk usage"
-          description: "Disk usage is {{ $value }}%"
+          description: "Disk usage is {{ $value}}%"
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-disk-usage.md"
 
   # Phase 5 / H34: 业务与基础设施深化告警规则（5 条新增，规则总数 11 条）
@@ -110,8 +116,9 @@ groups:
           runbook_url: "https://github.com/zengjunjin/aiplatform/blob/main/docs/runbooks/high-cpu-usage.md"
 
       # 4. Redis 内存高：使用率 > 90%（可能导致 OOM 或驱逐）
+      # 修复：防护 max_memory=0（未配置 maxmemory 时除零）
       - alert: RedisMemoryHigh
-        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        expr: redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1) > 0.9 and redis_memory_max_bytes > 0
         for: 5m
         labels:
           severity: critical

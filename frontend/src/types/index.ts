@@ -68,7 +68,7 @@ export interface ChatMessage {
   session_id: number;
   role: 'user' | 'assistant';
   content: string;
-  referenced_chunks: Reference[] | null;
+  references: Reference[] | null;
   token_input: number | null;
   token_output: number | null;
   latency_ms: number | null;
@@ -104,11 +104,8 @@ export interface PaginatedResponse<T> {
   page_size: number;
 }
 
-// Task 55: Message 继承 ChatMessage, 仅将 referenced_chunks 替换为 references,
-// 避免两个接口字段重复定义导致维护时遗漏同步
-export interface Message extends Omit<ChatMessage, 'referenced_chunks'> {
-  references: Reference[] | null;
-}
+// Task 55: Message 继承 ChatMessage, 字段名已与后端 MessageOut.references 统一
+export interface Message extends ChatMessage {}
 
 export interface MessageWithRefs {
   id?: number;

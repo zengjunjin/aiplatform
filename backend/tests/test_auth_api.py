@@ -121,7 +121,11 @@ class TestLogin:
         assert "access_token" in result
         assert "refresh_token" in result
         assert result["token_type"] == "bearer"
-        assert result["expires_in"] == 30 * 60
+        # 修复（v0.4.0）：用 settings.ACCESS_TOKEN_EXPIRE_MINUTES 动态计算，
+        # 避免容器 .env 覆盖默认值（如 60 分钟）时测试失败
+        from app.config import settings as _settings
+
+        assert result["expires_in"] == _settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         assert result["user"]["id"] == fake_user.id
         assert result["user"]["username"] == "admin"
         assert result["user"]["role"] == "admin"

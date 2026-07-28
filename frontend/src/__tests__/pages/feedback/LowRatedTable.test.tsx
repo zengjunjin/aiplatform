@@ -48,7 +48,7 @@ const mockFeedbacks = [
     message_id: 100,
     rating: -1,
     comment: 'bad answer',
-    feedback_type: 'hallucination',
+    feedback_type: 'faithfulness_issue',
     created_at: '2026-07-01T10:00:00Z',
     question: '什么是 RAG？',
     answer: 'RAG 是错误的回答',
@@ -110,7 +110,7 @@ describe('LowRatedTable', () => {
         {...defaultProps}
         selectedKbId={3}
         dateRange={dateRange}
-        selectedType="hallucination"
+        selectedType="faithfulness_issue"
         page={2}
         pageSize={50}
       />,
@@ -121,7 +121,7 @@ describe('LowRatedTable', () => {
       expect(params.kb_id).toBe(3);
       expect(params.start_date).toBe(dateRange[0].toISOString());
       expect(params.end_date).toBe(dateRange[1].toISOString());
-      expect(params.feedback_type).toBe('hallucination');
+      expect(params.feedback_type).toBe('faithfulness_issue');
       expect(params.page).toBe(2);
       expect(params.page_size).toBe(50);
     });
@@ -195,8 +195,8 @@ describe('LowRatedTable', () => {
     render(<LowRatedTable {...defaultProps} />);
 
     await waitFor(() => {
-      // hallucination → t('chat.feedbackType.hallucination')
-      expect(screen.getByText('chat.feedbackType.hallucination')).toBeInTheDocument();
+      // faithfulness_issue → t('chat.feedbackType.faithfulnessIssue')
+      expect(screen.getByText('chat.feedbackType.faithfulnessIssue')).toBeInTheDocument();
     });
   });
 
@@ -357,16 +357,16 @@ describe('LowRatedTable', () => {
   });
 
   it('should re-fetch when selectedType changes', async () => {
-    const { rerender } = render(<LowRatedTable {...defaultProps} selectedType="hallucination" />);
+    const { rerender } = render(<LowRatedTable {...defaultProps} selectedType="faithfulness_issue" />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'hallucination' }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'faithfulness_issue' }));
     });
 
-    rerender(<LowRatedTable {...defaultProps} selectedType="incomplete" />);
+    rerender(<LowRatedTable {...defaultProps} selectedType="incompleteness" />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'incomplete' }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'incompleteness' }));
     });
   });
 });

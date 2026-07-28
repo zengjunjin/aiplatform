@@ -132,10 +132,14 @@ CHAT_RESPONSE_DURATION = Histogram(
     buckets=[0.5, 1, 2, 5, 10, 30, 60, 120],
 )
 
-# 活跃用户数（5 分钟内活跃用户，由 metrics_collector 周期性 set）
+# 活跃用户会话数（当前已登录但未主动 logout 的会话数）
+# 修复（v0.4.0）：修正指标语义
+# 原实现：login 时 inc()、logout 时 dec()，但 token 过期不 dec 导致计数只增不减
+# 修正说明：本指标衡量的是"当前未注销的会话数"，非"5 分钟内活跃用户"
+# 真正的活跃用户统计应基于 Redis session TTL 周期性 set，后续可扩展
 ACTIVE_USERS = Gauge(
     "rag_active_users",
-    "Number of active users in last 5 minutes",
+    "Number of active logged-in sessions (not yet logged out)",
 )
 
 # LLM 推理耗时直方图（按模型细分，P99 用于推理超时告警）

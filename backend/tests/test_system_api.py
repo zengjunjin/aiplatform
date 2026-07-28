@@ -195,7 +195,8 @@ class TestListModels:
         assert result["data"]["models"][1]["name"] == "openai-gpt-4"
         assert result["data"]["models"][1]["source"] == "cloud"
         assert result["data"]["models"][1]["status"] == "unhealthy"
-        assert result["data"]["default_model"] == "ollama"
+        # 修复（v0.4.0）：default_model 返回第一个 provider 注册名，不再硬编码 "ollama"
+        assert result["data"]["default_model"] == "ollama-llama3"
 
     @pytest.mark.asyncio
     async def test_list_models_endpoint_signature_requires_current_user(self):

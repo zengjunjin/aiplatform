@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import UTC, datetime
 
@@ -26,6 +27,9 @@ _memory_blacklist: dict[str, float] = {}  # key="{token_type}:{token}" -> exp ti
 _memory_blacklist_max = (
     settings.TOKEN_BLACKLIST_MAX
 )  # 上限防止无限增长（可通过 TOKEN_BLACKLIST_MAX 环境变量配置）
+# P0-D1: 保护 _memory_blacklist 的并发访问，避免 Redis 降级路径下
+# "dictionary changed size during iteration" 导致全站认证失败
+_memory_blacklist_lock = asyncio.Lock()
 
 
 def validate_password_strength(password: str) -> None:
@@ -132,35 +136,39 @@ async def refresh_token(refresh: str, db: AsyncSession) -> dict:
     }
 
 
-def _memory_blacklist_add(token_type: str, token: str, exp: float) -> None:
+async def _memory_blacklist_add(token_type: str, token: str, exp: float) -> None:
     """将 token 加入内存黑名单。超限时丢弃最旧条目（插入顺序）。
 
     best-effort 降级：不保证跨进程一致，仅当前进程可见。
+    使用 asyncio.Lock 保护并发访问，避免 "dictionary changed size during iteration"。
     """
     key = f"{token_type}:{token}"
-    _memory_blacklist[key] = exp
-    if len(_memory_blacklist) > _memory_blacklist_max:
-        # dict 保持插入顺序（Python 3.7+），弹出最旧条目
-        # 注意：dict.popitem() 不接受 last 参数（那是 OrderedDict 的接口）
-        oldest_key = next(iter(_memory_blacklist))
-        del _memory_blacklist[oldest_key]
+    async with _memory_blacklist_lock:
+        _memory_blacklist[key] = exp
+        if len(_memory_blacklist) > _memory_blacklist_max:
+            # dict 保持插入顺序（Python 3.7+），弹出最旧条目
+            # 注意：dict.popitem() 不接受 last 参数（那是 OrderedDict 的接口）
+            oldest_key = next(iter(_memory_blacklist))
+            del _memory_blacklist[oldest_key]
 
 
-def _memory_blacklist_contains(token_type: str, token: str) -> bool:
+async def _memory_blacklist_contains(token_type: str, token: str) -> bool:
     """检查 token 是否在内存黑名单中，顺带清理该条目的过期项。
 
     best-effort 降级：不保证跨进程一致，仅当前进程可见。
+    使用 asyncio.Lock 保护并发访问。
     """
     key = f"{token_type}:{token}"
-    exp = _memory_blacklist.get(key)
-    if exp is None:
-        return False
-    now = datetime.now(UTC).timestamp()
-    if exp <= now:
-        # 已过期，清理并返回未命中
-        _memory_blacklist.pop(key, None)
-        return False
-    return True
+    async with _memory_blacklist_lock:
+        exp = _memory_blacklist.get(key)
+        if exp is None:
+            return False
+        now = datetime.now(UTC).timestamp()
+        if exp <= now:
+            # 已过期，清理并返回未命中
+            _memory_blacklist.pop(key, None)
+            return False
+        return True
 
 
 async def add_to_blacklist(token: str, token_type: str = "access") -> None:
@@ -186,7 +194,7 @@ async def add_to_blacklist(token: str, token_type: str = "access") -> None:
         await redis.setex(key, ttl, "1")
     else:
         # Redis 不可用：降级到内存黑名单（best-effort，不保证跨进程一致）
-        _memory_blacklist_add(token_type, token, exp)
+        await _memory_blacklist_add(token_type, token, exp)
 
 
 async def is_blacklisted(token: str, token_type: str = "access") -> bool:
@@ -197,4 +205,4 @@ async def is_blacklisted(token: str, token_type: str = "access") -> bool:
         key = f"auth:blacklist:{token_type}:{token}"
         return await redis.exists(key) > 0
     # Redis 不可用：检查内存降级黑名单（best-effort，不保证跨进程一致）
-    return _memory_blacklist_contains(token_type, token)
+    return await _memory_blacklist_contains(token_type, token)

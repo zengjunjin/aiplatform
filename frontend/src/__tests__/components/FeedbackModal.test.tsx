@@ -50,7 +50,7 @@ describe('FeedbackModal', () => {
     );
     expect(screen.getByText('chat.feedbackTitle')).toBeInTheDocument();
     expect(screen.getByText('chat.feedbackTypeLabel')).toBeInTheDocument();
-    expect(screen.getByText('chat.feedbackType.notAccurate')).toBeInTheDocument();
+    expect(screen.getByText('chat.feedbackType.faithfulnessIssue')).toBeInTheDocument();
     expect(screen.getByText('chat.feedbackType.other')).toBeInTheDocument();
   });
 

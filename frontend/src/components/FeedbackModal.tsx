@@ -5,12 +5,11 @@ import { feedbackApi } from '../api/chat';
 import type { FeedbackOut } from '../api/chat';
 
 const FEEDBACK_TYPE_OPTIONS = [
-  { value: 'not_accurate', label: 'chat.feedbackType.notAccurate' },
-  { value: 'incomplete', label: 'chat.feedbackType.incomplete' },
-  { value: 'hallucination', label: 'chat.feedbackType.hallucination' },
-  { value: 'irrelevant', label: 'chat.feedbackType.irrelevant' },
-  { value: 'too_verbose', label: 'chat.feedbackType.tooVerbose' },
-  { value: 'too_brief', label: 'chat.feedbackType.tooBrief' },
+  { value: 'faithfulness_issue', label: 'chat.feedbackType.faithfulnessIssue' },
+  { value: 'context_insufficient', label: 'chat.feedbackType.contextInsufficient' },
+  { value: 'incompleteness', label: 'chat.feedbackType.incompleteness' },
+  { value: 'irrelevance', label: 'chat.feedbackType.irrelevance' },
+  { value: 'verbosity', label: 'chat.feedbackType.verbosity' },
   { value: 'other', label: 'chat.feedbackType.other' },
 ];
 

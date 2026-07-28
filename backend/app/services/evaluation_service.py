@@ -145,38 +145,37 @@ async def _generate_ground_truth(llm, question: str, kb_description: str) -> str
 
 
 async def get_rag_answer(query: str, kb_id: int) -> tuple[str, list[str]]:
-    """Run the RAG pipeline to get an answer and retrieved contexts."""
-    try:
-        # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
-        from app.models.factory import ModelFactory
-        from app.rag.prompt_builder import build_rag_prompt
-        from app.rag.retriever import retriever
+    """Run the RAG pipeline to get an answer and retrieved contexts.
 
-        # Retrieve relevant chunks
-        # Task 9: 使用 settings.RETRIEVAL_TOP_K 保持评估与生产一致，避免评估结果系统性偏低
-        chunks = await retriever.retrieve(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
-        contexts = [c.get("content", "") for c in chunks]
+    修复（v0.4.0）：移除宽泛 except Exception，让异常向上抛出。
+    调用方 _run_evaluations 用 asyncio.gather(return_exceptions=True) 捕获异常做失败隔离。
+    之前吞异常导致失败题目被记为"成功评估"，错误答案污染聚合结果。
+    """
+    # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
+    from app.models.factory import ModelFactory
+    from app.rag.prompt_builder import build_rag_prompt
+    from app.rag.retriever import retriever
 
-        if not contexts:
-            return "无法获取相关内容来回答此问题。", []
+    # Retrieve relevant chunks
+    # Task 9: 使用 settings.RETRIEVAL_TOP_K 保持评估与生产一致，避免评估结果系统性偏低
+    chunks = await retriever.retrieve(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
+    contexts = [c.get("content", "") for c in chunks]
 
-        # Build prompt
-        prompt = build_rag_prompt(query, chunks)
+    if not contexts:
+        return "无法获取相关内容来回答此问题。", []
 
-        # Generate answer
-        llm = ModelFactory.create_llm()
-        answer = await llm.chat(
-            [{"role": "user", "content": prompt}],
-            temperature=0.3,
-        )
-        answer = answer or ""
+    # Build prompt
+    prompt = build_rag_prompt(query, chunks)
 
-        return answer, contexts
+    # Generate answer
+    llm = ModelFactory.create_llm()
+    answer = await llm.chat(
+        [{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+    answer = answer or ""
 
-    except Exception:
-        # 记录原始异常堆栈（脱敏返回值前保留排查信息）
-        logger.exception(f"RAG pipeline error for query '{query[:50]}...'")
-        return "评估失败，请稍后重试", []
+    return answer, contexts
 
 
 async def trigger_evaluation(

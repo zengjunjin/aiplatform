@@ -218,7 +218,7 @@ describe('FeedbackTrendAnalysis', () => {
           message_id: 1,
           rating: -1,
           comment: null,
-          feedback_type: 'hallucination',
+          feedback_type: 'faithfulness_issue',
           created_at: new Date().toISOString(),
           question: 'q',
           answer: 'a',

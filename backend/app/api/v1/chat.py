@@ -832,7 +832,7 @@ async def get_low_rated_feedbacks(
     end_date: str | None = None,
     feedback_type: str | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):

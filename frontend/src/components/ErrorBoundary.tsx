@@ -24,10 +24,19 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
+    // 修复（v0.4.0）：忽略 axios 取消错误（导航时旧页面请求被取消，不是真正的业务错误）
+    // 之前 canceled 错误被 ErrorBoundary 捕获后显示错误页面，影响用户体验
+    if (error.message === 'canceled' || error.message.includes('canceled')) {
+      return { hasError: false, error: null, errorInfo: null };
+    }
     return { hasError: true, error, errorInfo: null };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // canceled 错误不上报
+    if (error.message === 'canceled' || error.message.includes('canceled')) {
+      return;
+    }
     // 上报到全局错误收集器（console + localStorage 面包屑，后续可接 Sentry）
     reportError(error, errorInfo);
     this.setState({ errorInfo });

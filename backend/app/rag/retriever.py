@@ -179,6 +179,10 @@ class HybridRetriever:
                 self._chunks_cache.move_to_end(kb_id)
                 return self._chunks_cache[kb_id]
             chunks = await self._load_chunks_for_bm25(kb_id)
+            # 空列表不缓存：DB 瞬时故障返回 [] 时让下次请求重试，避免永久缓存空结果
+            if not chunks:
+                logger.warning("KB {} loaded empty chunks, skip cache to allow retry", kb_id)
+                return chunks
             # 单个 KB chunks 数量超限：返回数据供本次使用，但不写入缓存
             if len(chunks) > settings.BM25_CACHE_MAX_CHUNKS_PER_KB:
                 logger.warning(
@@ -195,10 +199,14 @@ class HybridRetriever:
             return chunks
 
     def invalidate_chunks_cache(self, kb_id: int):
-        """文档增删后失效该 KB 的 chunks 缓存。"""
+        """文档增删后失效该 KB 的 chunks 缓存。
+
+        注意：只清理 cache，不清理 singleflight 锁。
+        原因：正在加载的协程持有的锁对象若被从 _chunks_locks 移除，
+        新请求会创建新锁导致 singleflight 失效、重复加载。
+        锁有 LRU 自然淘汰，不会内存泄漏。
+        """
         self._chunks_cache.pop(kb_id, None)
-        # 清理 singleflight 锁，避免内存泄漏
-        self._chunks_locks.pop(kb_id, None)
 
     async def _load_chunks_for_bm25(self, kb_id: int) -> list[dict]:
         """Load all chunks of a KB from DB for BM25 search."""

@@ -117,6 +117,7 @@ export default function MainLayout() {
       await authApi.changePassword({
         old_password: values.old_password,
         new_password: values.new_password,
+        confirm_password: values.confirm_password,
       });
       message.success(t('auth.changePasswordSuccess'));
       setPwdModal(false);

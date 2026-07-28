@@ -432,6 +432,27 @@ class TestRateLimit:
                 assert await ws_module._check_rate_limit("user_noredis") is True
             assert await ws_module._check_rate_limit("user_noredis") is False
 
+    @pytest.mark.asyncio
+    async def test_concurrent_inproc_no_mutation_error(self, reset_notification_manager):
+        """P0-D2 验收测试：高并发下内存降级路径不抛 'OrderedDict mutated during iteration'。
+
+        模拟 20 个用户同时发送消息 + Redis 返回 None（降级路径），
+        验证 asyncio.Lock 生效，无 RuntimeError。
+        """
+        import asyncio
+
+        with patch.object(ws_module, "get_redis", return_value=None):
+            # 20 个用户并发，每个用户发 3 条消息
+            async def user_send(uid: str) -> None:
+                for _ in range(3):
+                    # 只验证不抛异常，返回值不关心
+                    await ws_module._check_rate_limit(uid)
+
+            await asyncio.gather(*[user_send(f"user_c{i}") for i in range(20)])
+
+        # 验证：所有用户计数器都存在且无异常
+        assert len(ws_module._inproc_rate_counters) == 20
+
 
 # ---------- SubTask 20.4: ping/pong 超时（间接验证配置） ----------
 

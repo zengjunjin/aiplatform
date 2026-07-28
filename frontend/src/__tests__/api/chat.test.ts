@@ -221,10 +221,10 @@ describe('feedbackApi', () => {
     it('should call GET /chat/feedback/low-rated with date range', async () => {
       mockGet.mockResolvedValue({ data: { data: { items: [], total: 0 } } });
 
-      await feedbackApi.getLowRated({ start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'hallucination' });
+      await feedbackApi.getLowRated({ start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'faithfulness_issue' });
 
       expect(mockGet).toHaveBeenCalledWith('/chat/feedback/low-rated', {
-        params: { start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'hallucination' },
+        params: { start_date: '2024-01-01', end_date: '2024-12-31', feedback_type: 'faithfulness_issue' },
       });
     });
 

@@ -123,9 +123,17 @@ describe('authApi', () => {
     it('should call PUT /auth/password', async () => {
       mockPut.mockResolvedValue({ data: {} });
 
-      await authApi.changePassword({ old_password: 'old', new_password: 'new' });
+      await authApi.changePassword({
+        old_password: 'old',
+        new_password: 'new',
+        confirm_password: 'new',
+      });
 
-      expect(mockPut).toHaveBeenCalledWith('/auth/password', { old_password: 'old', new_password: 'new' });
+      expect(mockPut).toHaveBeenCalledWith('/auth/password', {
+        old_password: 'old',
+        new_password: 'new',
+        confirm_password: 'new',
+      });
     });
   });
 });

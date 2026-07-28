@@ -32,19 +32,50 @@ from app.tasks.celery_app import celery_app
     # 默认 300s/240s 不够。放宽到 1800s/1500s（30/25 分钟）。
     time_limit=1800,
     soft_time_limit=1500,
+    # 修复（v0.4.0）：添加重试退避策略
+    retry_backoff=60,
+    retry_backoff_max=300,
+    retry_jitter=True,
 )
 def run_evaluation_task(self, run_id: int):
     """Run evaluation asynchronously in Celery worker.
 
     Sync Celery entry point — creates an event loop and delegates to
     the async orchestrator ``_run_evaluation_async``.
+
+    修复（v0.4.0）：失败时调用 self.retry() 触发自动重试。
+    之前装饰器声明 max_retries=2 但函数体从未调用 self.retry()，配置形同虚设。
     """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(_run_evaluation_async(run_id))
+    except Exception as exc:
+        # 修复（v0.4.0）：瞬时故障自动重试，重试次数用尽后标记 FAILED
+        if self.request.retries < settings.TASK_MAX_RETRIES_EVALUATION:
+            logger.warning(
+                f"Evaluation run {run_id} failed (attempt {self.request.retries + 1}), "
+                f"retrying in 60s: {exc}"
+            )
+            raise self.retry(exc=exc)
+        # 重试次数用尽，标记 FAILED
+        loop.run_until_complete(
+            _mark_run_failed(run_id, f"评估失败（重试 {self.request.retries} 次后仍失败）: {exc}")
+        )
+        raise
     finally:
         loop.close()
+
+
+async def _mark_run_failed(run_id: int, error: str):
+    """重试次数用尽时标记 run 为 FAILED。"""
+    session = get_sync_session()
+    try:
+        await _update_run_status(session, run_id, EvaluationStatus.FAILED, error)
+    except Exception as e:
+        logger.error(f"Failed to mark run {run_id} as FAILED: {e}")
+    finally:
+        session.close()
 
 
 async def _run_evaluation_async(run_id: int) -> dict:
@@ -55,6 +86,8 @@ async def _run_evaluation_async(run_id: int) -> dict:
     2. Task 9: 准备数据集 (sync session wrapped in asyncio.to_thread)
     3. Task 8: 并发执行评估
     4. 计算并持久化指标
+
+    修复（v0.4.0）：except 中根据是否还有重试次数决定 raise retry 还是标记 FAILED。
     """
     session = get_sync_session()
     try:
@@ -76,23 +109,16 @@ async def _run_evaluation_async(run_id: int) -> dict:
 
         results = await _run_evaluations(kb_id, dataset)
         return await _compute_and_persist_metrics(session, run_id, results)
-    except Exception:
+    except Exception as exc:
         logger.exception(f"Evaluation run {run_id} failed")
         if session.is_active:
             try:
                 session.rollback()
             except Exception as re:
                 logger.debug(f"Evaluation first rollback failed: {re}")
-        try:
-            await _update_run_status(session, run_id, EvaluationStatus.FAILED, "评估失败")
-        except Exception as commit_err:
-            logger.error(f"Failed to update evaluation run status: {commit_err}")
-            if session.is_active:
-                try:
-                    session.rollback()
-                except Exception as re:
-                    logger.debug(f"Evaluation second rollback failed: {re}")
-        return {"error": "评估失败"}
+        # 修复（v0.4.0）：瞬时故障自动重试（max_retries 由装饰器配置）
+        # 通过 raise 让 Celery 捕获并按 retry_backoff 策略重试
+        raise
     finally:
         session.close()
 
@@ -160,6 +186,11 @@ async def _prepare_dataset(session: Session, run: EvaluationRun) -> list[dict]:
 
     sync session 查询用 asyncio.to_thread 包装，避免阻塞事件循环。
     LLM 问题生成保持 async（内部已有 Semaphore 并发控制）。
+
+    设计原则（与 evaluation_service.generate_test_dataset 一致）：
+    - ground_truth 由 LLM 仅依据 question + kb_description 独立生成，不看 chunk 内容
+    - contexts 由 retriever 对 question 重新检索得到，与 ground_truth 不同源
+    - 避免 RAGAS 指标循环验证、虚高
     """
 
     def _sync_fetch_chunks():
@@ -181,17 +212,33 @@ async def _prepare_dataset(session: Session, run: EvaluationRun) -> list[dict]:
 
     await asyncio.to_thread(_sync_update_count)
 
-    return await _generate_dataset_async(chunks)
+    # 获取 KB 描述用于独立生成 ground_truth
+    def _sync_fetch_kb():
+        from app.db.knowledge_base import KnowledgeBase
+
+        return session.get(KnowledgeBase, run.knowledge_base_id)
+
+    kb = await asyncio.to_thread(_sync_fetch_kb)
+    kb_description = (kb.description or kb.name) if kb else ""
+
+    return await _generate_dataset_async(chunks, kb_description, run.knowledge_base_id)
 
 
-async def _generate_dataset_async(chunks: list) -> list[dict]:
+async def _generate_dataset_async(
+    chunks: list, kb_description: str, kb_id: int
+) -> list[dict]:
     """Async dataset generation: 并发用 LLM Provider 生成问题。
 
     Task 14.3: 移除 requests.post 同步调用，改用 OllamaLLMProvider.chat() 异步调用。
     Task 8 风格: 用 asyncio.gather + Semaphore(8) 限制并发度。
     Task 1.5: 数据集条目包含 question_type/difficulty。
+
+    修复（v0.4.0）：ground_truth 与 contexts 不再同源。
+    - ground_truth：LLM 仅依据 question + kb_description 独立生成
+    - contexts：retriever 对 question 重新检索得到
     """
     from app.models.ollama_provider import OllamaLLMProvider
+    from app.rag.retriever import retriever
 
     target_chunks = chunks
     # Task 14.3: 创建独立 OllamaLLMProvider 实例（避免 ModelFactory 单例的 event loop 绑定问题）
@@ -201,15 +248,27 @@ async def _generate_dataset_async(chunks: list) -> list[dict]:
     async def _gen_with_sem(idx: int, chunk_content: str) -> dict | None:
         async with semaphore:
             question_data = await _generate_question_async(chunk_content, llm)
-            if question_data:
-                return {
-                    "question": question_data["question"],
-                    "ground_truth": target_chunks[idx].content,
-                    "contexts": [target_chunks[idx].content],
-                    "question_type": question_data["question_type"],
-                    "difficulty": question_data["difficulty"],
-                }
-            return None
+            if not question_data:
+                return None
+            question = question_data["question"]
+            # 独立生成 ground_truth：LLM 不看 chunk 内容，避免与 contexts 同源
+            ground_truth = await _generate_ground_truth_async(llm, question, kb_description)
+            # contexts 由 retriever 对 question 重新检索得到
+            try:
+                retrieved = await retriever.retrieve(
+                    question, kb_id, top_k=settings.RETRIEVAL_TOP_K
+                )
+                contexts = [c.get("content", "") for c in retrieved]
+            except Exception as e:
+                logger.warning(f"Failed to retrieve contexts for question {idx}: {e}")
+                contexts = []
+            return {
+                "question": question,
+                "ground_truth": ground_truth,
+                "contexts": contexts,
+                "question_type": question_data["question_type"],
+                "difficulty": question_data["difficulty"],
+            }
 
     try:
         tasks = [_gen_with_sem(idx, chunk.content) for idx, chunk in enumerate(target_chunks)]
@@ -219,6 +278,29 @@ async def _generate_dataset_async(chunks: list) -> list[dict]:
 
     # 过滤掉 None（生成失败的）
     return [d for d in dataset if d is not None]
+
+
+async def _generate_ground_truth_async(
+    llm, question: str, kb_description: str
+) -> str:
+    """由 LLM 仅依据 question 和 kb_description 独立生成参考答案。
+
+    LLM 不看 chunk 内容，避免与 contexts 同源导致 RAGAS 指标循环验证、虚高。
+    生成失败时 raise，不 fallback 到 chunk.content。
+    """
+    prompt = (
+        "你是一个领域专家。请针对以下问题给出一个准确、简洁的参考答案。\n\n"
+        f"知识库描述：{kb_description}\n"
+        f"问题：{question}\n"
+        "参考答案："
+    )
+    response = await llm.chat(
+        [{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+    if not response or not response.strip():
+        raise RuntimeError("LLM returned empty ground_truth")
+    return response.strip()
 
 
 async def _generate_question_async(chunk_content: str, llm: Any) -> dict | None:

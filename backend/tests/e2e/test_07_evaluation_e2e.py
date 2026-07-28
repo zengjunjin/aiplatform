@@ -20,10 +20,9 @@ from tests.e2e.helpers.waiters import wait_for
 def test_trigger_evaluation(base_url, admin_headers, kb_with_doc):
     """触发评估
 
-    生产 Bug（记录不修复）：evaluation.py:34 调用 get_kb_for_read(db, kb_id, admin.id)，
-    但函数签名是 get_kb_for_read(kb_id, user_id, db)，参数顺序错误导致
-    db 被当作 kb_id（int），kb_id 被当作 user_id，admin.id 被当作 db，
-    引发 AttributeError: 'int' object has no attribute 'execute'。
+    历史：早期版本 evaluation_service.trigger_evaluation 调用 get_kb_for_read
+    时参数顺序错误导致 500。该 bug 已修复（evaluation_service.py L202 参数顺序正确）。
+    本测试从 xfail 改为严格断言 200，确保修复不被回退。
     """
     r = requests.post(
         f"{base_url}/evaluation/runs",
@@ -31,8 +30,6 @@ def test_trigger_evaluation(base_url, admin_headers, kb_with_doc):
         headers=admin_headers,
         timeout=10,
     )
-    if r.status_code == 500:
-        pytest.xfail("Production bug: evaluation.py:34 get_kb_for_read 参数顺序错误")
     assert r.status_code == 200, f"Trigger evaluation failed: {r.text}"
     data = extract_data(r)
     assert "run_id" in data
@@ -84,8 +81,8 @@ def test_normal_user_cannot_trigger(base_url, test_user_headers, kb_with_doc):
 def test_evaluation_complete_with_metrics(base_url, admin_headers, kb_with_doc):
     """评估完成并返回 metrics（耗时较长，最长等 10 分钟）
 
-    生产 Bug（记录不修复）：同 test_trigger_evaluation，
-    evaluation.py:34 get_kb_for_read 参数顺序错误导致 500。
+    历史：同 test_trigger_evaluation，早期版本 get_kb_for_read 参数顺序错误导致 500。
+    该 bug 已修复。本测试从 xfail 改为严格断言。
     """
     # 触发评估
     r = requests.post(
@@ -97,8 +94,6 @@ def test_evaluation_complete_with_metrics(base_url, admin_headers, kb_with_doc):
     # 限流可能 429
     if r.status_code == 429:
         pytest.skip("Evaluation rate limit (3/hour) reached, skip metrics test")
-    if r.status_code == 500:
-        pytest.xfail("Production bug: evaluation.py:34 get_kb_for_read 参数顺序错误")
     assert r.status_code == 200, f"Trigger failed: {r.text}"
     run_id = extract_data(r)["run_id"]
 

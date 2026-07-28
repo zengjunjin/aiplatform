@@ -33,11 +33,12 @@ class Reranker:
 
         # 检查模型是否已加载，未加载则尝试等待（带超时）
         provider = self.provider
-        if provider._model is None:
+        # 修复（v0.4.0）：使用公共 API 替代私有属性访问，避免破坏封装
+        if not provider.is_loaded():
             try:
                 # 带超时地等待模型加载，避免长时间阻塞 chat 流
                 await asyncio.wait_for(
-                    provider._ensure_model(), timeout=self.LOAD_WAIT_TIMEOUT
+                    provider.ensure_loaded(), timeout=self.LOAD_WAIT_TIMEOUT
                 )
             except TimeoutError:
                 logger.warning(

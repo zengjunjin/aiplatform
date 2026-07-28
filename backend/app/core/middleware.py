@@ -328,10 +328,17 @@ class PrometheusMiddleware:
                 await send(message)
 
             await self.app(scope, receive, send_wrapper)
-
+        except Exception:
+            # 异常时 status_code 未被 send_wrapper 捕获，设为 500
+            # 之前不记录指标导致 500 错误在 Prometheus 中"消失"，HighErrorRate 告警永不触发
+            status_code = "500"
+            raise
+        finally:
+            # 无论成功或异常都记录指标
             if status_code is not None:
-                REQUEST_TOTAL.labels(method=method, path=metric_path, status_code=status_code).inc()
+                REQUEST_TOTAL.labels(
+                    method=method, path=metric_path, status_code=status_code
+                ).inc()
                 latency = time.time() - start_time
                 REQUEST_LATENCY.labels(method=method, path=metric_path).observe(latency)
-        finally:
             REQUEST_IN_PROGRESS.dec()

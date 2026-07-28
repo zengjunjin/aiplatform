@@ -4,11 +4,10 @@
  * 注意：值为 i18n key（如 chat.feedbackType.notAccurate），使用方需通过 t() 翻译，而非直接展示。
  */
 export const FEEDBACK_TYPE_LABELS: Record<string, string> = {
-  not_accurate: 'chat.feedbackType.notAccurate',
-  incomplete: 'chat.feedbackType.incomplete',
-  hallucination: 'chat.feedbackType.hallucination',
-  irrelevant: 'chat.feedbackType.irrelevant',
-  too_verbose: 'chat.feedbackType.tooVerbose',
-  too_brief: 'chat.feedbackType.tooBrief',
+  faithfulness_issue: 'chat.feedbackType.faithfulnessIssue',
+  context_insufficient: 'chat.feedbackType.contextInsufficient',
+  incompleteness: 'chat.feedbackType.incompleteness',
+  irrelevance: 'chat.feedbackType.irrelevance',
+  verbosity: 'chat.feedbackType.verbosity',
   other: 'chat.feedbackType.other',
 };

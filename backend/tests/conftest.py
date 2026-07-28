@@ -45,6 +45,16 @@ def pytest_configure(config):
     避免未安装时 pytest 因 --reruns 未知参数报错。
     （pyproject.toml addopts 中不直接写 --reruns，由本函数条件注入。）
     """
+    # 修复（v0.4.0）：预导入 app.rag.retriever，防止 test_evaluation_task.py
+    # 顶层 stub（sys.modules["app.rag.retriever"] = MagicMock()）污染后续测试。
+    # test_evaluation_task.py 用 `if _stub not in sys.modules` 守卫，
+    # 预导入后守卫不满足，就不会用 MagicMock 替换真实模块。
+    # HybridRetriever.__init__ 是懒加载（仅初始化 None/空 dict），无连接副作用。
+    try:
+        import app.rag.retriever  # noqa: F401
+    except Exception:
+        pass  # 容器环境异常时降级，保留原 stub 行为
+
     try:
         import pytest_rerunfailures  # noqa: F401
     except ImportError:

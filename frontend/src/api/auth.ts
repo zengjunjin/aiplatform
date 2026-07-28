@@ -15,6 +15,8 @@ export interface RegisterParams {
 export interface ChangePasswordParams {
   old_password: string;
   new_password: string;
+  /** 后端 ChangePasswordRequest 必填，且 extra="forbid" 会拒绝未声明字段，故必须显式传递 */
+  confirm_password: string;
 }
 
 export const authApi = {

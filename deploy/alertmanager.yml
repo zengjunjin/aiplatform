@@ -9,41 +9,42 @@ global:
   # smtp_auth_password: 'CHANGE_ME_IN_PRODUCTION'
 
 route:
-  group_by: ['alertname', 'severity']
+  # 修复（v0.4.0）：按 alertname + instance 分组，不按 severity 分组
+  # 原因：按 severity 分组会导致同一 alertname 的 critical 和 warning 分到不同组
+  group_by: ['alertname', 'instance']
   group_wait: 30s
-  group_interval: 5m
-  repeat_interval: 1h
+  # 修复（v0.4.0）：5m→30m，避免持续故障时每小时 12 次通知造成通知疲劳
+  group_interval: 30m
+  repeat_interval: 4h
   receiver: 'default'
   routes:
     - matchers:
         - severity = critical
       receiver: 'critical-webhook'
-      continue: true
+      # 修复（v0.4.0）：移除 continue: true，避免 critical 告警重复通知
     - matchers:
         - severity = warning
       receiver: 'warning-webhook'
 
 receivers:
   - name: 'default'
-    # Task 4.1: webhook 转发到 webhook-receiver 服务
+    # 兜底 receiver：仅接收未匹配 critical/warning 的告警
     webhook_configs:
       - url: 'http://alertmanager-webhook-receiver:5001/webhook'
         send_resolved: true
 
   - name: 'critical-webhook'
+    # 修复（v0.4.0）：critical 告警通过独立路径区分
+    # webhook-receiver 根据 payload 中的 severity 字段分文件落盘
     webhook_configs:
-      - url: 'http://alertmanager-webhook-receiver:5001/webhook'
+      - url: 'http://alertmanager-webhook-receiver:5001/webhook?severity=critical'
         send_resolved: true
 
   - name: 'warning-webhook'
     webhook_configs:
-      - url: 'http://alertmanager-webhook-receiver:5001/webhook'
+      - url: 'http://alertmanager-webhook-receiver:5001/webhook?severity=warning'
         send_resolved: true
 
-# Task 89: 抑制规则 — backend down 时抑制 HighErrorRate
-inhibit_rules:
-  - source_matchers:
-      - alertname = BackendDown
-    target_matchers:
-      - alertname = HighErrorRate
-    equal: ['instance']
+# 修复（v0.4.0）：移除无效的 BackendDown 抑制规则
+# 原因：alerts.yml 中未定义 BackendDown 告警，该抑制规则永不生效
+# 如需恢复，需先在 alerts.yml 中新增 BackendDown 告警

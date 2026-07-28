@@ -300,14 +300,17 @@ class TestGetRagAnswer:
 
     @pytest.mark.asyncio
     async def test_exception_returns_error_message(self):
+        """修复（v0.4.0）：get_rag_answer 移除了宽泛 except Exception，
+        retriever 异常现在直接向上抛出，由 _run_evaluations 的 gather(return_exceptions=True) 捕获。
+        之前吞异常导致失败题目被记为"成功评估"，错误答案污染聚合结果。
+        """
         with patch(
             "app.rag.retriever.retriever.retrieve",
             new=AsyncMock(side_effect=RuntimeError("retriever down")),
         ):
-            answer, contexts = await evaluation_service.get_rag_answer("query", kb_id=1)
-
-        assert "评估失败" in answer
-        assert contexts == []
+            # 异常应直接传播，由调用方 _run_evaluations 做失败隔离
+            with pytest.raises(RuntimeError, match="retriever down"):
+                await evaluation_service.get_rag_answer("query", kb_id=1)
 
     @pytest.mark.asyncio
     async def test_empty_answer_replaced_with_empty_string(self):

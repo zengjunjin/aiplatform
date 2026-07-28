@@ -127,9 +127,11 @@ def test_user(base_url, admin_headers):
     使用 session scope 避免 /auth/register 限流（5/minute）。
     注意：API 没有 DELETE /users/{id} 端点，使用 PUT /users/{id}/status 软禁用清理。
 
-    警告：test_02_users_e2e.py 中的 test_admin_can_disable_user 会修改此用户状态，
-    但其他测试使用的是 access_token，token 在签发后即不依赖 is_active 校验
-    （仅 /auth/login 会检查 is_active），因此 disable 不会影响其他测试。
+    注意：deps.py get_current_user L104-105 现已检查 user.is_active，
+    禁用用户后其 access_token 会立即失效（返回 401）。
+    test_02_users_e2e.py 的 test_admin_can_disable_user 若禁用此用户，
+    后续使用 test_user access_token 的测试将收到 401。
+    该测试需在禁用后重新启用用户，或使用独立创建的用户。
     """
     username = f"e2e_user_{uuid.uuid4().hex[:8]}"
     email = f"{username}@test.com"

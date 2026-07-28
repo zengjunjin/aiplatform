@@ -109,19 +109,11 @@ async def lifespan(app: FastAPI):
     # OpenTelemetry 追踪初始化（仅当 OTEL_EXPORTER_OTLP_ENDPOINT 配置时启用）
     # 必须在 init_redis() / EventBus.init() 之前调用：
     # RedisInstrumentor().instrument() 通过 monkey-patching redis.Redis /
-    # redis.asyncio.Redis 类工作，已创建的客户端实例不会被 instrument，
+    # redis.asyncio.Redis 类工作，已创建的客户端实例不会被 instrument,
     # 因此要在任何 Redis 客户端实例化之前完成 instrumentation。
+    # 注意：FastAPIInstrumentor.instrument_app(app) 已移到 app 创建后立即调用，
+    # 在 lifespan 中调用会触发 "Cannot add middleware after an application has started"。
     _setup_opentelemetry()
-    # FastAPI 仪器化需在 app 创建后执行；lifespan 在 app 创建后才被调用，安全
-    # 使用 settings.OTEL_EXPORTER_OTLP_ENDPOINT 与 _setup_opentelemetry() 保持一致
-    if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
-        try:
-            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-            FastAPIInstrumentor.instrument_app(app)
-            logger.info("FastAPI OpenTelemetry instrumentation enabled")
-        except Exception as exc:  # pragma: no cover
-            logger.warning(f"FastAPI instrumentation failed: {exc}")
 
     init_redis()
     logger.info("Redis initialized")
@@ -253,6 +245,17 @@ app = FastAPI(
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
 )
 
+# FastAPI OpenTelemetry 仪器化必须在 app 创建后、启动前调用
+# （在 lifespan 中调用会触发 "Cannot add middleware after an application has started"）
+if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(app)
+        logger.info("FastAPI OpenTelemetry instrumentation enabled")
+    except Exception as exc:  # pragma: no cover
+        logger.warning(f"FastAPI instrumentation failed: {exc}")
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(RequestLogMiddleware)
@@ -375,6 +378,43 @@ async def readyz():
         status_code=503,
         content={"status": "not_ready", "checks": checks},
     )
+
+
+# 修复（v0.4.0）：新增 /livez 端点检查 LLM Provider 可用性
+# readyz 仅检查基础设施（DB/Redis/Qdrant），livez 检查 LLM Provider 健康
+# 当所有 LLM Provider 不可用时返回 503，Kubernetes 可据此重启或摘流
+@app.get("/livez")
+async def livez():
+    """Liveness probe：探测 LLM Provider 是否可用。
+
+    至少一个 LLM Provider 可用返回 200，
+    全部不可用返回 503。
+    """
+    try:
+        from app.models.factory import ModelRegistry
+
+        available = ModelRegistry.get_available()
+        if not available:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "reason": "no LLM provider available",
+                    "providers": [],
+                },
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "alive",
+                "providers": [p.provider_name for p in available],
+            },
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "reason": str(e)},
+        )
 
 
 @app.get("/")

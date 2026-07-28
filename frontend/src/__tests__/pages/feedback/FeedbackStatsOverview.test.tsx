@@ -71,7 +71,7 @@ describe('FeedbackStatsOverview', () => {
       total_feedback: 10,
       positive_rate: 0.7,
       negative_rate: 0.3,
-      by_type: { hallucination: 3 },
+      by_type: { faithfulness_issue: 3 },
     };
     mockGetStats.mockResolvedValue(stats);
 
@@ -115,7 +115,7 @@ describe('FeedbackStatsOverview', () => {
       total_feedback: 42,
       positive_rate: 0.5,
       negative_rate: 0.5,
-      by_type: { hallucination: 1, incomplete: 2 },
+      by_type: { faithfulness_issue: 1, incompleteness: 2 },
     });
 
     render(<FeedbackStatsOverview selectedKbId={undefined} onStatsChange={onStatsChange} />);
@@ -161,7 +161,7 @@ describe('FeedbackStatsOverview', () => {
       total_feedback: 5,
       positive_rate: 0.6,
       negative_rate: 0.4,
-      by_type: { hallucination: 2, incomplete: 1, irrelevant: 1 },
+      by_type: { faithfulness_issue: 2, incompleteness: 1, irrelevant: 1 },
     });
 
     render(<FeedbackStatsOverview selectedKbId={undefined} onStatsChange={onStatsChange} />);

@@ -9,9 +9,48 @@ API:
         用户创建走 /auth/register，用户信息走 /auth/me
 """
 
+import contextlib
+import uuid
+
+import pytest
 import requests
 
 from tests.e2e.conftest import extract_data
+
+
+@pytest.fixture(scope="function")
+def temp_disable_user(base_url, admin_headers):
+    """P0-C4: 禁用/启用测试专用的独立用户 fixture（function scope）。
+
+    创建临时用户 → 供 test_admin_can_disable_user / test_admin_can_enable_user 使用 → 测试后清理。
+    不污染 session 级 test_user，保证测试隔离。
+
+    之前 test_admin_can_disable_user 直接禁用 session 级 test_user，
+    若测试失败或顺序变化，后续依赖 test_user_headers 的测试全部 401 连锁失败。
+    """
+    username = f"temp_disable_{uuid.uuid4().hex[:8]}"
+    email = f"{username}@test.local"
+    password = "Test@123456"
+
+    # 注册临时用户
+    r = requests.post(
+        f"{base_url}/auth/register",
+        json={"username": username, "email": email, "password": password},
+        timeout=10,
+    )
+    assert r.status_code == 200, f"Register temp user failed: {r.text}"
+    user_id = extract_data(r)["id"]
+
+    yield user_id
+
+    # 清理：软禁用临时用户（API 无 DELETE /users/{id}）
+    with contextlib.suppress(Exception):
+        requests.put(
+            f"{base_url}/users/{user_id}/status",
+            json={"is_active": False},
+            headers=admin_headers,
+            timeout=5,
+        )
 
 
 def test_admin_can_list_users(base_url, admin_headers):
@@ -70,10 +109,15 @@ def test_admin_can_update_role(base_url, admin_headers, test_user):
     )
 
 
-def test_admin_can_disable_user(base_url, admin_headers, test_user):
-    """admin 禁用用户"""
+def test_admin_can_disable_user(base_url, admin_headers, temp_disable_user):
+    """admin 禁用用户
+
+    P0-C4: 使用 function 级独立 fixture（temp_disable_user），不污染 session 级 test_user。
+    即使本测试失败，后续依赖 test_user_headers 的测试也不会受影响。
+    """
+    user_id = temp_disable_user
     r = requests.put(
-        f"{base_url}/users/{test_user['user']['id']}/status",
+        f"{base_url}/users/{user_id}/status",
         json={"is_active": False},
         headers=admin_headers,
         timeout=10,
@@ -83,18 +127,22 @@ def test_admin_can_disable_user(base_url, admin_headers, test_user):
     assert updated["is_active"] is False
 
 
-def test_admin_can_enable_user(base_url, admin_headers, test_user):
-    """admin 启用用户"""
+def test_admin_can_enable_user(base_url, admin_headers, temp_disable_user):
+    """admin 启用用户
+
+    P0-C4: 使用 function 级独立 fixture（temp_disable_user），不污染 session 级 test_user。
+    """
+    user_id = temp_disable_user
     # 先禁用
     requests.put(
-        f"{base_url}/users/{test_user['user']['id']}/status",
+        f"{base_url}/users/{user_id}/status",
         json={"is_active": False},
         headers=admin_headers,
         timeout=10,
     )
     # 再启用
     r = requests.put(
-        f"{base_url}/users/{test_user['user']['id']}/status",
+        f"{base_url}/users/{user_id}/status",
         json={"is_active": True},
         headers=admin_headers,
         timeout=10,

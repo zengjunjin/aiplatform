@@ -243,8 +243,13 @@ class TestChunksCacheSingleflight:
         assert sorted(loaded_kbs) == [100, 200]
 
     @pytest.mark.asyncio
-    async def test_invalidate_clears_lock(self):
-        """invalidate_chunks_cache 应清理 singleflight 锁"""
+    async def test_invalidate_clears_cache_only(self):
+        """invalidate_chunks_cache 只清理 cache，不清理 singleflight 锁
+
+        修复（v0.4.0）：invalidate 不再清理锁。
+        原因：正在加载的协程持有的锁对象若被移除，新请求会创建新锁
+        导致 singleflight 失效、重复加载。锁有 LRU 自然淘汰，不会内存泄漏。
+        """
         r = HybridRetriever()
 
         async def fake_load(kb_id):
@@ -255,7 +260,9 @@ class TestChunksCacheSingleflight:
 
         assert 777 in r._chunks_locks
         r.invalidate_chunks_cache(777)
-        assert 777 not in r._chunks_locks
+        # 锁不被清理（修复 v0.4.0：避免 singleflight 失效）
+        assert 777 in r._chunks_locks
+        # 但 cache 被清理
         assert 777 not in r._chunks_cache
 
     @pytest.mark.asyncio

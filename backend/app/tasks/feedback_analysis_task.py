@@ -49,22 +49,40 @@ def run_feedback_analysis(self) -> dict:
     report_dir = _get_report_dir()
 
     # === 幂等性检查 (Task 6) ===
-    # 如果最近 6 小时内已生成过报告，跳过避免重复执行
-    # (Celery acks_late 场景下可能重投递；或定时任务因故重复触发)
-    cutoff = datetime.now(UTC) - timedelta(hours=6)
-    if os.path.exists(report_dir):
-        for filename in os.listdir(report_dir):
-            if not (filename.startswith("feedback_report_") and filename.endswith(".md")):
-                continue
-            filepath = os.path.join(report_dir, filename)
-            try:
-                mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=UTC)
-                if mtime > cutoff:
-                    logger.info(f"Recent report exists: {filepath}, skipping (idempotent)")
-                    return {"status": "skipped", "reason": "recent_report_exists"}
-            except OSError as e:
-                logger.warning(f"Failed to stat {filepath}: {e}")
-                continue
+    # 修复（v0.4.0）：改用 Redis 记录执行状态，替代文件 mtime
+    # 原因：文件 mtime 可被 touch 或文件系统恢复修改，导致误跳过；
+    # 且跨时间窗口的报告可能都被跳过；report_dir 权限故障时跳过检查直接执行（重复生成）
+    idempotent_key = "feedback_analysis:last_run"
+    idempotent_ttl = 6 * 3600  # 6 小时
+    try:
+        from app.redis_client import get_redis
+
+        redis = get_redis()
+        if redis is not None:
+            # get_redis() 返回 sync redis 客户端（因为这里在同步函数中）
+            last_run = redis.get(idempotent_key)
+            if last_run:
+                logger.info(
+                    f"Feedback analysis already ran at {last_run.decode() if isinstance(last_run, bytes) else last_run}, skipping (idempotent)"
+                )
+                return {"status": "skipped", "reason": "recent_run_in_redis"}
+    except Exception as e:
+        logger.warning(f"Redis idempotent check failed, fallback to file-based: {e}")
+        # 降级：文件 mtime 检查（保留原逻辑作为 fallback）
+        cutoff = datetime.now(UTC) - timedelta(hours=6)
+        if os.path.exists(report_dir):
+            for filename in os.listdir(report_dir):
+                if not (filename.startswith("feedback_report_") and filename.endswith(".md")):
+                    continue
+                filepath = os.path.join(report_dir, filename)
+                try:
+                    mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=UTC)
+                    if mtime > cutoff:
+                        logger.info(f"Recent report exists: {filepath}, skipping (idempotent fallback)")
+                        return {"status": "skipped", "reason": "recent_report_exists_file_fallback"}
+                except OSError as oe:
+                    logger.warning(f"Failed to stat {filepath}: {oe}")
+                    continue
     # === 幂等性检查结束 ===
 
     async def _run():
@@ -96,6 +114,16 @@ def run_feedback_analysis(self) -> dict:
                 await asyncio.to_thread(_write_report, report_path, report)
 
                 logger.info(f"Feedback analysis report saved to: {report_path}")
+
+                # 修复（v0.4.0）：成功后写入 Redis 幂等标记
+                try:
+                    from app.redis_client import get_redis
+
+                    redis = get_redis()
+                    if redis is not None:
+                        redis.setex(idempotent_key, idempotent_ttl, datetime.now(UTC).isoformat())
+                except Exception as e:
+                    logger.warning(f"Failed to write idempotent marker to Redis: {e}")
 
                 # 清理旧报告（保留最近 12 周）
                 _cleanup_old_reports(keep=settings.FEEDBACK_REPORT_KEEP_COUNT)

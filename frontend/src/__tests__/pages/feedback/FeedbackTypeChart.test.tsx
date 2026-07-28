@@ -28,10 +28,10 @@ const mockStats: FeedbackStats = {
   positive_rate: 0.6,
   negative_rate: 0.4,
   by_type: {
-    hallucination: 2,
-    incomplete: 1,
+    faithfulness_issue: 2,
+    incompleteness: 1,
     irrelevant: 1,
-    not_accurate: 1,
+    faithfulness_issue: 1,
   },
 };
 
@@ -41,7 +41,7 @@ const mockFeedbacks: FeedbackDetail[] = [
     message_id: 100,
     rating: -1,
     comment: 'bad',
-    feedback_type: 'hallucination',
+    feedback_type: 'faithfulness_issue',
     created_at: '2026-07-01T00:00:00Z',
     question: 'q1',
     answer: 'a1',
@@ -53,7 +53,7 @@ const mockFeedbacks: FeedbackDetail[] = [
     message_id: 101,
     rating: -1,
     comment: null,
-    feedback_type: 'incomplete',
+    feedback_type: 'incompleteness',
     created_at: '2026-07-02T00:00:00Z',
     question: 'q2',
     answer: 'a2',
@@ -158,7 +158,7 @@ describe('FeedbackTypeChart', () => {
       total_feedback: 3,
       positive_rate: 0.5,
       negative_rate: 0.5,
-      by_type: { too_verbose: 2 },
+      by_type: { verbosity: 2 },
     };
     rerender(<FeedbackTypeChart stats={newStats} feedbacks={[]} />);
     expect(screen.getByText('feedback.typeDistribution')).toBeInTheDocument();

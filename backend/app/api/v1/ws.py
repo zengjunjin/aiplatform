@@ -86,6 +86,9 @@ async def _register_event_handlers():
 # 进程内消息频率计数（仅在 Redis 不可用时使用，不具备跨进程能力）
 # Task 50: 使用 OrderedDict 实现 LRU，避免长期运行后内存无限增长
 _inproc_rate_counters: OrderedDict[str, list[float]] = OrderedDict()
+# P0-D2: 保护 _inproc_rate_counters 的并发访问，避免 Redis 降级路径下
+# "OrderedDict mutated during iteration" 导致 WebSocket 接收循环异常断连
+_inproc_rate_lock = asyncio.Lock()
 
 
 def _trim_inproc_counters() -> None:
@@ -173,22 +176,25 @@ async def _check_rate_limit(user_id: str) -> bool:
             logger.warning(f"Redis rate limit failed, fallback to inproc: {e}")
 
     # 降级：进程内滑动窗口计数（仅本进程有效）
+    # P0-D2: 使用 asyncio.Lock 保护 OrderedDict 的并发访问，
+    # 避免多用户并发消息 + Redis 降级时 "OrderedDict mutated during iteration"
     now = asyncio.get_running_loop().time()
     # Task 40: 窗口时间迁移到 config.py
     window = float(settings.WEBSOCKET_RATE_LIMIT_WINDOW)
-    history = _inproc_rate_counters.get(user_id, [])
-    # 清理过期记录
-    history = [t for t in history if now - t < window]
-    if len(history) >= limit:
+    async with _inproc_rate_lock:
+        history = _inproc_rate_counters.get(user_id, [])
+        # 清理过期记录
+        history = [t for t in history if now - t < window]
+        if len(history) >= limit:
+            _inproc_rate_counters[user_id] = history
+            _inproc_rate_counters.move_to_end(user_id)
+            _trim_inproc_counters()
+            return False
+        history.append(now)
         _inproc_rate_counters[user_id] = history
         _inproc_rate_counters.move_to_end(user_id)
         _trim_inproc_counters()
-        return False
-    history.append(now)
-    _inproc_rate_counters[user_id] = history
-    _inproc_rate_counters.move_to_end(user_id)
-    _trim_inproc_counters()
-    return True
+        return True
 
 
 @router.websocket("/ws")
@@ -255,7 +261,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     recv_timeout = settings.WEBSOCKET_RECV_TIMEOUT
     # Task 33: 启动服务端心跳协程（独立 task，不阻塞主接收循环）
-    heartbeat_state = {"pong_received": True, "running": True}
+    # 注意：pong_event 必须在初始化时创建，_heartbeat 函数会立即访问它
+    heartbeat_state = {
+        "pong_received": True,
+        "running": True,
+        "pong_event": asyncio.Event(),
+    }
     heartbeat_task = asyncio.create_task(_heartbeat(websocket, heartbeat_state))
     try:
         # 发送欢迎消息

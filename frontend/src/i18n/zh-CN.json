@@ -64,12 +64,11 @@
     "feedbackThanks": "感谢你的反馈！",
     "feedbackFailed": "反馈提交失败",
     "feedbackType": {
-      "notAccurate": "回答不准确",
-      "incomplete": "回答不完整",
-      "hallucination": "存在幻觉/编造",
-      "irrelevant": "回答不相关",
-      "tooVerbose": "回答过于冗长",
-      "tooBrief": "回答过于简短",
+      "faithfulnessIssue": "回答不准确/存在幻觉",
+      "contextInsufficient": "上下文不足",
+      "incompleteness": "回答不完整",
+      "irrelevance": "回答不相关",
+      "verbosity": "回答过于冗长",
       "other": "其他"
     },
     "askAnything": "向知识库提问任意内容",

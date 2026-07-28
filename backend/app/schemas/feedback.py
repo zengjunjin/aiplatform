@@ -16,6 +16,7 @@ class FeedbackCreate(BaseModel):
             "incompleteness",
             "irrelevance",
             "verbosity",
+            "other",
         ]
         | None
     ) = None

@@ -40,13 +40,15 @@ class MessageOut(BaseModel):
     session_id: int
     role: str
     content: str
-    referenced_chunks: list[dict] | None
+    # API 返回字段名为 references（与 SSE done 事件字段一致）。
+    # validation_alias 兼容 ORM 对象的 referenced_chunks 属性名（数据库列名不变）。
+    references: list[dict] | None = Field(default=None, validation_alias="referenced_chunks")
     token_input: int | None
     token_output: int | None
     latency_ms: int | None
     created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class Reference(BaseModel):

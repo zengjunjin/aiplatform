@@ -22,6 +22,33 @@ from app.services.evaluation_service import get_rag_answer
 # Task 1.7: 问题生成公共常量与函数（消除 evaluation_task / evaluation_service 重复）
 _QUESTION_PREFIXES = ["问题：", "Question:", "Q:", "问："]
 
+# 修复（v0.4.0）：模块级缓存 RAGAS LLM/embeddings 客户端，避免每次评估创建新实例导致连接泄漏
+_ragas_llm = None
+_ragas_embeddings = None
+
+
+def _get_ragas_clients():
+    """获取或创建 RAGAS 使用的 LLM/embeddings 客户端单例。
+
+    之前每次调用 _compute_ragas_metrics 都创建新 ChatOllama + OllamaEmbeddings，
+    从未 close，导致连接池泄漏、worker 内存泄漏。
+    改为模块级单例，worker 进程内复用。
+    """
+    global _ragas_llm, _ragas_embeddings
+    if _ragas_llm is None or _ragas_embeddings is None:
+        from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from ragas.llms import LangchainLLMWrapper
+
+        ollama_llm = ChatOllama(model=settings.LLM_MODEL, host=settings.OLLAMA_HOST)
+        ollama_embeddings = OllamaEmbeddings(
+            model=settings.EMBEDDING_MODEL or settings.LLM_MODEL,
+            host=settings.OLLAMA_HOST,
+        )
+        _ragas_llm = LangchainLLMWrapper(ollama_llm)
+        _ragas_embeddings = LangchainEmbeddingsWrapper(ollama_embeddings)
+    return _ragas_llm, _ragas_embeddings
+
 
 def build_question_prompt(content: str) -> str:
     """构建从文本生成问题的 LLM prompt（公共函数，消除复制粘贴）。
@@ -273,14 +300,8 @@ async def _compute_ragas_metrics(
         }
     )
 
-    # H4: 使用本地 Ollama LLM + embeddings，避免依赖 OpenAI API key
-    ollama_llm = ChatOllama(model=settings.LLM_MODEL, host=settings.OLLAMA_HOST)
-    ollama_embeddings = OllamaEmbeddings(
-        model=settings.EMBEDDING_MODEL or settings.LLM_MODEL,
-        host=settings.OLLAMA_HOST,
-    )
-    ragas_llm = LangchainLLMWrapper(ollama_llm)
-    ragas_embeddings = LangchainEmbeddingsWrapper(ollama_embeddings)
+    # 修复（v0.4.0）：复用模块级单例 LLM/embeddings 客户端，避免每次创建新实例导致连接泄漏
+    ragas_llm, ragas_embeddings = _get_ragas_clients()
 
     # H4: 增加 timeout + 限制 max_workers（qwen2.5:1.5b 在 CPU 上响应较慢，
     # RAGAS 默认 max_workers=16 会让 Ollama 过载导致 TimeoutError，所有指标返回 None）。

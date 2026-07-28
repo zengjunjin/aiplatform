@@ -528,7 +528,11 @@ class TestBlacklist:
 
 
 class TestMemoryBlacklistHelpers:
-    """内存黑名单内部辅助函数（_memory_blacklist_add / _memory_blacklist_contains）。"""
+    """内存黑名单内部辅助函数（_memory_blacklist_add / _memory_blacklist_contains）。
+
+    P0-D1: 这两个函数已改为 async（使用 asyncio.Lock 保护并发访问），
+    测试方法相应改为 async。
+    """
 
     @pytest.fixture(autouse=True)
     def _clear_memory_blacklist(self):
@@ -536,39 +540,62 @@ class TestMemoryBlacklistHelpers:
         yield
         auth_service._memory_blacklist.clear()
 
-    def test_memory_blacklist_add_and_contains(self):
+    async def test_memory_blacklist_add_and_contains(self):
         """加入后能查到。"""
-        auth_service._memory_blacklist_add("access", "tok1", datetime.now(UTC).timestamp() + 100)
-        assert auth_service._memory_blacklist_contains("access", "tok1") is True
+        await auth_service._memory_blacklist_add("access", "tok1", datetime.now(UTC).timestamp() + 100)
+        assert await auth_service._memory_blacklist_contains("access", "tok1") is True
 
-    def test_memory_blacklist_not_contains(self):
+    async def test_memory_blacklist_not_contains(self):
         """未加入的 token 查不到。"""
-        assert auth_service._memory_blacklist_contains("access", "nope") is False
+        assert await auth_service._memory_blacklist_contains("access", "nope") is False
 
-    def test_memory_blacklist_expired_cleaned(self):
+    async def test_memory_blacklist_expired_cleaned(self):
         """过期条目在 contains 检查时被清理。"""
-        auth_service._memory_blacklist_add(
+        await auth_service._memory_blacklist_add(
             "access",
             "tok1",
             datetime.now(UTC).timestamp() - 10,  # 已过期
         )
-        assert auth_service._memory_blacklist_contains("access", "tok1") is False
+        assert await auth_service._memory_blacklist_contains("access", "tok1") is False
         # 过期条目应被清理
         assert "access:tok1" not in auth_service._memory_blacklist
 
-    def test_memory_blacklist_eviction_when_full(self):
+    async def test_memory_blacklist_eviction_when_full(self):
         """超过 _memory_blacklist_max 时丢弃最旧条目（插入顺序）。"""
         original_max = auth_service._memory_blacklist_max
         auth_service._memory_blacklist_max = 3
         try:
             now = datetime.now(UTC).timestamp() + 100
-            auth_service._memory_blacklist_add("access", "t1", now)
-            auth_service._memory_blacklist_add("access", "t2", now)
-            auth_service._memory_blacklist_add("access", "t3", now)
-            auth_service._memory_blacklist_add("access", "t4", now)  # 触发驱逐
+            await auth_service._memory_blacklist_add("access", "t1", now)
+            await auth_service._memory_blacklist_add("access", "t2", now)
+            await auth_service._memory_blacklist_add("access", "t3", now)
+            await auth_service._memory_blacklist_add("access", "t4", now)  # 触发驱逐
             # 最旧的 t1 应被驱逐
             assert "access:t1" not in auth_service._memory_blacklist
             assert "access:t4" in auth_service._memory_blacklist
             assert len(auth_service._memory_blacklist) == 3
         finally:
             auth_service._memory_blacklist_max = original_max
+
+    async def test_memory_blacklist_concurrent_access_no_error(self):
+        """P0-D1 验收测试：高并发下不抛 'dictionary changed size during iteration'。
+
+        模拟 10 个协程同时调用 add + contains，验证 asyncio.Lock 生效。
+        """
+        import asyncio
+
+        exp = datetime.now(UTC).timestamp() + 100
+
+        async def add_one(idx: int) -> None:
+            await auth_service._memory_blacklist_add("access", f"tok{idx}", exp)
+
+        async def check_one(idx: int) -> bool:
+            return await auth_service._memory_blacklist_contains("access", f"tok{idx}")
+
+        # 并发 10 个 add + 10 个 contains
+        await asyncio.gather(
+            *[add_one(i) for i in range(10)],
+            *[check_one(i) for i in range(10)],
+        )
+        # 全部 add 成功（未触发驱逐，max 默认远大于 10）
+        assert len(auth_service._memory_blacklist) == 10

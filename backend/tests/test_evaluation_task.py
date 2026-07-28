@@ -3,6 +3,10 @@
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from app.config import settings
+
 # conftest.py 先加载 pyarrow (→ numpy)；后续 qdrant_client/rank_bm25 再
 # `import numpy` 时，Windows 会抛 "ImportError: cannot load module more than
 # once per process"（numpy C 扩展冲突）。在导入 evaluation_task 之前注入
@@ -165,23 +169,34 @@ class TestRunSuccessRunningToCompleted:
 
 class TestRunFailureRunningToFailed:
     def test_run_failure_running_to_failed(self):
-        """RUNNING → FAILED: _run_evaluations 抛异常后标记 FAILED"""
+        """RUNNING → FAILED: 重试次数用尽后标记 FAILED
+
+        修复（v0.4.0）：run_evaluation_task 失败时先 retry，
+        重试次数用尽后才 _mark_run_failed。测试模拟 retries 已用尽。
+        """
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
         dataset = _fake_dataset(3)
 
-        with (
-            patch.object(evaluation_task, "get_sync_session", return_value=session),
-            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
-            patch.object(
-                evaluation_task,
-                "_run_evaluations",
-                side_effect=RuntimeError("RAGAS evaluation failed"),
-            ),
-        ):
-            result = run_evaluation_task(run_id=1)
+        eval_task = evaluation_task.run_evaluation_task
+        eval_task.push_request(retries=settings.TASK_MAX_RETRIES_EVALUATION)
+        try:
+            with (
+                patch.object(evaluation_task, "get_sync_session", return_value=session),
+                patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+                patch.object(
+                    evaluation_task,
+                    "_run_evaluations",
+                    side_effect=RuntimeError("RAGAS evaluation failed"),
+                ),
+            ):
+                # 重试次数用尽 → 标记 FAILED 后 raise 原始异常
+                with pytest.raises(RuntimeError, match="RAGAS evaluation failed"):
+                    run_evaluation_task(run_id=1)
+        finally:
+            eval_task.pop_request()
 
-        # 状态变更: PENDING → RUNNING → FAILED
+        # 状态变更: PENDING → RUNNING → FAILED（由 _mark_run_failed 设置）
         assert run.status_changes == [
             EvaluationStatus.PENDING,
             EvaluationStatus.RUNNING,
@@ -189,47 +204,51 @@ class TestRunFailureRunningToFailed:
         ]
         # error_message 被设置
         assert "评估失败" in run.error_message
-        # 返回 error
-        assert "error" in result
-        assert "评估失败" in result["error"]
-        # rollback 被调用
+        # rollback 被调用（_run_evaluation_async 的 except 块）
         session.rollback.assert_called()
-        # session 被关闭
-        session.close.assert_called_once()
+        # session 被关闭（_run_evaluation_async + _mark_run_failed 各一次）
+        session.close.assert_called()
 
 
 class TestCommitErrDoesNotBlock:
     def test_commit_err_does_not_block(self):
-        """DB commit 失败不阻断状态更新（except 块内 commit 失败被捕获）"""
+        """DB commit 失败不阻断状态更新（_mark_run_failed 内 commit 失败被捕获）
+
+        修复（v0.4.0）：commit 错误在 _mark_run_failed 的 except 中被捕获，
+        不影响 status 已被设置在 run 对象上。
+        """
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
         dataset = _fake_dataset(3)
 
         # commit 调用顺序 (_prepare_dataset 被 patch, 其 commit 不执行):
         # 1. _claim_run 中 RUNNING 后 → None (成功)
-        # 2. _update_run_status 中 FAILED 后 → RuntimeError (失败，被内部 except 捕获)
+        # 2. _update_run_status 中 FAILED 后 → RuntimeError (失败，被 _mark_run_failed except 捕获)
         session.commit.side_effect = [None, RuntimeError("commit failed in except")]
 
-        with (
-            patch.object(evaluation_task, "get_sync_session", return_value=session),
-            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
-            patch.object(
-                evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
-            ),
-        ):
-            # 不应抛异常，commit 错误被内部 except 捕获
-            result = run_evaluation_task(run_id=1)
+        eval_task = evaluation_task.run_evaluation_task
+        eval_task.push_request(retries=settings.TASK_MAX_RETRIES_EVALUATION)
+        try:
+            with (
+                patch.object(evaluation_task, "get_sync_session", return_value=session),
+                patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+                patch.object(
+                    evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
+                ),
+            ):
+                # 重试用尽 → _mark_run_failed 中 commit 失败被捕获 → raise 原始异常
+                with pytest.raises(RuntimeError, match="eval error"):
+                    run_evaluation_task(run_id=1)
+        finally:
+            eval_task.pop_request()
 
-        # 状态仍被设为 FAILED（在 commit 失败之前已设置）
+        # 状态仍被设为 FAILED（在 commit 失败之前已设置到 run 对象上）
         assert run.status == EvaluationStatus.FAILED
         assert "评估失败" in run.error_message
-        # 返回 error（原始异常，非 commit 错误）
-        assert "error" in result
-        assert "评估失败" in result["error"]
-        # rollback 被调用多次（except 块 + 内部 except 块）
-        assert session.rollback.call_count >= 2
-        # session 被关闭
-        session.close.assert_called_once()
+        # rollback 被调用（_run_evaluation_async 的 except 块）
+        assert session.rollback.call_count >= 1
+        # session 被关闭（多次调用：_run_evaluation_async + _mark_run_failed）
+        session.close.assert_called()
 
 
 class TestDatasetGenerationFailureHandling:
@@ -260,23 +279,31 @@ class TestDatasetGenerationFailureHandling:
         session.close.assert_called_once()
 
     def test_dataset_generation_exception_marks_failed(self):
-        """_prepare_dataset 抛异常时也标记 FAILED"""
+        """_prepare_dataset 抛异常时也标记 FAILED（重试次数用尽后）
+
+        修复（v0.4.0）：异常先 retry，重试用尽后由 _mark_run_failed 标记 FAILED。
+        """
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
 
-        with (
-            patch.object(evaluation_task, "get_sync_session", return_value=session),
-            patch.object(
-                evaluation_task, "_prepare_dataset", side_effect=RuntimeError("DB connection lost")
-            ),
-        ):
-            result = run_evaluation_task(run_id=1)
+        eval_task = evaluation_task.run_evaluation_task
+        eval_task.push_request(retries=settings.TASK_MAX_RETRIES_EVALUATION)
+        try:
+            with (
+                patch.object(evaluation_task, "get_sync_session", return_value=session),
+                patch.object(
+                    evaluation_task, "_prepare_dataset", side_effect=RuntimeError("DB connection lost")
+                ),
+            ):
+                with pytest.raises(RuntimeError, match="DB connection lost"):
+                    run_evaluation_task(run_id=1)
+        finally:
+            eval_task.pop_request()
 
-        # 异常被 except 捕获，状态设为 FAILED
+        # 异常被 except 捕获，状态设为 FAILED（由 _mark_run_failed 设置）
         assert run.status == EvaluationStatus.FAILED
         assert "评估失败" in run.error_message
-        assert "error" in result
-        session.close.assert_called_once()
+        session.close.assert_called()
 
 
 class TestClaimRunIdempotency:
@@ -370,27 +397,38 @@ class TestGenerateDatasetAsync:
         chunks = [MagicMock(content=f"c{i}") for i in range(3)]
         question_data = {"question": "q", "question_type": "factual", "difficulty": "easy"}
 
+        # Mock retriever (app.rag.retriever is stubbed as MagicMock in sys.modules)
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve = AsyncMock(return_value=[{"content": "ctx1"}])
+
         with (
+            patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
             patch("app.models.ollama_provider.OllamaLLMProvider") as MockProvider,
             patch.object(
                 evaluation_task,
                 "_generate_question_async",
                 new=AsyncMock(return_value=question_data),
             ),
+            patch.object(
+                evaluation_task,
+                "_generate_ground_truth_async",
+                new=AsyncMock(return_value="ground_truth"),
+            ),
         ):
             mock_llm = AsyncMock()
             MockProvider.return_value = mock_llm
 
-            result = await _generate_dataset_async(chunks)
+            result = await _generate_dataset_async(chunks, "kb desc", 1)
 
         assert len(result) == 3
         for item in result:
             assert item["question"] == "q"
             assert item["question_type"] == "factual"
             assert item["difficulty"] == "easy"
-            # contexts/ground_truth 来自 chunk.content（MagicMock），只校验结构
-            assert isinstance(item["contexts"], list) and len(item["contexts"]) == 1
-            assert "ground_truth" in item
+            # ground_truth 由 _generate_ground_truth_async 独立生成
+            assert item["ground_truth"] == "ground_truth"
+            # contexts 由 retriever.retrieve 重新检索得到
+            assert item["contexts"] == ["ctx1"]
         # finally 块: llm.close 总被调用
         mock_llm.close.assert_awaited_once()
 
@@ -399,18 +437,27 @@ class TestGenerateDatasetAsync:
         chunks = [MagicMock(content="c0"), MagicMock(content="c1")]
         question_data = {"question": "q", "question_type": "factual", "difficulty": "easy"}
 
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve = AsyncMock(return_value=[{"content": "ctx1"}])
+
         with (
+            patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
             patch("app.models.ollama_provider.OllamaLLMProvider") as MockProvider,
             patch.object(
                 evaluation_task,
                 "_generate_question_async",
                 new=AsyncMock(side_effect=[None, question_data]),
             ),
+            patch.object(
+                evaluation_task,
+                "_generate_ground_truth_async",
+                new=AsyncMock(return_value="ground_truth"),
+            ),
         ):
             mock_llm = AsyncMock()
             MockProvider.return_value = mock_llm
 
-            result = await _generate_dataset_async(chunks)
+            result = await _generate_dataset_async(chunks, "kb desc", 1)
 
         # None 被过滤，只保留 1 条
         assert len(result) == 1
@@ -428,7 +475,7 @@ class TestGenerateDatasetAsync:
             mock_llm = AsyncMock()
             MockProvider.return_value = mock_llm
 
-            result = await _generate_dataset_async([])
+            result = await _generate_dataset_async([], "kb desc", 1)
 
         assert result == []
         mock_llm.close.assert_awaited_once()
@@ -565,54 +612,69 @@ class TestRunSingleEvaluation:
 
 
 class TestExceptBlockEdgeCases:
-    """except 块边界: session 不活跃 + 双 rollback 失败 (lines 81, 84-85, 90-94)"""
+    """except 块边界: session 不活跃 + rollback 失败 (lines 81, 84-85, 90-94)
+
+    修复（v0.4.0）：except 块只有一次 rollback（不再有第二次），
+    异常 re-raise 后由 run_evaluation_task 的重试逻辑处理。
+    """
 
     def test_except_block_session_inactive_skips_rollback(self):
-        """session.is_active=False → 跳过两处 rollback（line 81/90 False 分支）"""
+        """session.is_active=False → 跳过 rollback"""
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
         # 关键：session 不活跃，rollback 不应被调用
         session.is_active = False
         dataset = _fake_dataset(3)
 
-        with (
-            patch.object(evaluation_task, "get_sync_session", return_value=session),
-            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
-            patch.object(
-                evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
-            ),
-        ):
-            result = run_evaluation_task(run_id=1)
+        eval_task = evaluation_task.run_evaluation_task
+        eval_task.push_request(retries=settings.TASK_MAX_RETRIES_EVALUATION)
+        try:
+            with (
+                patch.object(evaluation_task, "get_sync_session", return_value=session),
+                patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+                patch.object(
+                    evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
+                ),
+            ):
+                with pytest.raises(RuntimeError, match="eval error"):
+                    run_evaluation_task(run_id=1)
+        finally:
+            eval_task.pop_request()
 
-        assert result == {"error": "评估失败"}
         assert run.status == EvaluationStatus.FAILED
-        # is_active=False → 两处 rollback 都被跳过
+        # is_active=False → rollback 被跳过
         session.rollback.assert_not_called()
-        session.close.assert_called_once()
+        session.close.assert_called()
 
     def test_both_rollbacks_fail_still_returns_error(self):
-        """两次 rollback 都失败 → 都被内部 except 捕获，仍返回 error (lines 84-85, 92-94)"""
+        """rollback 失败 → 被内部 except 捕获，仍正常 re-raise
+
+        修复（v0.4.0）：except 块只有一次 rollback，失败被 try-except 捕获后 re-raise。
+        """
         run = FakeRun(status=EvaluationStatus.PENDING)
         session = _make_mock_session(run)
         dataset = _fake_dataset(3)
         # commit: _claim_run 成功(None), _update_run_status 失败
         session.commit.side_effect = [None, RuntimeError("commit failed")]
-        # rollback: 第一次 (line 83) 失败, 第二次 (line 93) 失败
-        session.rollback.side_effect = [
-            RuntimeError("rb1 failed"),
-            RuntimeError("rb2 failed"),
-        ]
+        # rollback: 第一次 (line 83) 失败
+        session.rollback.side_effect = RuntimeError("rb1 failed")
 
-        with (
-            patch.object(evaluation_task, "get_sync_session", return_value=session),
-            patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
-            patch.object(
-                evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
-            ),
-        ):
-            result = run_evaluation_task(run_id=1)
+        eval_task = evaluation_task.run_evaluation_task
+        eval_task.push_request(retries=settings.TASK_MAX_RETRIES_EVALUATION)
+        try:
+            with (
+                patch.object(evaluation_task, "get_sync_session", return_value=session),
+                patch.object(evaluation_task, "_prepare_dataset", return_value=dataset),
+                patch.object(
+                    evaluation_task, "_run_evaluations", side_effect=RuntimeError("eval error")
+                ),
+            ):
+                with pytest.raises(RuntimeError, match="eval error"):
+                    run_evaluation_task(run_id=1)
+        finally:
+            eval_task.pop_request()
 
-        # 两次 rollback 都失败但被捕获，不抛异常
-        assert result == {"error": "评估失败"}
-        assert session.rollback.call_count == 2
-        session.close.assert_called_once()
+        # rollback 失败但被捕获，run 仍被标记 FAILED（_mark_run_failed）
+        assert run.status == EvaluationStatus.FAILED
+        assert session.rollback.call_count == 1
+        session.close.assert_called()

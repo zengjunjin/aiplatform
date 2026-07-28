@@ -64,12 +64,11 @@
     "feedbackThanks": "Thank you for your feedback!",
     "feedbackFailed": "Failed to submit feedback",
     "feedbackType": {
-      "notAccurate": "Not Accurate",
-      "incomplete": "Incomplete",
-      "hallucination": "Hallucination",
-      "irrelevant": "Irrelevant",
-      "tooVerbose": "Too Verbose",
-      "tooBrief": "Too Brief",
+      "faithfulnessIssue": "Inaccurate / Hallucination",
+      "contextInsufficient": "Insufficient Context",
+      "incompleteness": "Incomplete",
+      "irrelevance": "Irrelevant",
+      "verbosity": "Too Verbose",
       "other": "Other"
     },
     "askAnything": "Ask anything about your knowledge base",

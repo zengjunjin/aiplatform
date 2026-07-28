@@ -93,10 +93,13 @@ async def generate_optimization_suggestions(feedback_data: dict) -> dict:
         )
 
     # 分析样本以提取更多洞察
+    # 修复（v0.4.0）：防止 Prompt 注入 — 截断 + 转义换行符
     sample_insights = []
     for sample in samples:
         if sample.get("comment"):
-            sample_insights.append(f"用户反馈: {sample['comment']}")
+            # 截断到 200 字符，转义换行符避免注入系统指令
+            safe_comment = str(sample["comment"])[:200].replace("\n", "\\n")
+            sample_insights.append(f"用户反馈: {safe_comment}")
 
     summary = f"分析周期内共收到 {total} 条反馈，负向率 {negative_rate:.1%}。"
     if rule_suggestions:

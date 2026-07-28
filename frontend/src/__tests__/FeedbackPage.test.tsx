@@ -175,7 +175,7 @@ describe('FeedbackPage', () => {
           message_id: 100,
           rating: -1,
           comment: 'bad answer',
-          feedback_type: 'hallucination',
+          feedback_type: 'faithfulness_issue',
           created_at: '2026-07-01T00:00:00Z',
           question: '什么是 RAG？',
           answer: 'RAG 是错误的回答',
@@ -206,8 +206,8 @@ describe('FeedbackPage', () => {
       positive_rate: 0.6,
       negative_rate: 0.4,
       by_type: {
-        hallucination: 2,
-        incomplete: 1,
+        faithfulness_issue: 2,
+        incompleteness: 1,
       },
     });
 

@@ -74,8 +74,8 @@ describe('FeedbackFilterBar', () => {
     await user.click(typeSelector);
     // 虚拟列表可能不渲染全部 7 项，验证前几项即可证明 typeOptions 正确生成
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'chat.feedbackType.notAccurate' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'chat.feedbackType.incomplete' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'chat.feedbackType.faithfulnessIssue' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'chat.feedbackType.incompleteness' })).toBeInTheDocument();
     });
   });
 

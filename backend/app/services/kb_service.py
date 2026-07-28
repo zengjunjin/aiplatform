@@ -279,6 +279,12 @@ async def remove_collaborator(kb_id: int, user_id: int, target_user_id: int, db:
     """Remove a collaborator from a knowledge base. Owner or admin collaborator can remove."""
     kb = await get_kb_for_admin(kb_id, user_id, db)
 
+    # 显式拒绝踢 owner: owner 权限基于 owner_id 字段, 不在 collaborators 数组中,
+    # 但若不拒绝会返回 200 (幂等无操作), 让调用方误以为已踢出 owner。
+    # 与 add_collaborator 的 "Cannot add owner as collaborator" 保持对称。
+    if target_user_id == kb.owner_id:
+        raise ForbiddenError("Cannot remove owner as collaborator")
+
     collaborators = list(kb.collaborators or [])
     collaborators = [c for c in collaborators if c.get("user_id") != target_user_id]
     kb.collaborators = collaborators

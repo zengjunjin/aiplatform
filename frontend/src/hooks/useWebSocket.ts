@@ -39,7 +39,7 @@ export function useWebSocket(
   options?: {
     /** 初始重连间隔（毫秒），默认 3000；后续按指数退避翻倍直至 MAX_DELAY */
     reconnectInterval?: number;
-    /** 心跳间隔（毫秒），默认 30000 */
+    /** 心跳间隔（毫秒），默认 20000；需小于服务端 WEBSOCKET_RECV_TIMEOUT（30s）避免竞态超时 */
     pingInterval?: number;
   }
 ) {
@@ -57,7 +57,7 @@ export function useWebSocket(
   // 保持最新的回调引用
   onMessageRef.current = onMessage;
 
-  const { reconnectInterval = INITIAL_DELAY, pingInterval = 30000 } = options || {};
+  const { reconnectInterval = INITIAL_DELAY, pingInterval = 20000 } = options || {};
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {

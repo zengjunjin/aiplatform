@@ -16,6 +16,7 @@ import {
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  DataZoomComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import dayjs from 'dayjs';
@@ -31,6 +32,7 @@ echarts.use([
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  DataZoomComponent,
   CanvasRenderer,
 ]);
 

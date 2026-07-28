@@ -75,6 +75,14 @@ class BaseRerankerProvider(ABC):
         """返回 (原文索引, 分数) 列表,按相关度降序"""
         ...
 
+    def is_loaded(self) -> bool:
+        """模型是否已加载到内存。子类按需覆盖。"""
+        return False
+
+    async def ensure_loaded(self) -> None:
+        """确保模型已加载（首次调用触发加载）。子类按需覆盖。"""
+        return None
+
     async def close(self) -> None:
         """关闭底层资源（如 httpx 连接池）。默认 no-op，由具体 Provider 按需覆盖。"""
         return None

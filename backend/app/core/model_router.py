@@ -50,15 +50,18 @@ class ModelRouter:
         if preferred_model:
             try:
                 provider = ModelRegistry.get(preferred_model)
-                if not provider.is_healthy:
-                    raise ValueError(f"Provider '{preferred_model}' is unhealthy")
-                return provider
             except ValueError:
                 # 指定的模型不存在于注册表中（可能是前端缓存了旧的默认模型名），
                 # 回退到自动选择策略，避免对话完全不可用
                 logger.warning(
                     f"Preferred model '{preferred_model}' not found in registry, falling back to auto-select"
                 )
+            else:
+                # 修复（v0.4.0）：is_healthy 检查移到 try-except 外，
+                # 避免 "模型不健康" 的 ValueError 被 except 捕获后误回退到 auto-select
+                if not provider.is_healthy:
+                    raise ValueError(f"Provider '{preferred_model}' is unhealthy")
+                return provider
 
         # 获取所有健康的 Provider
         available = ModelRegistry.get_available()
