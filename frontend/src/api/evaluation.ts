@@ -26,13 +26,20 @@ export interface PaginatedData<T> {
   total_pages: number;
 }
 
+export interface TriggerEvaluationResponse {
+  run_id: number;
+  status: string;
+  task_id: string;
+  message: string;
+}
+
 const evaluationApi = {
   /** Trigger a new evaluation run */
-  triggerEvaluation: async (kbId: number, numQuestions: number = 50): Promise<EvaluationRun> => {
+  triggerEvaluation: async (kbId: number, numQuestions: number = 50): Promise<TriggerEvaluationResponse> => {
     const resp = await client.post('/evaluation/runs', null, {
       params: { kb_id: kbId, num_questions: numQuestions },
     });
-    return extractData<EvaluationRun>(resp);
+    return extractData<TriggerEvaluationResponse>(resp);
   },
 
   /** List evaluation runs */

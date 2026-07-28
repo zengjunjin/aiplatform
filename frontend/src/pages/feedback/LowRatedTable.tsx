@@ -50,7 +50,7 @@ export default function LowRatedTable({
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
 
-  const fetchFeedbacks = useCallback(async () => {
+  const fetchFeedbacks = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const result = await feedbackApi.getLowRated({
@@ -60,19 +60,24 @@ export default function LowRatedTable({
         feedback_type: selectedType,
         page,
         page_size: pageSize,
-      });
+      }, signal);
+      if (signal?.aborted) return;
       setFeedbacks(result.items);
       setTotal(result.total);
       onFeedbacksChange(result.items);
     } catch (e: unknown) {
+      if (signal?.aborted) return;
       message.error(getErrorMessage(e) || t('feedback.loadFeedbacksFailed'));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [selectedKbId, dateRange, selectedType, page, pageSize, message, t, onFeedbacksChange]);
 
+  // Task 23 (P1-FE-09): AbortController 防止组件卸载后 setState
   useEffect(() => {
-    fetchFeedbacks();
+    const abortController = new AbortController();
+    fetchFeedbacks(abortController.signal);
+    return () => { abortController.abort(); };
   }, [fetchFeedbacks]);
 
   // Task 5.4: columns 用 useMemo 缓存

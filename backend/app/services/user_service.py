@@ -1,5 +1,5 @@
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException, NotFoundError
@@ -23,13 +23,34 @@ async def _invalidate_user_cache(user_id: int) -> None:
 
 
 async def list_users(
-    db: AsyncSession, page: int = 1, page_size: int = 20
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
 ) -> tuple[list[User], int]:
-    count_result = await db.execute(select(func.count()).select_from(User))
+    """分页列出用户，可选 keyword 按用户名/邮箱模糊搜索。
+
+    keyword 中的 LIKE 通配符（% 和 _）通过 _escape_like 转义，
+    避免通配符注入与信息泄露。
+    """
+    base_query = select(User)
+    count_query = select(func.count()).select_from(User)
+
+    if keyword:
+        escaped = _escape_like(keyword)
+        pattern = f"%{escaped}%"
+        search_filter = or_(
+            User.username.ilike(pattern, escape="\\"),
+            User.email.ilike(pattern, escape="\\"),
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    count_result = await db.execute(count_query)
     total = count_result.scalar_one()
 
     result = await db.execute(
-        select(User).offset((page - 1) * page_size).limit(page_size).order_by(User.id.desc())
+        base_query.offset((page - 1) * page_size).limit(page_size).order_by(User.id.desc())
     )
     items = result.scalars().all()
     return items, total

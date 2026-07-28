@@ -89,21 +89,22 @@ export default function ChatPage() {
 
   // 仅挂载时初始化默认模型，通过 ref 读取 selectedModel 避免将其加入 deps
   useEffect(() => {
-    let mounted = true;
+    // Task 22 (P1-FE-08): AbortController 防止组件卸载后 setState 导致内存泄漏
+    const abortController = new AbortController();
     fetchSessions();
     fetchKBs();
     // 加载可用模型列表
-    systemApi.listModels().then((res) => {
-      if (!mounted) return;
+    systemApi.listModels(abortController.signal).then((res) => {
+      if (abortController.signal.aborted) return;
       setModels(res.models || []);
       // 如果当前没有选中模型，使用默认模型
       if (!selectedModelRef.current && res.default_model) {
         setSelectedModel(res.default_model);
       }
     }).catch(() => {
-      // 模型列表加载失败不影响聊天功能
+      // 模型列表加载失败 (含 abort) 不影响聊天功能
     });
-    return () => { mounted = false; };
+    return () => { abortController.abort(); };
   }, [fetchSessions, fetchKBs]);
 
   // localStorage 写入下沉到独立 useEffect，避免 onChange 中重复写入

@@ -25,8 +25,7 @@ describe('systemApi', () => {
   describe('status', () => {
     it('should call GET /system/status and return system status', async () => {
       const mockStatus = {
-        status: 'healthy',
-        postgres: 'up',
+        postgresql: 'up',
         redis: 'up',
         ollama: 'up',
         qdrant: 'up',
@@ -37,8 +36,8 @@ describe('systemApi', () => {
       const result = await systemApi.status();
 
       expect(mockGet).toHaveBeenCalledWith('/system/status');
-      expect(result.status).toBe('healthy');
-      expect(result.postgres).toBe('up');
+      expect(result.postgresql).toBe('up');
+      expect(result.redis).toBe('up');
     });
   });
 

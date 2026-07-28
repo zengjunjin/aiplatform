@@ -67,6 +67,9 @@ export const useAuthStore = create<AuthState>()(
           refreshTokenExpiresAt: null,
           user: null,
         });
+        // 清理 chat store，避免上一个用户的会话/消息残留 (隐私泄漏)
+        const { useChatStore } = await import('./chat');
+        useChatStore.getState().reset();
       },
 
       fetchMe: async () => {
@@ -189,8 +192,11 @@ export const useAuthStore = create<AuthState>()(
             });
             return;
           }
-          // 已有 access_token：无需刷新（测试注入或上一次 refresh 残留），直接保持登录态
+          // 已有 access_token：保持登录态, 但异步 fetchMe 更新 user 信息 (role 可能已变化)
           if (token) {
+            useAuthStore.getState().fetchMe().catch(() => {
+              // fetchMe 失败 (401 等) 由拦截器处理
+            });
             return;
           }
           // 无 access_token 但 refreshToken 有效：异步刷新；失败时 refreshAccessToken 内部会 logout

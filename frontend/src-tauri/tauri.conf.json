@@ -21,7 +21,7 @@
         "minWidth": 800,
         "minHeight": 600,
         "dragDropEnabled": false,
-        "additionalBrowserArgs": "--remote-debugging-port=9223 --allow-running-insecure-content"
+        "additionalBrowserArgs": "--remote-debugging-port=9223"
       }
     ],
     "trayIcon": {

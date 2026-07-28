@@ -127,8 +127,19 @@ def _redact_filter(record: dict) -> bool:
 # LOG_JSON=true 时启用 JSON sink：输出包含 timestamp/level/request_id/trace_id/
 # span_id/message/module/function/line 等字段的 JSON 行，便于 ELK/Loki 等日志采集系统解析。
 # 同时应用脱敏 filter（Task 5）。
+# P1-CFG-02 + P1-CFG-03 修复：
+# - logger.remove() 清除默认 stderr sink，避免 LOG_JSON=true 时双重日志输出
+# - level=settings.LOG_LEVEL.upper() 实际应用配置的日志级别
+logger.remove()
 if settings.LOG_JSON:
-    logger.add(sys.stdout, serialize=True, filter=_redact_filter)
+    logger.add(
+        sys.stdout,
+        serialize=True,
+        filter=_redact_filter,
+        level=settings.LOG_LEVEL.upper(),
+    )
+else:
+    logger.add(sys.stderr, level=settings.LOG_LEVEL.upper())
 
 
 def _rate_limit_key(request: Request) -> str:

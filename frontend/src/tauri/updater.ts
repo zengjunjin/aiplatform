@@ -8,6 +8,17 @@ export interface UpdateInfo {
   body: string;
 }
 
+// Task 38 (P1-FE-11): 保存 auto check 定时器句柄, 供 cancelAutoCheck 清理
+let autoCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 取消尚未触发的自动更新检查定时器 (组件卸载或页面关闭时调用) */
+export function cancelAutoCheck() {
+  if (autoCheckTimer) {
+    clearTimeout(autoCheckTimer);
+    autoCheckTimer = null;
+  }
+}
+
 export function useUpdater() {
   let checked = false;
 
@@ -49,7 +60,9 @@ export function useUpdater() {
     autoCheckAfter5s: async (onUpdate?: (info: UpdateInfo) => void) => {
       if (!isTauri() || checked) return;
       checked = true;
-      setTimeout(async () => {
+      if (autoCheckTimer) clearTimeout(autoCheckTimer);
+      autoCheckTimer = setTimeout(async () => {
+        autoCheckTimer = null;
         if (!isTauri()) return;
         try {
           const mod = await import(/* @vite-ignore */ TAURI_UPDATER);
@@ -66,5 +79,6 @@ export function useUpdater() {
         }
       }, 5000);
     },
+    cancelAutoCheck,
   };
 }

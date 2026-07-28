@@ -84,6 +84,11 @@ celery_app.autodiscover_tasks(["app.tasks"])
 # Bug 11: 原先 document_task._publish 每次都 EventBus.init() + EventBus.close(),
 # 导致 Redis 连接与 listener task 泄漏。改为在 worker 进程启动时初始化一次,
 # 进程关闭时清理一次,任务中仅调用 publish。
+#
+# P1-BE-09: EventBus.init 现在会同时创建 async Redis（绑定本进程事件循环）
+# 和 sync Redis（进程级，跨循环 fallback），并记录 listener task 的事件循环。
+# 后续 task 函数即使在新的事件循环中调用 EventBus.publish，也会通过 sync
+# Redis fallback 把消息发到 Redis Pub/Sub 通道，被 listener 接收。
 @worker_process_init.connect
 def init_eventbus(**kwargs):
     try:
@@ -93,7 +98,7 @@ def init_eventbus(**kwargs):
             asyncio.set_event_loop(loop)
         loop.run_until_complete(_do_eventbus_init())
     except Exception as e:
-        logger.warning(f"EventBus init failed: {e}")
+        logger.warning(f"EventBus init failed: {type(e).__name__}: {e}")
 
 
 @worker_process_shutdown.connect
@@ -103,13 +108,19 @@ def close_eventbus(**kwargs):
         if not loop.is_closed():
             loop.run_until_complete(_do_eventbus_close())
     except Exception as e:
-        logger.debug(f"EventBus close on worker shutdown failed: {e}")
+        logger.debug(f"EventBus close on worker shutdown failed: {type(e).__name__}: {e}")
 
 
 async def _do_eventbus_init():
     from app.core.events import EventBus
 
     await EventBus.init()
+    # 诊断：确认 EventBus 已正确记录 listener_loop 与 sync Redis 连接，
+    # 后续跨循环 publish 才能正确 fallback。
+    logger.debug(
+        f"EventBus ready: listener_loop={EventBus._listener_loop!r}, "
+        f"sync_redis={'set' if EventBus._sync_redis is not None else 'None'}"
+    )
 
 
 async def _do_eventbus_close():

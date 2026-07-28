@@ -127,6 +127,9 @@ export default function DashboardPage() {
         }),
     ];
 
+    // Task 39 (P1-FE-12): 保存 minLoading 定时器句柄, cleanup 中清理避免卸载后 setState
+    let minLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+
     Promise.allSettled(tasks).then(() => {
       // 保证 loading 至少展示 300ms，避免闪烁
       const elapsed = Date.now() - start;
@@ -135,7 +138,7 @@ export default function DashboardPage() {
       if (elapsed >= minLoading) {
         setLoading(false);
       } else {
-        setTimeout(() => {
+        minLoadingTimer = setTimeout(() => {
           if (!cancelled) setLoading(false);
         }, minLoading - elapsed);
       }
@@ -144,6 +147,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
       controller.abort();
+      if (minLoadingTimer) clearTimeout(minLoadingTimer);
     };
   }, [message, toastError]);
 

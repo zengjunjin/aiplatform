@@ -49,6 +49,21 @@ class CachedEmbeddingProvider(BaseEmbeddingProvider):
                 self._redis = None
         return self._redis
 
+    def reset_connection(self) -> None:
+        """重置 Redis 连接，强制下次使用时在当前事件循环中重建。
+
+        Celery worker 中每次任务创建新 event loop，单例的 Redis 连接
+        绑定到创建时的 loop，跨 loop 复用会触发 'Event loop is closed'。
+        """
+        self._redis = None
+
+    async def close(self) -> None:
+        """关闭 Redis 连接池和内部 provider。"""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
+        await self.inner.close()
+
     def _cache_key(self, text: str) -> str:
         h = hashlib.sha256(text.encode("utf-8")).hexdigest()
         return f"embed:cache:{self.inner.model}:{h}"

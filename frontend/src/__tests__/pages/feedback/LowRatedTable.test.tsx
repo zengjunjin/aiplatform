@@ -346,13 +346,13 @@ describe('LowRatedTable', () => {
     const { rerender } = render(<LowRatedTable {...defaultProps} selectedKbId={1} />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ kb_id: 1 }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ kb_id: 1 }), expect.any(AbortSignal));
     });
 
     rerender(<LowRatedTable {...defaultProps} selectedKbId={2} />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ kb_id: 2 }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ kb_id: 2 }), expect.any(AbortSignal));
     });
   });
 
@@ -360,13 +360,13 @@ describe('LowRatedTable', () => {
     const { rerender } = render(<LowRatedTable {...defaultProps} selectedType="faithfulness_issue" />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'faithfulness_issue' }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'faithfulness_issue' }), expect.any(AbortSignal));
     });
 
     rerender(<LowRatedTable {...defaultProps} selectedType="incompleteness" />);
 
     await waitFor(() => {
-      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'incompleteness' }));
+      expect(mockGetLowRated).toHaveBeenCalledWith(expect.objectContaining({ feedback_type: 'incompleteness' }), expect.any(AbortSignal));
     });
   });
 });

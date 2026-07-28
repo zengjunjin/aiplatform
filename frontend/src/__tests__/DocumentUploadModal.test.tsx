@@ -141,7 +141,8 @@ describe('DocumentUploadModal', () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(uploadMock).toHaveBeenCalledWith(7, file, expect.any(Function));
+      // Task 20: upload 现在第 4 个参数是 AbortSignal (用于取消上传)
+      expect(uploadMock).toHaveBeenCalledWith(7, file, expect.any(Function), expect.any(AbortSignal));
     });
   });
 });

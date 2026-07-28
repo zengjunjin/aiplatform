@@ -49,7 +49,7 @@ describe('documentApi', () => {
 
   describe('get', () => {
     it('should call GET /documents/:id', async () => {
-      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'test.pdf', file_path: '', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
+      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'test.pdf', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
       const mockResponse = { data: { data: doc } };
       mockGet.mockResolvedValue(mockResponse);
 

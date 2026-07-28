@@ -61,19 +61,27 @@ def _update_progress(
             if session.is_active:
                 session.rollback()
             raise
+        # Task 17: Redis 写入移到 session.close() 之前，避免 session 已关闭时进度丢失
+        # Redis 写入失败不影响主流程（DB 已 commit）
+        try:
+            r = _get_redis_sync()
+            if r:
+                data = {
+                    "status": status,
+                    "progress": progress,
+                    "chunk_count": chunk_count,
+                    "error_message": error or "",
+                }
+                # Task 40: 进度缓存 TTL 迁移到 config.py
+                r.setex(
+                    f"doc:progress:{doc_id}",
+                    settings.DOC_PROGRESS_CACHE_TTL,
+                    json.dumps(data),
+                )
+        except Exception as e:
+            logger.warning(f"Redis progress write failed: {e}")
     finally:
         session.close()
-
-    r = _get_redis_sync()
-    if r:
-        data = {
-            "status": status,
-            "progress": progress,
-            "chunk_count": chunk_count,
-            "error_message": error or "",
-        }
-        # Task 40: 进度缓存 TTL 迁移到 config.py
-        r.setex(f"doc:progress:{doc_id}", settings.DOC_PROGRESS_CACHE_TTL, json.dumps(data))
 
 
 def _get_document_status(doc_id: int) -> str | None:
@@ -325,6 +333,8 @@ def parse_document_task(self, doc_id: int) -> dict | None:
         # 不再每次 init/close, 避免 Redis 连接与 listener task 泄漏。
         # 复用 worker 进程级事件循环 (EventBus._redis 绑定到该 loop)。
         try:
+            loop = None
+            created_loop = False
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
@@ -332,6 +342,7 @@ def parse_document_task(self, doc_id: int) -> dict | None:
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
+                created_loop = True
 
             async def _publish():
                 from app.core.events import EventBus
@@ -355,7 +366,12 @@ def parse_document_task(self, doc_id: int) -> dict | None:
                     },
                 )
 
-            loop.run_until_complete(_publish())
+            try:
+                loop.run_until_complete(_publish())
+            finally:
+                # Task 14: 确保新建的事件循环一定被关闭，避免 loop 泄漏
+                if created_loop and loop is not None:
+                    loop.close()
         except Exception as e:
             logger.warning(f"Failed to publish DOCUMENT_PARSED event: {e}")
 

@@ -173,7 +173,7 @@ describe('MessageBubble', () => {
     // 首次挂载: 触发拉取
     const { unmount } = render(<MessageBubble role="assistant" content="Answer 1" messageId={42} />);
     expect(getFeedbackMock).toHaveBeenCalledTimes(1);
-    expect(getFeedbackMock).toHaveBeenCalledWith(42);
+    expect(getFeedbackMock).toHaveBeenCalledWith(42, expect.any(AbortSignal));
 
     // 等待异步拉取完成并写入缓存
     await vi.waitFor(() => {
@@ -189,8 +189,8 @@ describe('MessageBubble', () => {
   it('Task 22: should request feedback for different messageIds', () => {
     render(<MessageBubble role="assistant" content="Answer A" messageId={201} />);
     render(<MessageBubble role="assistant" content="Answer B" messageId={202} />);
-    expect(getFeedbackMock).toHaveBeenCalledWith(201);
-    expect(getFeedbackMock).toHaveBeenCalledWith(202);
+    expect(getFeedbackMock).toHaveBeenCalledWith(201, expect.any(AbortSignal));
+    expect(getFeedbackMock).toHaveBeenCalledWith(202, expect.any(AbortSignal));
     expect(getFeedbackMock).toHaveBeenCalledTimes(2);
   });
 

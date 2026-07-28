@@ -26,19 +26,20 @@ describe('evaluationApi', () => {
 
   describe('triggerEvaluation', () => {
     it('should call POST /evaluation/runs with kb_id and num_questions', async () => {
-      const mockRun = { id: 1, kb_id: 1, status: 'pending', num_questions: 50, created_at: '', updated_at: '' };
-      mockPost.mockResolvedValue({ data: { data: mockRun } });
+      const mockResp = { run_id: 1, status: 'pending', task_id: 'task-abc', message: 'ok' };
+      mockPost.mockResolvedValue({ data: { data: mockResp } });
 
       const result = await evaluationApi.triggerEvaluation(1, 50);
 
       expect(mockPost).toHaveBeenCalledWith('/evaluation/runs', null, {
         params: { kb_id: 1, num_questions: 50 },
       });
-      expect(result).toEqual(mockRun);
+      expect(result).toEqual(mockResp);
+      expect(result.run_id).toBe(1);
     });
 
     it('should use default num_questions=50 when not provided', async () => {
-      mockPost.mockResolvedValue({ data: { data: { id: 1 } } });
+      mockPost.mockResolvedValue({ data: { data: { run_id: 1, status: 'pending', task_id: 't', message: 'ok' } } });
 
       await evaluationApi.triggerEvaluation(2);
 

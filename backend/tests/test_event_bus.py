@@ -1,10 +1,13 @@
 """Tests for app.core.events.EventBus
 
 Task 19: 验证 close() 不清空 _subscribers，close→init 后订阅仍有效。
+P1-BE-08: handler 超时保护（_listen 中 asyncio.wait_for）。
+P1-BE-09: 跨事件循环 publish fallback（sync Redis）。
 """
 
 import asyncio
 import contextlib
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,16 +19,24 @@ from app.core.events import EventBus
 def reset_event_bus():
     """每个测试前后重置 EventBus 类变量状态"""
     original_redis = EventBus._redis
+    original_sync_redis = EventBus._sync_redis
+    original_listener_loop = EventBus._listener_loop
     original_subs = EventBus._subscribers.copy()
     original_task = EventBus._listener_task
+    original_timeout = EventBus.HANDLER_TIMEOUT
     EventBus._redis = None
+    EventBus._sync_redis = None
+    EventBus._listener_loop = None
     EventBus._subscribers.clear()
     EventBus._listener_task = None
     yield
     EventBus._redis = original_redis
+    EventBus._sync_redis = original_sync_redis
+    EventBus._listener_loop = original_listener_loop
     EventBus._subscribers.clear()
     EventBus._subscribers.update(original_subs)
     EventBus._listener_task = original_task
+    EventBus.HANDLER_TIMEOUT = original_timeout
 
 
 # ---------- SubTask 19.2: close→init 后订阅仍有效 ----------
@@ -221,3 +232,126 @@ class TestEventBusSubscribeAndPublish:
         msg = json.loads(args[0][1])
         assert msg["event_type"] == EventBus.DOCUMENT_PARSED
         assert msg["payload"]["doc_id"] == 42
+
+
+# ---------- P1-BE-08: handler 超时保护 ----------
+class TestEventBusHandlerTimeout:
+    """_listen 中 handler 调用带 asyncio.wait_for 超时保护"""
+
+    @pytest.mark.asyncio
+    async def test_handler_timeout_does_not_block_others(self, reset_event_bus):
+        """慢 handler 超时后被取消，不阻塞后续 handler 执行"""
+        # 用极短超时避免测试卡 60s
+        EventBus.HANDLER_TIMEOUT = 0.3
+
+        call_log: list[tuple] = []
+
+        async def slow_handler(payload):
+            call_log.append(("slow_start", payload))
+            # 远超 0.3s 超时；wait_for 会取消此 sleep
+            await asyncio.sleep(5)
+            call_log.append(("slow_end",))  # 不应执行
+
+        async def fast_handler(payload):
+            call_log.append(("fast", payload))
+
+        await EventBus.subscribe("test.timeout", slow_handler)
+        await EventBus.subscribe("test.timeout", fast_handler)
+
+        # mock pubsub：产出一条消息后抛 CancelledError 让 _listen 退出
+        async def _listen_gen():
+            yield {
+                "type": "message",
+                "data": json.dumps(
+                    {"event_type": "test.timeout", "payload": {"x": 1}}
+                ),
+            }
+            raise asyncio.CancelledError()
+
+        fake_pubsub = MagicMock()
+        fake_pubsub.subscribe = AsyncMock()
+        fake_pubsub.listen = MagicMock(return_value=_listen_gen())
+        fake_pubsub.unsubscribe = AsyncMock()
+        fake_pubsub.close = AsyncMock()
+        fake_redis = MagicMock()
+        fake_redis.pubsub.return_value = fake_pubsub
+        EventBus._redis = fake_redis
+
+        # 运行 _listen（处理一条消息后因 CancelledError 退出）
+        await EventBus._listen()
+
+        # 慢 handler 开始执行但未完成（被 wait_for 取消）
+        assert ("slow_start", {"x": 1}) in call_log
+        assert ("slow_end",) not in call_log
+        # 快 handler 仍正常执行
+        assert ("fast", {"x": 1}) in call_log
+        # 顺序：slow_start 在 fast 之前
+        assert call_log.index(("slow_start", {"x": 1})) < call_log.index(
+            ("fast", {"x": 1})
+        )
+
+
+# ---------- P1-BE-09: 跨事件循环 publish fallback ----------
+class TestEventBusCrossLoopPublish:
+    """跨事件循环 publish 时使用 sync Redis fallback"""
+
+    @pytest.mark.asyncio
+    async def test_cross_loop_publish_uses_sync_fallback(self, reset_event_bus):
+        """当前循环 ≠ listener 循环时，用 sync Redis publish fallback"""
+        fake_sync_redis = MagicMock()
+        fake_sync_redis.publish = MagicMock(return_value=1)
+        EventBus._sync_redis = fake_sync_redis
+        # 假装 listener 在另一个循环（与当前 running loop 不同）
+        EventBus._listener_loop = MagicMock(name="other_loop")
+
+        fake_async_redis = MagicMock()
+        fake_async_redis.publish = AsyncMock()
+        EventBus._redis = fake_async_redis
+
+        await EventBus.publish("test.cross_loop", {"x": 1})
+
+        # sync fallback 应被调用
+        fake_sync_redis.publish.assert_called_once()
+        args = fake_sync_redis.publish.call_args
+        assert args[0][0] == "events"
+        msg = json.loads(args[0][1])
+        assert msg["event_type"] == "test.cross_loop"
+        assert msg["payload"] == {"x": 1}
+        # async redis 不应被调用（已走 sync fallback）
+        fake_async_redis.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_same_loop_publish_uses_async_path(self, reset_event_bus):
+        """当前循环 = listener 循环时，走 async Redis 路径（不走 sync fallback）"""
+        fake_sync_redis = MagicMock()
+        fake_sync_redis.publish = MagicMock()
+        EventBus._sync_redis = fake_sync_redis
+        # listener 循环 = 当前 running loop
+        EventBus._listener_loop = asyncio.get_running_loop()
+
+        fake_async_redis = MagicMock()
+        fake_async_redis.publish = AsyncMock()
+        EventBus._redis = fake_async_redis
+
+        await EventBus.publish("test.same_loop", {"x": 1})
+
+        # async 路径应被调用
+        fake_async_redis.publish.assert_awaited_once()
+        # sync fallback 不应被调用
+        fake_sync_redis.publish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_close_clears_sync_redis_and_listener_loop(self, reset_event_bus):
+        """close() 应关闭 sync Redis 并清空 _listener_loop"""
+        fake_sync_redis = MagicMock()
+        fake_sync_redis.close = MagicMock()
+        EventBus._sync_redis = fake_sync_redis
+        EventBus._listener_loop = MagicMock()
+        EventBus._redis = None
+        EventBus._listener_task = None
+
+        await EventBus.close()
+
+        fake_sync_redis.close.assert_called_once()
+        assert EventBus._sync_redis is None
+        assert EventBus._listener_loop is None

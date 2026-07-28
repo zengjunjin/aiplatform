@@ -106,16 +106,26 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** 防抖 */
+/** 防抖 (返回的函数附带 .cancel() 方法, 用于组件卸载时清理 pending 计时器) */
 export function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number
-): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
+): ((...args: Parameters<T>) => void) & { cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const debounced = (...args: Parameters<T>) => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      fn(...args);
+    }, delay);
   };
+  debounced.cancel = () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  return debounced;
 }
 
 /** 文件类型图标颜色 */

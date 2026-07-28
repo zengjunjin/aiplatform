@@ -48,11 +48,14 @@ function MessageBubbleBase({
   const [likeSubmitting, setLikeSubmitting] = useState(false);
 
   // 触发拉取 feedback (仅在缓存未命中时由 store 内部发起请求)
+  // Task 23 (P1-FE-09): AbortController 防止组件卸载后 store 仍发起请求
   useEffect(() => {
     if (role !== 'assistant' || !messageId || isStreaming) {
       return;
     }
-    getFeedbackAction(messageId);
+    const abortController = new AbortController();
+    getFeedbackAction(messageId, abortController.signal);
+    return () => { abortController.abort(); };
   }, [role, messageId, isStreaming, getFeedbackAction]);
 
   const handleCopy = useCallback(async () => {

@@ -11,6 +11,10 @@ def init_redis():
         settings.redis_url,
         encoding="utf-8",
         decode_responses=True,
+        socket_timeout=5,
+        socket_connect_timeout=2,
+        health_check_interval=30,
+        retry_on_timeout=True,
     )
     return redis_client
 

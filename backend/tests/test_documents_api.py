@@ -153,9 +153,11 @@ class TestReparseDocument:
             new=AsyncMock(return_value=(doc, fake_task)),
         ) as mock_reparse:
             result = (
-                await documents.reparse_document(doc_id=10, request=request_mock, user=user, db=db)
+                await documents.reparse_document(
+                    doc_id=10, request=request_mock, user=user, db=db, force=False
+                )
             ).model_dump()
-        mock_reparse.assert_awaited_once_with(10, 1, db)
+        mock_reparse.assert_awaited_once_with(10, 1, db, force=False)
         assert result["data"]["document_id"] == 10
         assert result["data"]["task_id"] == "task-123"
 
@@ -169,7 +171,9 @@ class TestReparseDocument:
             new=AsyncMock(return_value=(doc, fake_task)),
         ):
             result = (
-                await documents.reparse_document(doc_id=10, request=request_mock, user=user, db=db)
+                await documents.reparse_document(
+                    doc_id=10, request=request_mock, user=user, db=db, force=False
+                )
             ).model_dump()
         assert result["data"]["task_id"] == "task-456"
 
@@ -183,7 +187,9 @@ class TestReparseDocument:
             new=AsyncMock(side_effect=ConflictError(message="Document is already being processed")),
         ):
             with pytest.raises(ConflictError):
-                await documents.reparse_document(doc_id=10, request=request_mock, user=user, db=db)
+                await documents.reparse_document(
+                    doc_id=10, request=request_mock, user=user, db=db, force=False
+                )
 
     @pytest.mark.asyncio
     async def test_reparse_concurrent_trigger_raises_conflict(self, user, db, request_mock):
@@ -197,7 +203,9 @@ class TestReparseDocument:
             ),
         ):
             with pytest.raises(ConflictError) as exc_info:
-                await documents.reparse_document(doc_id=10, request=request_mock, user=user, db=db)
+                await documents.reparse_document(
+                    doc_id=10, request=request_mock, user=user, db=db, force=False
+                )
         # ConflictError 应携带 409 status_code, 表明并发冲突被正确识别
         assert exc_info.value.status_code == 409
         # message 应被设置 (即使 str() 不返回 message, exc_info.value.message 应存在)

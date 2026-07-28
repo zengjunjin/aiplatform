@@ -304,6 +304,7 @@ class Settings(BaseSettings):
         "change-me-in-production",
         "dev-secret-key-change-in-production-2026",
         "please_change_this_to_a_long_random_string_at_least_32_chars",
+        "please_replace_with_a_long_random_string_at_least_32_chars",
         "change_me",
         "secret",
         "",

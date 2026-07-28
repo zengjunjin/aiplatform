@@ -33,10 +33,11 @@ async def list_users(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(None, max_length=100, description="用户名/邮箱搜索关键词"),
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_admin_user),
 ):
-    users, total = await user_service.list_users(db, page, page_size)
+    users, total = await user_service.list_users(db, page, page_size, keyword=keyword)
     items = [UserListResponse.model_validate(u).model_dump() for u in users]
     return paginated_ok(items=items, total=total, page=page, page_size=page_size)
 

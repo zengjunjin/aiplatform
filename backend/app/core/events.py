@@ -16,6 +16,7 @@ import contextlib
 import json
 from collections.abc import Awaitable, Callable
 
+import redis
 import redis.asyncio as aioredis
 from loguru import logger
 
@@ -23,7 +24,14 @@ from app.config import settings
 
 
 class EventBus:
-    """轻量级事件总线（基于 Redis Pub/Sub）"""
+    """轻量级事件总线（基于 Redis Pub/Sub）
+
+    跨事件循环工作（P1-BE-09 修复）：
+    - init 时记录 listener task 所在事件循环到 _listener_loop
+    - publish 时检测当前事件循环是否与 _listener_loop 匹配
+    - 不匹配（如 Celery worker 中 task 在新循环里调用 publish）→ 用进程级
+      同步 Redis 连接 _sync_redis 直接 publish，确保订阅者能收到事件
+    """
 
     # 事件类型枚举
     DOCUMENT_UPLOADED = "document.uploaded"
@@ -35,27 +43,79 @@ class EventBus:
     CHAT_MESSAGE_SENT = "chat.message.sent"
     EVALUATION_COMPLETED = "evaluation.completed"
 
+    # 单个 handler 超时秒数（P1-BE-08）：防止慢 handler 阻塞整个事件总线
+    HANDLER_TIMEOUT: float = 30.0
+
     _redis: aioredis.Redis | None = None
+    # 进程级同步 Redis 连接（不绑定事件循环），用于跨循环 publish fallback
+    _sync_redis: redis.Redis | None = None
+    # listener task 所在事件循环；publish 时用于判断是否需要 fallback
+    _listener_loop: asyncio.AbstractEventLoop | None = None
     _subscribers: dict[str, list[Callable[[dict], Awaitable[None]]]] = {}
     _listener_task: asyncio.Task | None = None
 
     @classmethod
     async def init(cls) -> None:
-        """初始化 Redis 连接并启动监听器"""
+        """初始化 Redis 连接并启动监听器
+
+        同时创建：
+        - async Redis 连接（用于 listener task 的事件循环内 publish）
+        - sync Redis 连接（进程级，用于跨事件循环 publish fallback）
+        - 记录 listener task 所在事件循环
+        """
         cls._redis = aioredis.from_url(
             settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
         )
+        # 同步 Redis 连接：不绑定事件循环，可在任意线程/循环中调用。
+        # worker 进程后续即使在不同事件循环中调用 publish，也能通过该连接
+        # 直接把消息发到 Redis Pub/Sub 通道，被 listener 接收。
+        cls._sync_redis = redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        # 记录 listener 所在事件循环，publish 时用于判断是否需要 fallback
+        cls._listener_loop = asyncio.get_running_loop()
         cls._listener_task = asyncio.create_task(cls._listen())
         logger.info("EventBus initialized with Redis Pub/Sub")
 
     @classmethod
     async def publish(cls, event_type: str, payload: dict) -> None:
-        """发布事件"""
+        """发布事件
+
+        跨事件循环兼容（P1-BE-09）：
+        - 若当前事件循环与 listener task 的循环相同 → 用 async Redis publish
+          （正常路径，避免 sync 调用阻塞事件循环）
+        - 若不同（如 Celery worker 中 task 在新循环里调用 publish）→ 用进程级
+          sync Redis 连接直接 publish，确保 listener 能收到事件
+        - 若无法判断当前循环（无 running loop）→ 同样用 sync fallback
+        """
         message = json.dumps({"event_type": event_type, "payload": payload})
-        if cls._redis:
+
+        # 判断当前事件循环是否与 listener 的循环匹配
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        same_loop = (
+            current_loop is not None
+            and cls._listener_loop is not None
+            and current_loop is cls._listener_loop
+        )
+
+        if same_loop and cls._redis is not None:
+            # 正常路径：listener 与 publish 同一事件循环
             await cls._redis.publish("events", message)
+        elif cls._sync_redis is not None:
+            # fallback：跨事件循环或无 running loop，用同步 Redis 直接 publish
+            cls._sync_redis.publish("events", message)
+        elif cls._redis is not None:
+            # _sync_redis 不可用时降级到 async（可能跨循环但仍尝试）
+            await cls._redis.publish("events", message)
+
         logger.info(f"Event published: {event_type}")
 
     @classmethod
@@ -82,6 +142,8 @@ class EventBus:
         """内部监听 Redis Pub/Sub 通道，分发事件给本地订阅者
 
         带自动重连: 非取消异常时等待 5 秒后重试, 避免事件总线永久失效。
+        带 handler 超时保护（P1-BE-08）：单个 handler 超过 HANDLER_TIMEOUT
+        秒未返回则取消，避免阻塞整个事件总线。
         """
         while True:
             if not cls._redis:
@@ -101,10 +163,21 @@ class EventBus:
                         payload = data.get("payload", {})
                         handlers = cls._subscribers.get(event_type, [])
                         for handler in handlers:
+                            handler_name = getattr(handler, "__name__", repr(handler))
                             try:
-                                await handler(payload)
+                                await asyncio.wait_for(
+                                    handler(payload), timeout=cls.HANDLER_TIMEOUT
+                                )
+                            except asyncio.TimeoutError:
+                                logger.error(
+                                    f"Event handler timeout for {event_type}: "
+                                    f"{handler_name} (>{cls.HANDLER_TIMEOUT}s)"
+                                )
                             except Exception as e:
-                                logger.error(f"Event handler error for {event_type}: {e}")
+                                logger.error(
+                                    f"Event handler error for {event_type} "
+                                    f"({handler_name}): {e}"
+                                )
                     except json.JSONDecodeError:
                         logger.warning(f"Invalid event message: {message['data']}")
             except asyncio.CancelledError:
@@ -143,5 +216,12 @@ class EventBus:
         if cls._redis:
             await cls._redis.aclose()
             cls._redis = None
+        if cls._sync_redis is not None:
+            try:
+                cls._sync_redis.close()
+            except Exception as e:
+                logger.debug(f"EventBus sync redis close failed: {e}")
+            cls._sync_redis = None
+        cls._listener_loop = None
         # 不清空 _subscribers：支持 close→init 后订阅恢复
         logger.info("EventBus closed")

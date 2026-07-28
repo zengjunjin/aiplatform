@@ -1062,6 +1062,150 @@ class TestReparseDocument:
         # kb.chunk_count 不应被赋值
         assert not hasattr(kb.chunk_count, "_mock_children") or not kb.chunk_count._mock_children
 
+    # ---------- Task 11: force 参数（P1-API-07）----------
+
+    @pytest.mark.asyncio
+    async def test_force_skips_parsing_status_check(self):
+        """force=True 时 status='parsing' 不再抛 ConflictError，正常执行 reparse。"""
+        doc = MagicMock(id=10, kb_id=5, status="parsing", chunk_count=2)
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        update_result = MagicMock()
+        update_result.rowcount = 1  # force 分支不检查 rowcount，但提供值以防空引用
+        db.execute = AsyncMock(side_effect=[doc_result, update_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        db.get = AsyncMock(return_value=None)  # KB 不存在，跳过 chunk_count 扣减
+
+        fake_task = MagicMock()
+        fake_task.id = "task-force"
+
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.tasks.document_task.parse_document_task.delay",
+                return_value=fake_task,
+            ) as mock_delay,
+        ):
+            ret_doc, ret_task = await document_service.reparse_document(
+                10, 1, db, force=True
+            )
+
+        assert ret_doc is doc
+        assert ret_task is fake_task
+        assert doc.status == "pending"
+        assert doc.error_message is None
+        mock_delay.assert_called_once_with(10)
+
+    @pytest.mark.asyncio
+    async def test_force_skips_chunking_status_check(self):
+        """force=True 时 status='chunking' 不再抛 ConflictError。"""
+        doc = MagicMock(id=10, kb_id=5, status="chunking", chunk_count=0)
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(side_effect=[doc_result, update_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        db.get = AsyncMock(return_value=None)
+
+        fake_task = MagicMock()
+
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.tasks.document_task.parse_document_task.delay",
+                return_value=fake_task,
+            ),
+        ):
+            ret_doc, _ = await document_service.reparse_document(10, 1, db, force=True)
+
+        assert ret_doc.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_force_skips_embedding_status_check(self):
+        """force=True 时 status='embedding' 不再抛 ConflictError。"""
+        doc = MagicMock(id=10, kb_id=5, status="embedding", chunk_count=0)
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(side_effect=[doc_result, update_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        db.get = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.tasks.document_task.parse_document_task.delay",
+                return_value=MagicMock(),
+            ),
+        ):
+            ret_doc, _ = await document_service.reparse_document(10, 1, db, force=True)
+
+        assert ret_doc.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_force_update_omits_status_condition(self):
+        """force=True 时 UPDATE WHERE 子句只含 doc_id，不含 status 条件（跳过乐观锁）。"""
+        doc = MagicMock(id=10, kb_id=5, status="parsing", chunk_count=0)
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(side_effect=[doc_result, update_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        db.get = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
+            patch(
+                "app.tasks.document_task.parse_document_task.delay",
+                return_value=MagicMock(),
+            ),
+        ):
+            await document_service.reparse_document(10, 1, db, force=True)
+
+        # 第二次 execute 是 UPDATE 语句
+        update_stmt = db.execute.await_args_list[1].args[0]
+        compiled = str(update_stmt.compile(compile_kwargs={"literal_binds": True}))
+        # WHERE 子句应只含 doc_id=10，不含 status 条件
+        assert "status" not in compiled.lower().split("where")[-1]
+        assert "documents.id = 10" in compiled or "documents.id = 10" in compiled.replace("\n", " ")
+
+    @pytest.mark.asyncio
+    async def test_force_false_still_rejects_parsing(self):
+        """force=False（默认）时 status='parsing' 仍抛 ConflictError。"""
+        doc = MagicMock(id=10, kb_id=5, status="parsing")
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        db.execute = AsyncMock(return_value=doc_result)
+
+        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
+            with pytest.raises(ConflictError):
+                await document_service.reparse_document(10, 1, db, force=False)
+
+    @pytest.mark.asyncio
+    async def test_force_default_value_is_false(self):
+        """不传 force 时默认为 False，仍执行状态检查。"""
+        doc = MagicMock(id=10, kb_id=5, status="parsing")
+        db = AsyncMock()
+        doc_result = MagicMock()
+        doc_result.scalar_one_or_none.return_value = doc
+        db.execute = AsyncMock(return_value=doc_result)
+
+        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()):
+            with pytest.raises(ConflictError):
+                await document_service.reparse_document(10, 1, db)
+
 
 # ---------- get_progress ----------
 

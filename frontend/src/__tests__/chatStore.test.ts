@@ -41,7 +41,7 @@ describe('chatStore', () => {
         { id: 1, user_id: 1, kb_id: null, title: 'Session 1', created_at: '', updated_at: '' },
         { id: 2, user_id: 1, kb_id: 1, title: 'Session 2', created_at: '', updated_at: '' },
       ];
-      vi.mocked(chatApi.listSessions).mockResolvedValue({ items: mockSessions, total: 2, page: 1, page_size: 20 });
+      vi.mocked(chatApi.listSessions).mockResolvedValue({ items: mockSessions, total: 2, page: 1, page_size: 20, total_pages: 1 });
 
       await useChatStore.getState().fetchSessions();
 
@@ -199,7 +199,7 @@ describe('chatStore', () => {
 
       const result = useChatStore.getState().getFeedback(999);
       expect(result).toBeUndefined();
-      expect(feedbackApi.getFeedback).toHaveBeenCalledWith(999);
+      expect(feedbackApi.getFeedback).toHaveBeenCalledWith(999, undefined);
     });
 
     it('should return undefined when already fetching', () => {

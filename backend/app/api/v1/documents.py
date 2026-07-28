@@ -104,12 +104,13 @@ async def delete_document(
 async def reparse_document(
     doc_id: int,
     request: Request,
+    force: bool = Query(False, description="是否强制重新解析（跳过乐观锁）"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     # 使用 service 的原子锁, 防止并发重复触发
-    doc, task = await document_service.reparse_document(doc_id, user.id, db)
-    logger.info(f"Document reparse: id={doc_id} user={user.id}")
+    doc, task = await document_service.reparse_document(doc_id, user.id, db, force=force)
+    logger.info(f"Document reparse: id={doc_id} user={user.id} force={force}")
     return ok(data={"document_id": doc.id, "task_id": task.id})
 
 

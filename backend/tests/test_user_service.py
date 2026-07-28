@@ -29,6 +29,158 @@ class TestListUsers:
         assert items == users
 
 
+class TestListUsersKeywordSearch:
+    """Task 12: list_users keyword 搜索功能（P1-API-08）"""
+
+    @pytest.mark.asyncio
+    async def test_keyword_none_no_filter(self, make_user):
+        """keyword=None 时不过滤，等价于原 list_users 行为。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 3
+        users = [make_user(user_id=1), make_user(user_id=2)]
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = users
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        items, total = await user_service.list_users(db, page=1, page_size=20, keyword=None)
+        assert total == 3
+        assert items == users
+        # 两次 execute：count + list
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_keyword_applies_username_email_filter(self, make_user):
+        """keyword 非空时，count 与 list 查询都应包含 WHERE 过滤条件。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+        users = [make_user(user_id=2, username="alice")]
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = users
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        items, total = await user_service.list_users(
+            db, page=1, page_size=20, keyword="alice"
+        )
+        assert total == 1
+        assert items == users
+
+        # 验证 count 查询含 ilike 过滤
+        count_stmt = db.execute.await_args_list[0].args[0]
+        count_compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "alice" in count_compiled
+        assert "ESCAPE" in count_compiled or "escape" in count_compiled
+
+        # 验证 list 查询含 ilike 过滤
+        list_stmt = db.execute.await_args_list[1].args[0]
+        list_compiled = str(list_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "alice" in list_compiled
+        assert "ESCAPE" in list_compiled or "escape" in list_compiled
+
+    @pytest.mark.asyncio
+    async def test_keyword_search_both_username_and_email(self):
+        """keyword 过滤条件应同时覆盖 username 和 email 字段（OR）。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        await user_service.list_users(db, page=1, page_size=20, keyword="test")
+
+        # 编译 count 查询，验证 OR 条件含 username 和 email
+        count_stmt = db.execute.await_args_list[0].args[0]
+        compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        compiled_lower = compiled.lower()
+        # 应包含 username 和 email 字段
+        assert "username" in compiled_lower
+        assert "email" in compiled_lower
+        # 应包含 OR（ilike 用 OR 连接）
+        assert " or " in compiled_lower or "or (" in compiled_lower
+
+    @pytest.mark.asyncio
+    async def test_keyword_percent_is_escaped(self):
+        """keyword 含 % 时应被 _escape_like 转义，避免通配符注入。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        await user_service.list_users(db, page=1, page_size=20, keyword="%")
+
+        count_stmt = db.execute.await_args_list[0].args[0]
+        compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        # 应含转义后的 \%（字面量），ESCAPE 子句
+        assert "ESCAPE" in compiled or "escape" in compiled
+        assert "\\%" in compiled or "\\\\%" in compiled
+
+    @pytest.mark.asyncio
+    async def test_keyword_underscore_is_escaped(self):
+        """keyword 含 _ 时应被 _escape_like 转义。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        await user_service.list_users(db, page=1, page_size=20, keyword="_")
+
+        count_stmt = db.execute.await_args_list[0].args[0]
+        compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "ESCAPE" in compiled or "escape" in compiled
+        assert "\\_" in compiled
+
+    @pytest.mark.asyncio
+    async def test_keyword_calls_escape_like(self):
+        """list_users 应调用 _escape_like 对 keyword 进行转义。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        with patch(
+            "app.services.user_service._escape_like",
+            wraps=user_service._escape_like,
+        ) as spy_escape:
+            await user_service.list_users(db, page=1, page_size=20, keyword="a%b_c")
+
+        spy_escape.assert_called_once_with("a%b_c")
+
+    @pytest.mark.asyncio
+    async def test_keyword_empty_string_no_filter(self, make_user):
+        """keyword='' 空字符串时 falsy，不过滤（与 keyword=None 一致）。"""
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 2
+        users = [make_user(user_id=1), make_user(user_id=2)]
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = users
+
+        db.execute = AsyncMock(side_effect=[count_result, users_result])
+
+        items, total = await user_service.list_users(db, page=1, page_size=20, keyword="")
+        assert total == 2
+        assert items == users
+        # 空字符串 falsy，不应调用 _escape_like
+        # 验证 count 查询不含 WHERE ilike
+        count_stmt = db.execute.await_args_list[0].args[0]
+        compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "ilike" not in compiled.lower()
+
+
 class TestUpdateRole:
     @pytest.mark.asyncio
     async def test_update_role_self_raises(self):

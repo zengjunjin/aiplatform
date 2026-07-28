@@ -62,7 +62,7 @@ describe('FeedbackStatsOverview', () => {
   it('should call getStats on mount', async () => {
     render(<FeedbackStatsOverview selectedKbId={undefined} onStatsChange={onStatsChange} />);
     await waitFor(() => {
-      expect(mockGetStats).toHaveBeenCalledWith(undefined);
+      expect(mockGetStats).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
     });
   });
 
@@ -85,7 +85,7 @@ describe('FeedbackStatsOverview', () => {
   it('should pass selectedKbId to getStats', async () => {
     render(<FeedbackStatsOverview selectedKbId={5} onStatsChange={onStatsChange} />);
     await waitFor(() => {
-      expect(mockGetStats).toHaveBeenCalledWith(5);
+      expect(mockGetStats).toHaveBeenCalledWith(5, expect.any(AbortSignal));
     });
   });
 
@@ -187,13 +187,13 @@ describe('FeedbackStatsOverview', () => {
       <FeedbackStatsOverview selectedKbId={1} onStatsChange={onStatsChange} />,
     );
     await waitFor(() => {
-      expect(mockGetStats).toHaveBeenCalledWith(1);
+      expect(mockGetStats).toHaveBeenCalledWith(1, expect.any(AbortSignal));
     });
 
     rerender(<FeedbackStatsOverview selectedKbId={2} onStatsChange={onStatsChange} />);
 
     await waitFor(() => {
-      expect(mockGetStats).toHaveBeenCalledWith(2);
+      expect(mockGetStats).toHaveBeenCalledWith(2, expect.any(AbortSignal));
     });
   });
 });

@@ -78,6 +78,7 @@ vi.mock('echarts/components', () => ({
   TooltipComponent: {},
   LegendComponent: {},
   TitleComponent: {},
+  DataZoomComponent: {},
 }));
 
 vi.mock('echarts/renderers', () => ({

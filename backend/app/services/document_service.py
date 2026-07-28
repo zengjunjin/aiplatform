@@ -438,13 +438,18 @@ async def delete_document(doc_id: int, user_id: int, db: AsyncSession) -> None:
         logger.warning(f"File delete failed: {e}")
 
 
-async def reparse_document(doc_id: int, user_id: int, db: AsyncSession) -> tuple[Document, object]:
+async def reparse_document(
+    doc_id: int, user_id: int, db: AsyncSession, force: bool = False
+) -> tuple[Document, object]:
     """原子地重解析文档，返回 (doc, task)。
 
     使用乐观锁防止并发重复触发。
+
+    Args:
+        force: True 时跳过 "正在处理中" 状态检查与乐观锁，强制重新解析。
     """
     doc = await get_document_for_write(doc_id, user_id, db)
-    if doc.status in ("parsing", "chunking", "embedding"):
+    if not force and doc.status in ("parsing", "chunking", "embedding"):
         raise ConflictError(message="Document is already being processed")
     # 原子更新状态为 parsing, 防止并发重复触发
     from sqlalchemy import update as sa_update
@@ -452,13 +457,21 @@ async def reparse_document(doc_id: int, user_id: int, db: AsyncSession) -> tuple
     # 注意: 不使用 .returning() 子句。SQLAlchemy 2.0 中带 .returning() 的
     # UPDATE 返回 ChunkedIteratorResult（无 rowcount 属性）；不带 .returning()
     # 返回 CursorResult（有 rowcount 属性），可用于乐观锁影响行数判断。
-    result = await db.execute(
-        sa_update(Document)
-        .where(Document.id == doc_id, Document.status == doc.status)
-        .values(status="pending", error_message=None)
-    )
-    if result.rowcount == 0:
-        raise ConflictError(message="Document status changed, please retry")
+    if force:
+        # force=True: 跳过乐观锁，直接更新状态为 pending
+        await db.execute(
+            sa_update(Document)
+            .where(Document.id == doc_id)
+            .values(status="pending", error_message=None)
+        )
+    else:
+        result = await db.execute(
+            sa_update(Document)
+            .where(Document.id == doc_id, Document.status == doc.status)
+            .values(status="pending", error_message=None)
+        )
+        if result.rowcount == 0:
+            raise ConflictError(message="Document status changed, please retry")
     # 同步更新内存对象, 保持与 DB 一致
     doc.status = "pending"
     doc.error_message = None

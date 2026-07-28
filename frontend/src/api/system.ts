@@ -1,8 +1,7 @@
 import { getWithOptionalSignal } from './helpers';
 
 export interface SystemStatus {
-  status: string;
-  postgres: string;
+  postgresql: string;
   redis: string;
   ollama: string;
   qdrant: string;
@@ -26,7 +25,6 @@ export interface ModelsResponse {
  * 现有 SystemStatus 接口只覆盖核心 5 个组件状态，此处补充附加信息字段。
  */
 export interface ExtendedSystemStatus extends SystemStatus {
-  postgresql?: string;
   ollama_models?: string[];
   qdrant_collections?: number;
   celery_workers?: string[];

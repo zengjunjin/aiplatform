@@ -34,6 +34,9 @@ from app.tasks.metrics_collector import metrics_collector_loop
 # 在 chat._run_sse_stream 中将当前 asyncio.Task 加入此集合，finally 中移除。
 _active_sse_requests: set[asyncio.Task] = set()
 
+# Task 13: 跟踪 LLM warmup 任务，shutdown 时取消避免挂起
+_warmup_task: asyncio.Task | None = None
+
 
 def _setup_opentelemetry() -> None:
     """初始化 OpenTelemetry 追踪（导出到 OTLP/Jaeger）。
@@ -153,10 +156,11 @@ async def lifespan(app: FastAPI):
     # 避免首次用户请求遇到冷启动（CPU 推理下 1.5b 模型加载约 5s）
     # 不阻塞启动，后台执行；失败仅记录日志不影响服务可用性
     async def _warmup_llm():
-        try:
-            from app.core.model_router import ModelRouter
+        from app.core.model_router import ModelRouter
 
-            router = ModelRouter()
+        router = ModelRouter()
+        llm = None
+        try:
             llm = await router.select(None)
             logger.info(f"Warming up LLM model: {llm.model_name}")
             # 短 prompt 预热，仅触发模型加载
@@ -164,12 +168,19 @@ async def lifespan(app: FastAPI):
                 [{"role": "user", "content": "hi"}], temperature=0.1
             ):
                 break  # 只取第一个 token 即可确认模型已加载
-            router.release(llm.provider_name)
             logger.info(f"LLM warmup done: {llm.model_name}")
         except Exception as exc:
             logger.warning(f"LLM warmup failed (non-blocking): {exc}")
+        finally:
+            # Task 13: 确保异常路径也调用 release，避免 least_busy 计数泄漏
+            if llm is not None:
+                try:
+                    router.release(llm.provider_name)
+                except Exception as exc:
+                    logger.warning(f"LLM warmup release failed: {exc}")
 
-    asyncio.create_task(_warmup_llm())
+    global _warmup_task
+    _warmup_task = asyncio.create_task(_warmup_llm())
 
     # Reranker 模型预热：bge-reranker-base 加载耗时较长（CPU 上约 2-3 分钟）
     # 若不预热，首次 chat 请求会同步等待加载，导致 SSE 流超时
@@ -212,11 +223,30 @@ async def lifespan(app: FastAPI):
                 for task in list(_active_sse_requests):
                     task.cancel()
                 await asyncio.gather(*_active_sse_requests, return_exceptions=True)
+        # Task 13: 取消未完成的 warmup 任务，避免 shutdown 挂起
+        if _warmup_task is not None and not _warmup_task.done():
+            _warmup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _warmup_task
         metrics_task.cancel()
         with suppress(asyncio.CancelledError):
             await metrics_task
         # Stop health checker
         await health_checker.stop()
+        # Close retriever (Qdrant client) before closing EventBus
+        from app.rag.retriever import retriever as _retriever
+
+        try:
+            await _retriever.close()
+        except Exception as exc:
+            logger.warning(f"Error closing retriever: {exc}")
+        # Close BM25 store (Redis connections)
+        from app.rag.bm25 import bm25_store
+
+        try:
+            await bm25_store.close()
+        except Exception as exc:
+            logger.warning(f"Error closing BM25 store: {exc}")
         # Close EventBus
         await EventBus.close()
         # Close all LLM/Embedding/Reranker provider httpx clients

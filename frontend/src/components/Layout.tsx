@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Layout, Menu, Modal, Form, Input, App as AntdApp, Typography } from 'antd';
 import { Outlet, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { debounce } from '../utils/format';
 import {
   BookOpen,
   MessageSquare,
@@ -82,14 +83,33 @@ export default function MainLayout() {
 
   const token = useAuthStore((s) => s.token);
 
-  const handleWebSocketMessage = useCallback((data: WSNotification) => {
-    // 客户端附加 timestamp 用于未读数过滤 (后端 WSNotification 无 timestamp 字段)
-    const item: NotifItem = { ...data, timestamp: Date.now() };
+  // Task 18 (P1-FE-04): 高频 WS 通知 debounce 批量处理, 避免每条通知都触发 setState + localStorage
+  // 暂存期间通知累积在 ref 中, 300ms 内无新通知则 flush 到 state
+  const pendingNotificationsRef = useRef<NotifItem[]>([]);
+
+  const flushPendingNotifications = useCallback(() => {
+    const pending = pendingNotificationsRef.current;
+    if (pending.length === 0) return;
+    pendingNotificationsRef.current = [];
+    // push 顺序为旧→新, 反转后新→旧, 与原 [item, ...prev] 顺序一致
+    const newItems = pending.slice().reverse();
     setNotifications((prev) => {
-      const updated = [item, ...prev].slice(0, 50);
+      const updated = [...newItems, ...prev].slice(0, 50);
       localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
+  }, []);
+
+  const debouncedFlushNotifications = useMemo(
+    () => debounce(flushPendingNotifications, 300),
+    [flushPendingNotifications]
+  );
+
+  const handleWebSocketMessage = useCallback((data: WSNotification) => {
+    // 客户端附加 timestamp 用于未读数过滤 (后端 WSNotification 无 timestamp 字段)
+    const item: NotifItem = { ...data, timestamp: Date.now() };
+    pendingNotificationsRef.current.push(item);
+    debouncedFlushNotifications();
     // 修复运算符优先级: 原代码 data.type + x?.doc_id || Date.now() 中 + 优先级高于 ||
     // 导致 Date.now() 分支永远不可达（字符串拼接结果恒为 truthy）
     // WSNotification.data 为 Record<string, unknown>, 用类型守卫提取 doc_id
@@ -102,9 +122,16 @@ export default function MainLayout() {
       content: data.message || data.title || t('notification.default', { type: data.type }),
       key: notifKey,
     });
-  }, [message, t]);
+  }, [message, t, debouncedFlushNotifications]);
 
   useWebSocket(token, handleWebSocketMessage);
+
+  // 卸载时取消 pending debounce, 避免在已卸载组件上 setState
+  useEffect(() => {
+    return () => {
+      debouncedFlushNotifications.cancel();
+    };
+  }, [debouncedFlushNotifications]);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -354,6 +381,8 @@ export default function MainLayout() {
                 if (open) setReadAt(Date.now());
               }}
               onClear={() => {
+                pendingNotificationsRef.current = [];
+                debouncedFlushNotifications.cancel();
                 setNotifications([]);
                 localStorage.removeItem(NOTIF_STORAGE_KEY);
               }}

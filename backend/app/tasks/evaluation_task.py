@@ -29,9 +29,9 @@ from app.tasks.celery_app import celery_app
     max_retries=settings.TASK_MAX_RETRIES_EVALUATION,
     name="app.tasks.evaluation_task.run_evaluation",
     # H4: RAGAS 评估需要多次 LLM 调用（4 指标 * N 问题），qwen2.5:1.5b 响应较慢，
-    # 默认 300s/240s 不够。放宽到 1800s/1500s（30/25 分钟）。
+    # 默认 300s/240s 不够。放宽到 1800s/1740s（30 分钟硬超时 / 29 分钟软超时，允许优雅退出）。
     time_limit=1800,
-    soft_time_limit=1500,
+    soft_time_limit=1740,
     # 修复（v0.4.0）：添加重试退避策略
     retry_backoff=60,
     retry_backoff_max=300,

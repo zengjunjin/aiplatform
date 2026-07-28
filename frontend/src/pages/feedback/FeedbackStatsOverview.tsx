@@ -23,21 +23,26 @@ export default function FeedbackStatsOverview({ selectedKbId, onStatsChange }: F
   const [stats, setStats] = useState<FeedbackStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (signal?: AbortSignal) => {
     setStatsLoading(true);
     try {
-      const s = await feedbackApi.getStats(selectedKbId);
+      const s = await feedbackApi.getStats(selectedKbId, signal);
+      if (signal?.aborted) return;
       setStats(s);
       onStatsChange(s);
     } catch (e: unknown) {
+      if (signal?.aborted) return;
       message.error(getErrorMessage(e) || t('feedback.loadStatsFailed'));
     } finally {
-      setStatsLoading(false);
+      if (!signal?.aborted) setStatsLoading(false);
     }
   }, [selectedKbId, message, t, onStatsChange]);
 
+  // Task 23 (P1-FE-09): AbortController 防止组件卸载后 setState
   useEffect(() => {
-    fetchStats();
+    const abortController = new AbortController();
+    fetchStats(abortController.signal);
+    return () => { abortController.abort(); };
   }, [fetchStats]);
 
   return (

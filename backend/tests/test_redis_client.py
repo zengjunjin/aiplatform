@@ -40,6 +40,10 @@ class TestInitRedis:
             settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
+            socket_timeout=5,
+            socket_connect_timeout=2,
+            health_check_interval=30,
+            retry_on_timeout=True,
         )
 
     def test_init_redis_uses_settings_redis_url(self):
@@ -51,6 +55,69 @@ class TestInitRedis:
             redis_module.init_redis()
         args, _ = mock_from_url.call_args
         assert args[0] == settings.redis_url
+
+
+# ---------- P1-CFG-04: Redis socket 超时配置 ----------
+class TestRedisSocketTimeout:
+    """验证 init_redis 设置了 socket_timeout / socket_connect_timeout /
+    health_check_interval / retry_on_timeout，避免 Redis 慢响应导致无限挂起。"""
+
+    def test_socket_timeout_is_set(self):
+        """from_url 调用应包含 socket_timeout=5（秒）。"""
+        fake_redis = MagicMock()
+        with patch(
+            "app.redis_client.redis.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            redis_module.init_redis()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs.get("socket_timeout") == 5
+
+    def test_socket_connect_timeout_is_set(self):
+        """from_url 调用应包含 socket_connect_timeout=2（秒）。"""
+        fake_redis = MagicMock()
+        with patch(
+            "app.redis_client.redis.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            redis_module.init_redis()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs.get("socket_connect_timeout") == 2
+
+    def test_health_check_interval_is_set(self):
+        """from_url 调用应包含 health_check_interval=30（秒）。"""
+        fake_redis = MagicMock()
+        with patch(
+            "app.redis_client.redis.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            redis_module.init_redis()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs.get("health_check_interval") == 30
+
+    def test_retry_on_timeout_is_enabled(self):
+        """from_url 调用应包含 retry_on_timeout=True。"""
+        fake_redis = MagicMock()
+        with patch(
+            "app.redis_client.redis.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            redis_module.init_redis()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs.get("retry_on_timeout") is True
+
+    def test_all_timeout_kwargs_present(self):
+        """综合验证：所有 4 个超时/健康检查参数都被正确传入。"""
+        fake_redis = MagicMock()
+        with patch(
+            "app.redis_client.redis.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            redis_module.init_redis()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs == {
+            "encoding": "utf-8",
+            "decode_responses": True,
+            "socket_timeout": 5,
+            "socket_connect_timeout": 2,
+            "health_check_interval": 30,
+            "retry_on_timeout": True,
+        }
 
 
 class TestGetRedis:

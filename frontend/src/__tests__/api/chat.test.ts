@@ -109,7 +109,8 @@ describe('chatApi', () => {
 
   describe('getMessages', () => {
     it('should call GET /chat/sessions/:id/messages', async () => {
-      const mockResponse = { data: { data: [] } };
+      const mockPaginated = { items: [], total: 0, page: 1, page_size: 50, total_pages: 0 };
+      const mockResponse = { data: { data: mockPaginated } };
       mockGet.mockResolvedValue(mockResponse);
 
       const result = await chatApi.getMessages(1, 1, 50);
@@ -117,7 +118,9 @@ describe('chatApi', () => {
       expect(mockGet).toHaveBeenCalledWith('/chat/sessions/1/messages', {
         params: { page: 1, page_size: 50 },
       });
-      expect(result).toEqual([]);
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.total_pages).toBe(0);
     });
   });
 });
@@ -150,7 +153,7 @@ describe('feedbackApi', () => {
 
       const result = await feedbackApi.getFeedback(100);
 
-      expect(mockGet).toHaveBeenCalledWith('/chat/messages/100/feedback');
+      expect(mockGet).toHaveBeenCalledWith('/chat/messages/100/feedback', { signal: undefined });
       expect(result).toBeDefined();
     });
   });
@@ -209,7 +212,7 @@ describe('feedbackApi', () => {
 
   describe('getLowRated', () => {
     it('should call GET /chat/feedback/low-rated with params', async () => {
-      mockGet.mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } });
+      mockGet.mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20, total_pages: 0 } } });
 
       await feedbackApi.getLowRated({ kb_id: 1, page: 1, page_size: 20 });
 

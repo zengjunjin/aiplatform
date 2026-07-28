@@ -38,10 +38,12 @@ interface ChatState {
   clearWarnings: () => void;
   /** 清空 messagesError, 用于 ChatPage 提示后重置 */
   clearMessagesError: () => void;
+  /** 重置整个 chat store (logout 时调用, 避免下一个用户看到上一个用户的会话/消息) */
+  reset: () => void;
   /** Selector helper: 按 sessionId 返回有序消息数组 (非响应式, 用于命令式读取) */
   getMessagesBySession: (sessionId: number) => MessageWithRefs[];
   /** 读取 messageId 对应的 feedback, 命中缓存直接返回; 否则触发拉取并写入缓存 */
-  getFeedback: (messageId: number) => MessageFeedback | null | undefined;
+  getFeedback: (messageId: number, signal?: AbortSignal) => MessageFeedback | null | undefined;
   /** 主动写入 feedback (用于提交反馈后更新缓存) */
   setFeedback: (messageId: number, feedback: MessageFeedback | null) => void;
 }
@@ -74,7 +76,7 @@ export const useChatStore = create<ChatState>()(
     return result;
   },
 
-  getFeedback: (messageId) => {
+  getFeedback: (messageId, signal) => {
     const state = get();
     if (messageId in state.feedbackByMessageId) {
       return state.feedbackByMessageId[messageId];
@@ -83,7 +85,15 @@ export const useChatStore = create<ChatState>()(
     if (state._fetchingFeedback[messageId]) return undefined;
     // 标记为拉取中, 异步拉取完成后写入缓存
     set((s) => ({ _fetchingFeedback: { ...s._fetchingFeedback, [messageId]: true } }));
-    feedbackApi.getFeedback(messageId).then((fb) => {
+    feedbackApi.getFeedback(messageId, signal).then((fb) => {
+      // Task 23 (P1-FE-09): abort 后不写入缓存, 避免不必要的 store 更新
+      if (signal?.aborted) {
+        set((s) => {
+          const { [messageId]: _removed, ...restFetching } = s._fetchingFeedback;
+          return { _fetchingFeedback: restFetching };
+        });
+        return;
+      }
       set((s) => {
         const { [messageId]: _removed, ...restFetching } = s._fetchingFeedback;
         return {
@@ -101,7 +111,21 @@ export const useChatStore = create<ChatState>()(
   },
 
   setFeedback: (messageId, feedback) => {
-    set((s) => ({ feedbackByMessageId: { ...s.feedbackByMessageId, [messageId]: feedback } }));
+    set((s) => {
+      // Task 5 (P1-FE-01): 限制 feedbackByMessageId 字典大小到 200 条, 避免无限增长
+      const MAX_FEEDBACK = 200;
+      const entries = Object.entries(s.feedbackByMessageId);
+      let feedbackByMessageId = { ...s.feedbackByMessageId, [messageId]: feedback };
+      // 仅在新增条目 (非已存在) 且达到上限时淘汰最旧的一条, 避免更新已存在条目时误删
+      const isNew = !(messageId in s.feedbackByMessageId);
+      if (isNew && entries.length >= MAX_FEEDBACK) {
+        // entries 形如 [[key, value], ...], 取最旧条目的 key (字符串) 用于淘汰
+        const [[oldKey]] = entries;
+        const { [oldKey]: _r, ...rest } = feedbackByMessageId;
+        feedbackByMessageId = rest;
+      }
+      return { feedbackByMessageId };
+    });
   },
 
   fetchSessions: async (signal?: AbortSignal) => {
@@ -135,10 +159,16 @@ export const useChatStore = create<ChatState>()(
       // 清理对应会话的消息索引, 避免内存泄漏
       const { [id]: _removedMsgs, ...restMessagesById } = state.messagesById;
       const { [id]: _removedOrder, ...restMessageOrder } = state.messageOrder;
+      // Task 5 (P1-FE-01): 同步清理该 session 消息对应的 feedback 缓存, 避免字典残留
+      const removedMsgIds = new Set(Object.keys(state.messagesById[id] || {}).map(Number));
+      const restFeedback = Object.fromEntries(
+        Object.entries(state.feedbackByMessageId).filter(([k]) => !removedMsgIds.has(Number(k)))
+      );
       return {
         sessions: state.sessions.filter((s) => s.id !== id),
         messagesById: restMessagesById,
         messageOrder: restMessageOrder,
+        feedbackByMessageId: restFeedback,
       };
     });
   },
@@ -166,10 +196,25 @@ export const useChatStore = create<ChatState>()(
         byId[key] = { ...m, id: key };
         order.push(key);
       }
-      set((state) => ({
-        messagesById: { ...state.messagesById, [sessionId]: byId },
-        messageOrder: { ...state.messageOrder, [sessionId]: order },
-      }));
+      // Task 5 (P1-FE-01): LRU 策略限制 messagesById 字典大小, 避免无限增长
+      const MAX_SESSIONS = 20;
+      set((state) => {
+        const allSessionIds = Object.keys(state.messagesById).map(Number);
+        let messagesById = { ...state.messagesById, [sessionId]: byId };
+        let messageOrder = { ...state.messageOrder, [sessionId]: order };
+        // 仅在新增 session (非已存在) 且达到上限时淘汰最旧的一个, 避免重复拉取时误删
+        const isNewSession = !allSessionIds.includes(sessionId);
+        if (isNewSession && allSessionIds.length >= MAX_SESSIONS) {
+          const toRemove = allSessionIds.find((id) => id !== sessionId);
+          if (toRemove !== undefined) {
+            const { [toRemove]: _r1, ...rest1 } = messagesById;
+            const { [toRemove]: _r2, ...rest2 } = messageOrder;
+            messagesById = rest1;
+            messageOrder = rest2;
+          }
+        }
+        return { messagesById, messageOrder };
+      });
     } catch (e: unknown) {
       // Task 48: 替代 console.error, 通过 state 上报错误, 由 ChatPage 监听并 message.error 提示
       set({ messagesError: e });
@@ -382,6 +427,19 @@ export const useChatStore = create<ChatState>()(
   clearMessagesError: () => {
     set({ messagesError: null });
   },
+
+  reset: () => {
+    set({
+      sessions: [],
+      messagesById: {},
+      messageOrder: {},
+      feedbackByMessageId: {},
+      _fetchingFeedback: {},
+      currentSessionId: null,
+      warnings: [],
+      messagesError: null,
+    });
+  },
     }),
     {
       name: 'chat-sessions-cache',
@@ -406,8 +464,9 @@ export const useChatStore = create<ChatState>()(
 // Task 72: dev mode invariant - messagesById 和 messageOrder 双结构一致性校验
 // 仅在开发环境下订阅 state 变化, 检测两个并行结构的 key 不一致 (长度不等或 id 缺失)
 // 生产环境下此代码不会执行 (Vite tree-shaking 移除 import.meta.env.DEV === false 的分支)
+// Task 37 (P1-FE-10): HMR 时取消订阅, 避免热更新后重复订阅导致内存泄漏与重复告警
 if (import.meta.env.DEV) {
-  useChatStore.subscribe((state) => {
+  const unsubscribe = useChatStore.subscribe((state) => {
     const sessionIds = new Set<number>([
       ...Object.keys(state.messageOrder).map(Number),
       ...Object.keys(state.messagesById).map(Number),
@@ -430,4 +489,10 @@ if (import.meta.env.DEV) {
       }
     }
   });
+  // HMR dispose: 模块热替换时取消上一次的订阅, 防止订阅堆积
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      unsubscribe();
+    });
+  }
 }

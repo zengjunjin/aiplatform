@@ -38,6 +38,7 @@ export const documentApi = {
     kbId: number,
     file: File,
     onProgress?: (loaded: number, total: number) => void,
+    signal?: AbortSignal,
   ): Promise<{ document_id: number; status: string; task_id: string }> {
     const formData = new FormData();
     formData.append('file', file);
@@ -54,10 +55,13 @@ export const documentApi = {
               onProgress(progressEvent.loaded, progressEvent.total);
             }
           },
+          signal,
         },
       );
       return extractData<{ document_id: number; status: string; task_id: string }>(res);
     } catch (error) {
+      // 主动 abort 不应显示上传失败提示 (用户已主动关闭 Modal)
+      if (signal?.aborted) throw error;
       // client 拦截器已统一提取服务器 message；上传场景无 message 时使用 i18n 兜底
       if (error instanceof Error && error.message) {
         throw error;
@@ -85,9 +89,10 @@ export const documentApi = {
   },
 
   /** 预览文档内容 */
-  async preview(docId: number, page = 1, pageSize = 50): Promise<DocumentPreviewData> {
+  async preview(docId: number, page = 1, pageSize = 50, signal?: AbortSignal): Promise<DocumentPreviewData> {
     const res = await client.get(`/documents/${docId}/preview`, {
       params: { page, page_size: pageSize },
+      signal,
     });
     return extractData<DocumentPreviewData>(res);
   },

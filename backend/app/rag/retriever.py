@@ -463,6 +463,24 @@ class HybridRetriever:
         # 失效 chunks 缓存
         self.invalidate_chunks_cache(kb_id)
 
+    async def close(self) -> None:
+        """Close Qdrant client and clear in-memory caches.
+
+        Called during application shutdown to gracefully release connections.
+        Embedding provider is closed separately by ModelFactory.close_all().
+        """
+        if self._qdrant_client is not None:
+            try:
+                await asyncio.to_thread(self._qdrant_client.close)
+            except Exception as e:
+                logger.warning("Error closing Qdrant client: {}", e)
+            self._qdrant_client = None
+        # Clear in-memory caches
+        self._chunks_cache.clear()
+        self._chunks_locks.clear()
+        # Embedding provider is managed by ModelFactory.close_all() in main.py
+        self._embedding = None
+
     def _rrf_fuse(
         self, vec_results: list[dict], bm25_results: list[dict], k: int = settings.RRF_K
     ) -> list[dict]:

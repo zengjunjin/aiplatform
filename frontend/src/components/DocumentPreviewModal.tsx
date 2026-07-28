@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Space, Button, Typography, Spin, Skeleton, App as AntdApp, Tag } from 'antd';
 import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -31,29 +31,45 @@ export default function DocumentPreviewModal({
   const [data, setData] = useState<DocumentPreviewData | null>(null);
   const [page, setPage] = useState(1);
   const { message } = AntdApp.useApp();
+  // Task 23 (P1-FE-09): ref 持有当前进行中的 AbortController, 翻页/卸载时 abort 上一次请求
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchPreview = useCallback(
     async (p: number) => {
+      // 取消上一次进行中的请求 (翻页场景)
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       setLoading(true);
       try {
-        const result = await documentApi.preview(docId, p, PAGE_SIZE);
+        const result = await documentApi.preview(docId, p, PAGE_SIZE, controller.signal);
+        if (controller.signal.aborted) return;
         setData(result);
         setPage(result.page);
       } catch (e: unknown) {
+        if (controller.signal.aborted) return;
         message.error(getErrorMessage(e) || t('documentPreview.loadFailed'));
         setData(null);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     },
     [docId, message, t],
   );
 
+  // Task 23 (P1-FE-09): AbortController 防止组件卸载后 setState
   useEffect(() => {
-    if (open && docId > 0) {
-      setPage(1);
-      fetchPreview(1);
-    }
+    if (!open || docId <= 0) return;
+    setPage(1);
+    fetchPreview(1);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
   }, [open, docId, fetchPreview]);
 
   const handlePrev = () => {

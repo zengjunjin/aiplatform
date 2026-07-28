@@ -29,16 +29,18 @@ export default function UsersPage() {
   const { message } = AntdApp.useApp();
   const { runWithToast } = useApiToast();
 
-  const fetchUsers = useCallback(async (p = page, ps = pageSize) => {
+  const fetchUsers = useCallback(async (p = page, ps = pageSize, signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const data = await usersApi.list({ page: p, page_size: ps });
+      const data = await usersApi.list({ page: p, page_size: ps }, signal);
+      if (signal?.aborted) return;
       setUsers(data.items || []);
       setTotal(data.total || 0);
     } catch (e: unknown) {
+      if (signal?.aborted) return;
       message.error(getErrorMessage(e) || t('user.loadFailed'));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [page, pageSize, message, t]);
 
@@ -47,8 +49,11 @@ export default function UsersPage() {
   const fetchUsersRef = useRef(fetchUsers);
   fetchUsersRef.current = fetchUsers;
 
+  // Task 23 (P1-FE-09): AbortController 防止组件卸载后 setState
   useEffect(() => {
-    fetchUsersRef.current();
+    const abortController = new AbortController();
+    fetchUsersRef.current(page, pageSize, abortController.signal);
+    return () => { abortController.abort(); };
   }, []);
 
   const handleRoleChange = async (userId: number, role: 'user' | 'admin') => {

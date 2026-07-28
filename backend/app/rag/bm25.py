@@ -483,5 +483,26 @@ class BM25Store:
             return []
         return self._search_core(bm25, chunks, query, top_k)
 
+    async def close(self) -> None:
+        """Close Redis connections and clear in-memory caches.
+
+        Called during application shutdown to gracefully release resources.
+        """
+        if self._async_redis is not None:
+            try:
+                await self._async_redis.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing BM25 async Redis: {e}")
+            self._async_redis = None
+        if self._sync_redis is not None:
+            try:
+                self._sync_redis.close()
+            except Exception as e:
+                logger.warning(f"Error closing BM25 sync Redis: {e}")
+            self._sync_redis = None
+        # Clear in-memory caches
+        self._cache.clear()
+        self._chunks_meta_cache.clear()
+
 
 bm25_store = BM25Store()

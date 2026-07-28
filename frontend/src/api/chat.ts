@@ -52,11 +52,11 @@ export const chatApi = {
   },
 
   /** 获取消息列表 */
-  async getMessages(sessionId: number, page = 1, pageSize = 50): Promise<Message[]> {
+  async getMessages(sessionId: number, page = 1, pageSize = 50): Promise<PaginatedResponse<Message>> {
     const res = await client.get(`/chat/sessions/${sessionId}/messages`, {
       params: { page, page_size: pageSize },
     });
-    return extractData<Message[]>(res);
+    return extractData<PaginatedResponse<Message>>(res);
   },
 };
 
@@ -89,7 +89,8 @@ export async function* streamChat(
 
   const doStream = async function* (): AsyncGenerator<SSEEvent> {
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort('timeout'), timeoutMs);
+    // Task 21 (P1-FE-07): 改为 let, 401 重试时重新设置 timeout
+    let timeoutId = setTimeout(() => abortController.abort('timeout'), timeoutMs);
 
     // 转发外部 signal 的 abort 事件，使用 once 避免监听器堆积
     const onExternalAbort = () => {
@@ -125,7 +126,10 @@ export async function* streamChat(
         const refreshed = await useAuthStore.getState().refreshAccessToken();
         if (refreshed) {
           const newToken = useAuthStore.getState().token;
+          // Task 21 (P1-FE-07): 重试时重新设置 timeout, 避免原 timeout 已被 clear 导致重试 fetch 无超时保护
+          timeoutId = setTimeout(() => abortController.abort('timeout'), timeoutMs);
           resp = await doFetch(newToken);
+          clearTimeout(timeoutId);
         }
         // refresh 失败或重试后仍 401：清理本地态并抛错
         if (resp.status === 401) {
@@ -278,8 +282,8 @@ export const feedbackApi = {
   },
 
   /** 获取某条消息的反馈 */
-  async getFeedback(messageId: number): Promise<MessageFeedback | null> {
-    const res = await client.get(`/chat/messages/${messageId}/feedback`);
+  async getFeedback(messageId: number, signal?: AbortSignal): Promise<MessageFeedback | null> {
+    const res = await client.get(`/chat/messages/${messageId}/feedback`, { signal });
     return extractData<MessageFeedback | null>(res);
   },
 

@@ -552,16 +552,16 @@ describe('UsersPage', () => {
     });
 
     // 初始 list 调用 page=1
-    expect(mockList).toHaveBeenCalledWith({ page: 1, page_size: 100 });
+    expect(mockList).toHaveBeenCalledWith({ page: 1, page_size: 100 }, expect.any(AbortSignal));
 
     // 点击下一页
     const nextBtn = container.querySelector('.ant-pagination-next')!;
     expect(nextBtn).toBeInTheDocument();
     fireEvent.click(nextBtn);
 
-    // 应以 page=2 再次调用 list
+    // 应以 page=2 再次调用 list (onChange handler 不传 AbortSignal, 仅 useEffect 中创建)
     await waitFor(() => {
-      expect(mockList).toHaveBeenCalledWith({ page: 2, page_size: 100 });
+      expect(mockList).toHaveBeenCalledWith({ page: 2, page_size: 100 }, undefined);
     });
   });
 
@@ -613,7 +613,7 @@ describe('UsersPage', () => {
     );
 
     await waitFor(() => {
-      expect(mockList).toHaveBeenCalledWith({ page: 1, page_size: 100 });
+      expect(mockList).toHaveBeenCalledWith({ page: 1, page_size: 100 }, expect.any(AbortSignal));
     });
   });
 });

@@ -88,7 +88,7 @@ describe('DocumentPreviewModal', () => {
     expect(screen.getByText('guide.md')).toBeInTheDocument();
     expect(screen.getByText('MD')).toBeInTheDocument();
     // 首次加载触发 page=1 请求
-    expect(previewMock).toHaveBeenCalledWith(1, 1, 50);
+    expect(previewMock).toHaveBeenCalledWith(1, 1, 50, expect.any(AbortSignal));
     // 内容渲染
     await waitFor(() => {
       expect(screen.getByText('Hello world')).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe('DocumentPreviewModal', () => {
     fireEvent.click(nextBtn);
 
     await waitFor(() => {
-      expect(previewMock).toHaveBeenCalledWith(2, 2, 50);
+      expect(previewMock).toHaveBeenCalledWith(2, 2, 50, expect.any(AbortSignal));
     });
   });
 
@@ -143,7 +143,7 @@ describe('DocumentPreviewModal', () => {
     const nextBtn = queryByAria('documentPreview.nextPage') as HTMLElement;
     fireEvent.click(nextBtn);
     await waitFor(() => {
-      expect(previewMock).toHaveBeenCalledWith(3, 2, 50);
+      expect(previewMock).toHaveBeenCalledWith(3, 2, 50, expect.any(AbortSignal));
     });
   });
 

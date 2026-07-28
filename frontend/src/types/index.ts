@@ -4,14 +4,14 @@ export interface User {
   email: string;
   role: 'user' | 'admin';
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface KnowledgeBase {
   id: number;
   name: string;
-  description: string;
+  description: string | null;
   owner_id: number;
   doc_count: number;
   chunk_count: number;
@@ -36,7 +36,6 @@ export interface Document {
   kb_id: number;
   uploader_id: number;
   filename: string;
-  file_path: string;
   file_type: string;
   file_size: number;
   file_hash: string;
@@ -102,6 +101,7 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   page_size: number;
+  total_pages: number;
 }
 
 // Task 55: Message 继承 ChatMessage, 字段名已与后端 MessageOut.references 统一
@@ -159,9 +159,3 @@ export interface MessageFeedback {
 }
 
 export type FeedbackType = 'not_accurate' | 'incomplete' | 'hallucination' | 'irrelevant' | 'too_verbose' | 'too_brief' | 'other';
-
-export interface ModelInfo {
-  name: string;
-  display_name: string;
-  status: string;
-}

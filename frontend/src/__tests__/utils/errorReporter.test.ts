@@ -11,6 +11,8 @@ import {
 describe('errorReporter', () => {
   beforeEach(() => {
     localStorage.clear();
+    // Task 19: 面包屑改用内存缓冲, 需在 beforeEach 中显式清空内存 (localStorage.clear 不影响内存)
+    clearBreadcrumbs();
     vi.clearAllMocks();
   });
 

@@ -43,7 +43,7 @@ describe('kbStore', () => {
         { id: 1, name: 'KB1', description: 'desc1', owner_id: 1, doc_count: 5, chunk_count: 100, collaborators: null, created_at: '', updated_at: '' },
         { id: 2, name: 'KB2', description: 'desc2', owner_id: 1, doc_count: 3, chunk_count: 50, collaborators: null, created_at: '', updated_at: '' },
       ];
-      vi.mocked(kbApi.list).mockResolvedValue({ items: mockKBs, total: 2, page: 1, page_size: 100 });
+      vi.mocked(kbApi.list).mockResolvedValue({ items: mockKBs, total: 2, page: 1, page_size: 100, total_pages: 1 });
 
       await useKBStore.getState().fetchKBs();
 
@@ -105,7 +105,7 @@ describe('kbStore', () => {
   describe('fetchDocuments', () => {
     it('should fetch and set documents for a kb', async () => {
       const mockDocs = [
-        { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_path: '', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' },
+        { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' },
       ];
       vi.mocked(documentApi.list).mockResolvedValue({ items: mockDocs, total: 1, page: 1, page_size: 200 } as any);
 
@@ -117,7 +117,7 @@ describe('kbStore', () => {
 
   describe('deleteDocument', () => {
     it('should delete a document from the store', async () => {
-      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_path: '', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
+      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
       useKBStore.setState({ documents: { 1: [doc] } });
 
       await useKBStore.getState().deleteDocument(1, 1);
@@ -129,7 +129,7 @@ describe('kbStore', () => {
 
   describe('reparseDocument', () => {
     it('should call reparse API and refresh documents', async () => {
-      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_path: '', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
+      const doc = { id: 1, kb_id: 1, uploader_id: 1, filename: 'doc1.pdf', file_type: 'pdf', file_size: 1024, file_hash: '', status: 'done' as const, chunk_count: 10, error_message: null, created_at: '', updated_at: '' };
       useKBStore.setState({ documents: { 1: [doc] } });
       vi.mocked(documentApi.reparse).mockResolvedValue({ document_id: 1, task_id: 'task-1' });
       vi.mocked(documentApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 200 } as any);

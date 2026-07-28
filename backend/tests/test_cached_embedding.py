@@ -434,3 +434,125 @@ class TestEmbeddingCacheMetrics:
         hits_mock.inc.assert_not_called()
         misses_mock.inc.assert_not_called()
         errors_mock.inc.assert_not_called()
+
+
+# ---------- P1-BE-02 + P1-BE-03: reset_connection / close 方法 ----------
+class TestResetConnection:
+    """验证 CachedEmbeddingProvider.reset_connection 方法存在且正确清空 _redis。"""
+
+    def test_reset_connection_exists(self):
+        """hasattr(reset_connection) 返回 True（修复 P1-BE-02 回归守卫）。
+
+        document_task.py:187 依赖 `hasattr(embedding, "reset_connection")` 判断
+        是否调用 reset_connection()。基类 BaseEmbeddingProvider 未定义该方法，
+        若 CachedEmbeddingProvider 未覆盖，hasattr 始终返回 False，导致
+        Celery 中跨 event loop 复用 Redis 连接触发 'Event loop is closed'。
+        """
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        assert hasattr(provider, "reset_connection")
+        assert callable(provider.reset_connection)
+
+    def test_reset_connection_clears_redis(self):
+        """调用 reset_connection() 后 _redis 应被置为 None。"""
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        # 模拟已有 Redis 连接
+        provider._redis = MagicMock()
+        assert provider._redis is not None
+
+        provider.reset_connection()
+
+        assert provider._redis is None
+
+    def test_reset_connection_idempotent_when_already_none(self):
+        """_redis 已为 None 时调用 reset_connection 不抛异常。"""
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        assert provider._redis is None
+        # 不应抛异常
+        provider.reset_connection()
+        assert provider._redis is None
+
+    @pytest.mark.asyncio
+    async def test_reset_connection_allows_reconnect_after_clear(self):
+        """reset_connection 后再次 _get_redis 应触发 from_url 重建连接。"""
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        fake_redis = MagicMock()
+        fake_redis.ping = AsyncMock()
+
+        with patch(
+            "app.models.cached_embedding.redis_async.from_url", return_value=fake_redis
+        ) as mock_from_url:
+            # 第一次调用建立连接
+            r1 = await provider._get_redis()
+            assert r1 is fake_redis
+            assert mock_from_url.call_count == 1
+
+            # 重置后再次调用应重建
+            provider.reset_connection()
+            r2 = await provider._get_redis()
+            assert r2 is fake_redis
+            assert mock_from_url.call_count == 2
+
+
+class TestCloseMethod:
+    """验证 CachedEmbeddingProvider.close 方法存在且正确清理资源。"""
+
+    def test_close_method_exists(self):
+        """hasattr(close) 返回 True 且为协程方法。"""
+        import inspect
+
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        assert hasattr(provider, "close")
+        assert callable(provider.close)
+        # close 应是 async 方法
+        assert inspect.iscoroutinefunction(provider.close)
+
+    @pytest.mark.asyncio
+    async def test_close_clears_redis_and_calls_aclose(self):
+        """close() 应调用 redis.aclose() 并将 _redis 置为 None。"""
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        fake_redis = AsyncMock()
+        fake_redis.aclose = AsyncMock()
+        provider._redis = fake_redis
+
+        # inner.close 也应被调用
+        provider.inner.close = AsyncMock()
+
+        await provider.close()
+
+        fake_redis.aclose.assert_awaited_once()
+        assert provider._redis is None
+        provider.inner.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_when_redis_is_none(self):
+        """_redis 为 None 时 close 不抛异常，仅调用 inner.close。"""
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        assert provider._redis is None
+        provider.inner.close = AsyncMock()
+
+        await provider.close()
+
+        assert provider._redis is None
+        provider.inner.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_overrides_base_noop(self):
+        """CachedEmbeddingProvider.close 覆盖基类 BaseEmbeddingProvider.close (no-op)。
+
+        修复 P1-BE-03：基类 close 默认 no-op，未关闭 Redis 连接会导致连接泄漏。
+        """
+        from app.models.base import BaseEmbeddingProvider
+
+        # BaseEmbeddingProvider.close 是 no-op（返回 None）
+        assert BaseEmbeddingProvider.close is not CachedEmbeddingProvider.close
+
+        provider = CachedEmbeddingProvider(FakeInnerProvider())
+        fake_redis = AsyncMock()
+        fake_redis.aclose = AsyncMock()
+        provider._redis = fake_redis
+        provider.inner.close = AsyncMock()
+
+        await provider.close()
+
+        # 验证 Redis 连接确实被关闭（而非 no-op）
+        fake_redis.aclose.assert_awaited_once()
