@@ -66,17 +66,21 @@ async def _on_evaluation_completed(payload: dict):
         )
 
 
-# 注册事件订阅（在模块加载时注册，使用 flag 防止重复注册）
+# 注册事件订阅（使用 asyncio.Lock + double-check 防止并发重复注册）
 _event_handlers_registered = False
+_event_handlers_lock = asyncio.Lock()
 
 
 async def _register_event_handlers():
     global _event_handlers_registered
     if _event_handlers_registered:
         return
-    await EventBus.subscribe(EventBus.DOCUMENT_PARSED, _on_document_parsed)
-    await EventBus.subscribe(EventBus.EVALUATION_COMPLETED, _on_evaluation_completed)
-    _event_handlers_registered = True
+    async with _event_handlers_lock:
+        if _event_handlers_registered:  # double-check
+            return
+        await EventBus.subscribe(EventBus.DOCUMENT_PARSED, _on_document_parsed)
+        await EventBus.subscribe(EventBus.EVALUATION_COMPLETED, _on_evaluation_completed)
+        _event_handlers_registered = True
 
 
 # 进程内消息频率计数（仅在 Redis 不可用时使用，不具备跨进程能力）

@@ -119,3 +119,4 @@ backend/test_results*.xml
 
 # Frontend coverage
 frontend/coverage/
+frontend/coverage-*.json

@@ -104,12 +104,19 @@ async def list_models(
     models = []
     for name in providers:
         provider = ModelRegistry.get(name)
+        is_local = provider.provider_name.startswith("ollama")
         models.append(
             {
                 "name": provider.provider_name,
-                "display_name": f"{provider.model_name} ({'本地' if provider.provider_name.startswith('ollama') else '云端'})",
-                "source": "local" if provider.provider_name.startswith("ollama") else "cloud",
+                "display_name": f"{provider.model_name} ({'本地' if is_local else '云端'})",
+                "source": "local" if is_local else "cloud",
                 "status": "healthy" if provider.is_healthy else "unhealthy",
             }
         )
-    return ok(data={"models": models, "default_model": "ollama"})
+    # default_model: 返回优先级最高的 provider 名称
+    from app.models.factory import ModelFactory
+    try:
+        default = ModelFactory.create_llm().provider_name
+    except Exception:
+        default = "ollama"
+    return ok(data={"models": models, "default_model": default})

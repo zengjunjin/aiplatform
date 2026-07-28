@@ -79,7 +79,7 @@ class ModelRegistry:
                 if provider_type == "ollama":
                     # Ollama 使用本地 host，忽略 api_base 中的 /v1 后缀
                     host = api_base.replace("/v1", "") if api_base else settings.OLLAMA_HOST
-                    provider = OllamaLLMProvider(model=model, host=host)
+                    provider = OllamaLLMProvider(model=model, host=host, provider_name=name)
                 else:
                     provider = OpenAICompatibleProvider(
                         api_base=api_base,

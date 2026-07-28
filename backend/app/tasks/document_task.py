@@ -189,15 +189,6 @@ async def _embed_texts_async(texts: list[str]) -> list[list[float]]:
     return await embedding.embed(texts)
 
 
-def _embed_texts_sync(texts: list[str]) -> list[list[float]]:
-    """Run concurrent embedding in a dedicated event loop (Celery worker context)."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(_embed_texts_async(texts))
-    finally:
-        loop.close()
-
-
 def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
     """Embed all chunks and store in Qdrant + rebuild BM25 index.
 
@@ -209,19 +200,12 @@ def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
         return
 
     texts = [c["content"] for c in chunks]
-    vectors = _embed_texts_sync(texts)
-
     kb_id = chunks[0]["kb_id"]
 
-    # 问题: Celery worker 线程可能已有事件循环, asyncio.run() 会创建新循环导致冲突
-    # 解决方案: 创建独立的新事件循环, 确保不受影响, 完成后恢复旧循环
-    try:
-        old_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        old_loop = None
+    # 单一事件循环完成 embedding + Qdrant 写入（避免创建多个事件循环）
     loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
+        vectors = loop.run_until_complete(_embed_texts_async(texts))
 
         async def _add():
             await retriever.add_chunks(kb_id, chunks, vectors)
@@ -229,8 +213,6 @@ def _embed_and_store(doc_id: int, chunks: list[dict]) -> None:
         loop.run_until_complete(_add())
     finally:
         loop.close()
-        if old_loop is not None:
-            asyncio.set_event_loop(old_loop)
 
     session = get_sync_session()
     try:

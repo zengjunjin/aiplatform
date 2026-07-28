@@ -49,7 +49,8 @@ class TestTextChunker:
         text = "The quick brown fox jumps over the lazy dog. " * 20
         c = TextChunker(chunk_size=80, overlap=20)
         chunks = c.chunk(text)
-        assert text[:50] in chunks[0]["content"]
+        # 英文句号现在是分割边界，第一个 chunk 至少包含第一句
+        assert "The quick brown fox jumps over the lazy dog." in chunks[0]["content"]
         assert text[-50:].strip() in chunks[-1]["content"]
 
     def test_default_instance_exists(self):

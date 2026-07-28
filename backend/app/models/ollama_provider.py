@@ -35,16 +35,17 @@ def _build_client(timeout: float = 60.0) -> httpx.AsyncClient:
 
 
 class OllamaLLMProvider(BaseLLMProvider):
-    def __init__(self, model: str | None = None, host: str | None = None):
+    def __init__(self, model: str | None = None, host: str | None = None, provider_name: str | None = None):
         self.model = model or settings.LLM_MODEL
         self.host = host or settings.OLLAMA_HOST
+        self._provider_name = provider_name or "ollama"
         self._healthy = True
         # 长生命周期 httpx client：复用连接池，避免每次请求都重新建立 TCP/TLS
         self._client = _build_client(timeout=300.0)
 
     @property
     def provider_name(self) -> str:
-        return "ollama"
+        return self._provider_name
 
     @property
     def model_name(self) -> str:

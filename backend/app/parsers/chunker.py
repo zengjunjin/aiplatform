@@ -64,9 +64,14 @@ class TextChunker:
         }
 
     def _find_split_pos(self, text: str, target: int) -> int:
-        """在 target 附近找最近的句子边界"""
+        """在 target 附近找最近的句子边界（中英文兼容）"""
+        # 优先查找句子边界（中英文标点）
         for i in range(min(target, len(text)), max(0, target - 100), -1):
-            if text[i] in "。?!;\n":
+            if text[i] in "。.!?！？;\n":
+                return i + 1
+        # 其次查找空格边界（避免切断 URL/代码）
+        for i in range(min(target, len(text)), max(0, target - 100), -1):
+            if text[i] in " \t":
                 return i + 1
         return target
 

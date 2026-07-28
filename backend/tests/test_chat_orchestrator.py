@@ -483,9 +483,13 @@ class TestEventStreamOrchestration:
             ) as mock_save_asst,
             patch("app.services.chat_service.append_to_context", new=AsyncMock()),
             patch("app.services.chat_service.clear_cancel", new=AsyncMock()),
+            patch(
+                "app.services.chat_service.create_assistant_placeholder",
+                new=AsyncMock(return_value=MagicMock(id=99)),
+            ),
         ):
             # _stream_llm_with_fallback 是 async generator
-            async def fake_stream(messages, llm, router, sid, state):
+            async def fake_stream(messages, llm, router, sid, state, message_id=None):
                 state["full_answer"] = "answer"
                 state["cancelled"] = False
                 state["token_count"] = 1

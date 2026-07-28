@@ -129,7 +129,7 @@ class TestEmbedAndStore:
 
         session = MagicMock()
 
-        with patch("app.tasks.document_task._embed_texts_sync", return_value=vectors):
+        with patch("app.tasks.document_task._embed_texts_async", new=AsyncMock(return_value=vectors)):
             with patch("app.tasks.document_task.retriever") as mock_retriever:
                 mock_retriever.add_chunks = AsyncMock()
                 with patch("app.tasks.document_task.get_sync_session", return_value=session):
@@ -162,7 +162,7 @@ class TestEmbedAndStore:
         session = MagicMock()
         session.execute.side_effect = Exception("DB error")
 
-        with patch("app.tasks.document_task._embed_texts_sync", return_value=[[0.1]]):
+        with patch("app.tasks.document_task._embed_texts_async", new=AsyncMock(return_value=[[0.1]])):
             with patch("app.tasks.document_task.retriever") as mock_retriever:
                 mock_retriever.add_chunks = AsyncMock()
                 with patch("app.tasks.document_task.get_sync_session", return_value=session):
@@ -188,7 +188,7 @@ class TestEmbedAndStore:
 
         session = MagicMock()
 
-        with patch("app.tasks.document_task._embed_texts_sync", return_value=[[0.1]]):
+        with patch("app.tasks.document_task._embed_texts_async", new=AsyncMock(return_value=[[0.1]])):
             with patch("app.tasks.document_task.retriever") as mock_retriever:
                 mock_retriever.add_chunks = AsyncMock()
                 with patch("app.tasks.document_task.get_sync_session", return_value=session):
@@ -209,7 +209,7 @@ class TestEmbedAndStore:
 
         session = MagicMock()
 
-        with patch("app.tasks.document_task._embed_texts_sync", return_value=[[0.1]]):
+        with patch("app.tasks.document_task._embed_texts_async", new=AsyncMock(return_value=[[0.1]])):
             with patch("app.tasks.document_task.retriever") as mock_retriever:
                 mock_retriever.add_chunks = AsyncMock()
                 with patch("app.tasks.document_task.get_sync_session", return_value=session):

@@ -254,7 +254,7 @@ export const useChatStore = create<ChatState>()(
     };
 
     try {
-      for await (const evt of streamChat(sessionId, content, abortController.signal, 60000, model)) {
+      for await (const evt of streamChat(sessionId, content, abortController.signal, undefined, model)) {
         if (get()._stopFlag) break;
 
         if (evt.event === 'searching') {
@@ -385,10 +385,19 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'chat-sessions-cache',
-      // Task 46: 仅持久化 sessions 列表元数据, fetchSessions 仍会刷新
-      // 不持久化消息、流式状态、feedback 缓存等运行时状态
+      // 持久化 sessions + 最近 5 个会话的消息（每会话最多 20 条），提升刷新体验
       partialize: (state) => ({
         sessions: state.sessions,
+        messagesById: Object.fromEntries(
+          Object.entries(state.messagesById)
+            .slice(-5)
+            .map(([k, v]) => [k, Object.fromEntries(
+              Object.entries(v).slice(-20)
+            )])
+        ),
+        messageOrder: Object.fromEntries(
+          Object.entries(state.messageOrder).slice(-5)
+        ),
       }),
     },
   ),

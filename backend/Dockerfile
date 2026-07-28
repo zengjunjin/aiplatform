@@ -30,8 +30,22 @@ RUN poetry config virtualenvs.in-project true \
     && poetry install --without dev --no-interaction --no-ansi --no-root \
     && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2' 'scipy>=1.13,<1.14'
 
+# 替换 torch 为 CPU-only 版本，移除 nvidia CUDA 依赖（约减 5GB 镜像体积）
+# 后端容器中 torch 仅用于 reranker (sentence-transformers) 的 CPU 推理，不需要 CUDA
+RUN .venv/bin/pip uninstall -y torch nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc \
+    nvidia-cuda-runtime nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand \
+    nvidia-cusolver nvidia-cusparse nvidia-cusparselt-cu13 nvidia-nccl-cu13 \
+    nvidia-nvjitlink nvidia-nvshmem-cu13 nvidia-nvtx \
+    cuda-bindings cuda-pathfinder cuda-toolkit triton 2>/dev/null; \
+    .venv/bin/pip install --no-cache-dir torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+
 # 复制源码（.dockerignore 会排除 tests/ storage/ .git/ 等）
 COPY . .
+
+# 清理 .pyc 缓存和 __pycache__ 目录，减小镜像体积
+RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \
+    find /app -name '*.pyc' -delete 2>/dev/null; \
+    true
 
 # ---- Runtime stage ----
 # 仅包含运行时所需的系统库与 Python 运行时，不含编译工具链。
@@ -53,6 +67,13 @@ WORKDIR /app
 # 从 builder 复制 .venv 与源码，chown 确保非 root 用户可读
 COPY --from=builder --chown=appuser:appuser /app /app
 
+# 清理 .venv 中的缓存文件和不需要的 dist-info，减小镜像体积
+RUN find /app/.venv -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \
+    find /app/.venv -name '*.pyc' -delete 2>/dev/null; \
+    find /app/.venv -name '*.pyo' -delete 2>/dev/null; \
+    rm -rf /app/.venv/share /app/.venv/man 2>/dev/null; \
+    true
+
 # 将 .venv 加入 PATH，使 uvicorn / alembic / celery 等命令直接可用
 # （docker-compose.yml 中的 `sh -c "alembic upgrade head && uvicorn ..."` 依赖此 PATH）
 ENV PATH="/app/.venv/bin:$PATH"
@@ -66,5 +87,5 @@ EXPOSE 8000
 # 此处保留以便独立运行容器时（docker run）也有健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 CMD curl -f http://localhost:8000/readyz || exit 1
 
-# 预期镜像体积 ≤ 400MB（不含 build-essential / poetry / tests/）
+# 预期镜像体积 ≤ 1.5GB（受 torch/scipy/numpy 依赖影响，已通过多阶段构建+缓存清理优化）
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

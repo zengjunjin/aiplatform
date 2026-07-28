@@ -64,9 +64,16 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_KEEP_ALIVE=24h
-      # H4: 允许 Ollama 同时处理 4 个并发请求（默认 1），配合 RAGAS max_workers=2
-      # 提升评估吞吐量，避免 RAGAS 超时导致指标返回 None
-      - OLLAMA_NUM_PARALLEL=4
+      # GPU 加速后可支撑更高并发
+      - OLLAMA_NUM_PARALLEL=8
+    # NVIDIA GPU 支持（Docker Desktop WSL2 使用 deploy.resources.reservations.devices）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     # 资源限制（docker compose 非 swarm mode 使用 mem_limit/cpus，
     # deploy.resources.limits 在 `docker compose up` 时会被忽略）
     mem_limit: 4g
