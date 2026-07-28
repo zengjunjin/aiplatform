@@ -113,10 +113,15 @@ async def list_models(
                 "status": "healthy" if provider.is_healthy else "unhealthy",
             }
         )
-    # default_model: 返回优先级最高的 provider 名称
-    from app.models.factory import ModelFactory
+    # default_model: 返回第一个健康的 provider 名称（与 ModelRegistry 注册名一致）
+    # 注意：不能用 ModelFactory.create_llm().provider_name，因为它返回的是 "ollama"（默认名），
+    # 而 ModelRegistry 注册的是 "ollama-7b"/"ollama-1.5b"（配置中的 name），两者不一致会导致
+    # 前端发送 model="ollama" 时 ModelRegistry.get("ollama") 抛出 ValueError
+    from app.models.factory import ModelRegistry as _Registry
+
     try:
-        default = ModelFactory.create_llm().provider_name
+        available = _Registry.get_available()
+        default = available[0].provider_name if available else (providers[0] if providers else "ollama")
     except Exception:
-        default = "ollama"
+        default = providers[0] if providers else "ollama"
     return ok(data={"models": models, "default_model": default})
