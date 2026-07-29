@@ -1,8 +1,10 @@
 # RAG 知识库平台 — 性能基准报告
 
-> 版本：v0.2.0
-> 日期：2026-07-11
+> 版本：v0.6.0（2026-07-29 GPU 重新基线）
+> 日期：2026-07-29
 > 基准测试脚本：`backend/tests/performance/`
+>
+> **历史版本**：v0.2.0 (2026-07-11) 为 CPU 模式基线，数据见各章节"v0.2.0 CPU 历史"小节。当前章节为 GPU 模式重新基线。
 
 ---
 
@@ -15,7 +17,7 @@
 | CPU | Intel Core i7-13700H (14C/20T, 2.4GHz base / 5.0GHz boost) |
 | RAM | 32GB DDR5-5200 |
 | 磁盘 | 1TB NVMe SSD (Samsung 990 Pro) |
-| GPU | 无（LLM 推理使用 CPU，Ollama 本地模式） |
+| **GPU** | **NVIDIA GeForce RTX 4060 Laptop (8GB GDDR6)** |
 | 网络 | 本地回环 (localhost) |
 
 ### 1.2 软件版本
@@ -26,15 +28,39 @@
 | FastAPI | 0.115.x | Web 框架 |
 | PostgreSQL | 16 (Alpine) | 关系型数据库 |
 | Redis | 7 (Alpine) | 缓存与消息队列 |
-| Qdrant | 1.10.1 | 向量数据库 |
-| Ollama | latest | 本地 LLM 推理 |
-| LLM 模型 | qwen2.5:7b | 对话生成 |
-| Embedding 模型 | nomic-embed-text | 文本向量化 (768d) |
-| Reranker 模型 | bge-reranker-base | 检索重排序 |
-| Docker | 24.x | 容器运行时 |
+| Qdrant | 1.18.3 | 向量数据库 |
+| Ollama | 0.3.14 | 本地 LLM 推理（**GPU 模式**） |
+| LLM 模型 | qwen2.5:7b (Q4_K_M, 5.7GB 显存) | 对话生成，100% GPU |
+| Embedding 模型 | bge-m3 (1.7GB 显存) | 文本向量化 (1024d)，100% GPU |
+| Reranker 模型 | bge-reranker-base | 检索重排序（CPU 模式，未走 GPU） |
+| Docker | 24.x | 容器运行时（nvidia runtime 已注册） |
 | Docker Compose | v2.24.x | 服务编排 |
+| NVIDIA Driver | 610.62 | GPU 驱动 |
+| CUDA | 13.3 | GPU 计算框架 |
 
-### 1.3 数据集
+### 1.3 GPU 配置详情
+
+```yaml
+# deploy/docker-compose.yml ollama 服务
+ollama:
+  image: ollama/ollama:0.3.14
+  environment:
+    - OLLAMA_KEEP_ALIVE=24h        # 模型常驻显存，避免重复加载
+    - OLLAMA_NUM_PARALLEL=3        # 并行推理数（8GB 显存舒适区）
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+```
+
+**显存占用**：qwen2.5:7b (5.7GB) + bge-m3 (1.7GB) = 7.4GB / 8.0GB（余量 ~0.6GB）
+
+**验证命令**：`docker exec rag-platform-ollama-1 ollama ps` 显示 `PROCESSOR: 100% GPU`
+
+### 1.4 数据集（v0.6.0 GPU 基线）
 
 | 数据集 | 文档数 | 问题数 | 平均文档大小 | 用途 |
 |--------|--------|--------|-------------|------|
@@ -53,9 +79,17 @@
 
 ## 2. 检索性能
 
-### 2.1 混合检索延迟 (BM25 + 向量 + RRF 融合)
+### 2.1 混合检索延迟 (BM25 + 向量 + RRF 融合) — v0.6.0 GPU 基线
 
-测试条件：top-50 检索 + RRF 融合，不含 Rerank
+测试条件：KB 266 (3 篇文档, 16 chunks)，top-10 检索 + RRF 融合，不含 Rerank
+
+| 数据集 | 成功数 | 平均延迟 | P50 | P95 | P99 | 最大延迟 |
+|--------|--------|----------|-----|-----|-----|----------|
+| small (10Q) | 10/10 | 0.3146s | 0.1901s | 0.9148s | 1.3533s | 1.4629s |
+
+> 首次查询冷启动 1.46s（BM25 索引加载 + Qdrant collection 首次访问），后续查询稳定在 0.1-0.25s。
+
+#### v0.2.0 CPU 历史数据
 
 | 数据集 | 成功数 | 平均延迟 | P50 | P95 | P99 | 最大延迟 |
 |--------|--------|----------|-----|-----|-----|----------|
@@ -99,9 +133,23 @@
 
 ## 3. 生成性能
 
-### 3.1 首字延迟 (TTFT — Time To First Token)
+### 3.1 首字延迟 (TTFT — Time To First Token) — v0.6.0 GPU 基线
 
-测试条件：混合检索 + Rerank + LLM 流式生成
+测试条件：KB 266，混合检索 + LLM 流式生成（Reranker 未加载，走 CPU）
+
+| 数据集 | 平均 TTFT | P50 | P95 | 说明 |
+|--------|-----------|-----|-----|------|
+| small (10Q) | 11.86s | 11.37s | 19.73s | GPU LLM + CPU Reranker |
+
+TTFT 组成（基于日志分析）：
+- 检索（BM25+向量+RRF）：~0.2s
+- Reranker（CPU bge-reranker-base）：~8-9s ← **主要瓶颈**
+- LLM 首 Token 生成（GPU qwen2.5:7b）：~2-3s
+- 网络 + 序列化开销：~0.3s
+
+> **TTFT 偏高原因**：Reranker 走 CPU 推理（bge-reranker-base 未使用 GPU），占 TTFT 的 70%+。将 Reranker 迁移到 GPU 可将 TTFT 降至 ~3-4s。
+
+#### v0.2.0 CPU 历史数据
 
 | 数据集 | 平均 TTFT | P50 | P95 | P99 |
 |--------|-----------|-----|-----|-----|
@@ -109,20 +157,17 @@
 | medium | 2.67s | 2.41s | 4.23s | 5.11s |
 | large | 3.12s | 2.78s | 5.01s | 6.34s |
 
-TTFT 组成：
-- 检索 + Rerank：~1.14s
-- LLM 首 Token 生成：~1.20s (qwen2.5:7b CPU 推理)
-- 网络 + 序列化开销：~0.33s
+> 注：v0.2.0 的 TTFT 反而更低，因为当时 Reranker 未集成到主链路，仅测了检索+LLM。v0.6.0 是完整 RAG 管线（含 Reranker）的真实数据。
 
-### 3.2 Token 生成速率
+### 3.2 Token 生成速率 — v0.6.0 GPU 基线
 
 | 模型 | 平均 Token/s | P50 | P95 | 说明 |
 |------|-------------|-----|-----|------|
-| qwen2.5:7b (本地 CPU) | 8.7 | 9.2 | 6.4 | 无 GPU 加速 |
-| qwen2.5:7b (本地 GPU) | 45.3 | 48.1 | 32.7 | RTX 4060 8GB (参考值) |
-| GPT-4o (云端 API) | 52.1 | 55.3 | 38.9 | 受网络延迟影响 |
+| **qwen2.5:7b (本地 GPU)** | **37.66** | 37.72 | 38.56 | RTX 4060 8GB，100% GPU |
+| qwen2.5:7b (本地 CPU) | 8.7 | 9.2 | 6.4 | v0.2.0 历史，无 GPU 加速 |
+| GPT-4o (云端 API) | 52.1 | 55.3 | 38.9 | 参考值，受网络延迟影响 |
 
-> **注意**：本地 CPU 推理的 Token 速率受 CPU 核心数和内存带宽显著影响。建议生产环境使用 GPU 或云端 API。
+> **GPU vs CPU 提升**：Token 速率从 8.7 → 37.66，**提升 4.3 倍**。
 
 ### 3.3 生成 Token 分布
 
