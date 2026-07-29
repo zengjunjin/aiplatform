@@ -116,9 +116,16 @@ async def delete_kb(
     需要认证且用户须为 owner。限流 60 次/分钟。会级联清理相关数据。
     返回空数据。
     """
+    # 删除前查询协作者列表，用于删除后清理缓存
+    # get_collaborators 需要 owner 或协作者权限，owner 调用即可
+    collaborators = await kb_service.get_collaborators(kb_id, user.id, db)
+    collaborator_ids = [c["user_id"] for c in collaborators if c.get("user_id")]
+
     await kb_service.delete_kb(kb_id, user.id, db)
-    # 缓存失效
+    # 缓存失效：清理 owner + 所有协作者的 KB 列表缓存
     await cache_delete_pattern(f"kb:list:{user.id}:*")
+    for cid in collaborator_ids:
+        await cache_delete_pattern(f"kb:list:{cid}:*")
     return ok(message="Deleted")
 
 

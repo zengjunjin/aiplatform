@@ -114,10 +114,12 @@ async def _validate_upload(file: UploadFile, kb_id: int, user: User, db: AsyncSe
             status_code=400,
         )
 
-    # 3. 文件名安全化（防止路径穿越）
+    # 3. 文件名安全化（防止路径穿越 + 长度限制）
     safe_filename = os.path.basename(file.filename or "")
     if not safe_filename or ".." in safe_filename or "/" in safe_filename or "\\" in safe_filename:
         raise ValidationError("Invalid filename")
+    if len(safe_filename) > 255:
+        raise ValidationError("Filename too long (max 255 characters)")
 
     # 4. 扩展名校验
     ext = os.path.splitext(safe_filename)[1].lower()
