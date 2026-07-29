@@ -121,7 +121,8 @@ export const useChatStore = create<ChatState>()(
       if (isNew && entries.length >= MAX_FEEDBACK) {
         // entries 形如 [[key, value], ...], 取最旧条目的 key (字符串) 用于淘汰
         const [[oldKey]] = entries;
-        const { [oldKey]: _r, ...rest } = feedbackByMessageId;
+        const numericKey = Number(oldKey);
+        const { [numericKey]: _r, ...rest } = feedbackByMessageId;
         feedbackByMessageId = rest;
       }
       return { feedbackByMessageId };

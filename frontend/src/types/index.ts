@@ -88,6 +88,7 @@ export type SSEEvent =
   | { event: 'delta'; content?: string }
   | { event: 'done'; message_id?: number; references?: Reference[] }
   | { event: 'model'; model_name?: string; display_name?: string; fallback?: boolean }
+  | { event: 'restart' }
   | { event: 'error' | 'cancelled' | 'warn'; message?: string };
 
 export interface ApiResponse<T = unknown> {

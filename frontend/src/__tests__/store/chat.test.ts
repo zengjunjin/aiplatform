@@ -98,7 +98,7 @@ describe('chat store — Task 4 (reset) & Task 5 (字典大小限制)', () => {
   describe('fetchMessages LRU 限制 20 sessions (P1-FE-01)', () => {
     it('达到 20 个 session 后拉取新 session 应淘汰最旧的', async () => {
       // 预填充 20 个 session (id 1..20)
-      const messagesById: Record<number, Record<number, { id: number; role: string; content: string }>> = {};
+      const messagesById: Record<number, Record<number, { id: number; role: 'user' | 'assistant'; content: string }>> = {};
       const messageOrder: Record<number, number[]> = {};
       for (let sid = 1; sid <= 20; sid++) {
         messagesById[sid] = { [sid * 100]: { id: sid * 100, role: 'user', content: `s-${sid}` } };
@@ -126,7 +126,7 @@ describe('chat store — Task 4 (reset) & Task 5 (字典大小限制)', () => {
 
     it('重复拉取已存在的 session 不应淘汰其他 session', async () => {
       // 预填充 5 个 session
-      const messagesById: Record<number, Record<number, { id: number; role: string; content: string }>> = {};
+      const messagesById: Record<number, Record<number, { id: number; role: 'user' | 'assistant'; content: string }>> = {};
       const messageOrder: Record<number, number[]> = {};
       for (let sid = 1; sid <= 5; sid++) {
         messagesById[sid] = { [sid]: { id: sid, role: 'user', content: `s-${sid}` } };
@@ -224,10 +224,10 @@ describe('chat store — Task 4 (reset) & Task 5 (字典大小限制)', () => {
   describe('消息持久化 partialize (T6/P3)', () => {
     it('partialize 应只保留最近 5 个会话, 每会话最多 20 条消息', () => {
       // 预填充 8 个 session, 每个含 25 条消息
-      const messagesById: Record<number, Record<number, { id: number; role: string; content: string }>> = {};
+      const messagesById: Record<number, Record<number, { id: number; role: 'user' | 'assistant'; content: string }>> = {};
       const messageOrder: Record<number, number[]> = {};
       for (let sid = 1; sid <= 8; sid++) {
-        const byId: Record<number, { id: number; role: string; content: string }> = {};
+        const byId: Record<number, { id: number; role: 'user' | 'assistant'; content: string }> = {};
         const order: number[] = [];
         for (let mid = 1; mid <= 25; mid++) {
           const id = sid * 100 + mid;

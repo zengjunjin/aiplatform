@@ -31,7 +31,7 @@ const mockStats: FeedbackStats = {
     faithfulness_issue: 2,
     incompleteness: 1,
     irrelevant: 1,
-    faithfulness_issue: 1,
+    other: 1,
   },
 };
 
