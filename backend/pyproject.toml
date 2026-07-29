@@ -195,7 +195,6 @@ root_package = "app"
 name = "分层契约：api → services → db，core 不依赖 services"
 type = "layers"
 layers = ["app.api", "app.services", "app.db"]
-containers = ["app"]
 
 [[tool.importlinter.contracts]]
 name = "core 禁止反向依赖 services"

@@ -264,6 +264,36 @@ jobs:
             echo "pytest-results.xml not found"
           fi
 
+      - name: Flaky tests tracking (passed via retry)
+        # 刀四 4.5/4-13：解析 junitxml 中的 <rerun> 标签，输出"靠重跑通过"清单为 warning annotation
+        # pytest-rerunfailures 在 XML 中为每次重试输出 <rerun> 标签，最终通过的测试仍有 <rerun> 子元素
+        # 仅当存在重跑时输出，0 重跑时输出明确说明
+        if: always()
+        working-directory: backend
+        run: |
+          echo "=== Flaky Tests (passed via retry) ==="
+          if [ -f pytest-results.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('pytest-results.xml')
+          root = tree.getroot()
+          flaky = []
+          for tc in root.iter('testcase'):
+              reruns = [c for c in tc if c.tag == 'rerun']
+              if reruns:
+                  flaky.append((tc.get('classname', ''), tc.get('name', ''), len(reruns)))
+          if flaky:
+              print(f'Total flaky tests (passed after retry): {len(flaky)}')
+              for cls, name, cnt in flaky:
+                  print(f'  [rerun x{cnt}] {cls}::{name}')
+                  print(f'::warning file={cls.replace(\".\", \"/\")}.py::{name} passed after {cnt} retry(s) — possible flaky test')
+          else:
+              print('No flaky tests detected (0 reruns in this run)')
+          "
+          else
+            echo "pytest-results.xml not found, skipping flaky analysis"
+          fi
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -445,6 +475,34 @@ jobs:
           "
           else
             echo "pytest-results.xml not found"
+          fi
+
+      - name: Flaky tests tracking (passed via retry)
+        # 刀四 4.5/4-13：解析 junitxml 中的 <rerun> 标签，输出"靠重跑通过"清单为 warning annotation
+        if: always()
+        working-directory: backend
+        run: |
+          echo "=== Flaky Tests (passed via retry) ==="
+          if [ -f pytest-results.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('pytest-results.xml')
+          root = tree.getroot()
+          flaky = []
+          for tc in root.iter('testcase'):
+              reruns = [c for c in tc if c.tag == 'rerun']
+              if reruns:
+                  flaky.append((tc.get('classname', ''), tc.get('name', ''), len(reruns)))
+          if flaky:
+              print(f'Total flaky tests (passed after retry): {len(flaky)}')
+              for cls, name, cnt in flaky:
+                  print(f'  [rerun x{cnt}] {cls}::{name}')
+                  print(f'::warning file={cls.replace(\".\", \"/\")}.py::{name} passed after {cnt} retry(s) — possible flaky test')
+          else:
+              print('No flaky tests detected (0 reruns in this run)')
+          "
+          else
+            echo "pytest-results.xml not found, skipping flaky analysis"
           fi
 
       - name: Upload coverage to Codecov

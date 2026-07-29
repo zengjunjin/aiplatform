@@ -77,9 +77,11 @@ BREAKING CHANGE: evaluation.py:34 now uses get_kb_for_read(kb_id, user_id, db)
 
 ## Coverage 门槛
 
+> **单一事实源**：后端以 `backend/pyproject.toml` 的 `[tool.coverage.report] fail_under` 为准，前端以 `frontend/vitest.config.ts` 的 `coverage.thresholds` 为准。下表仅作速查，数值变更时请同步修改对应配置文件。
+
 | 模块   | 项                                | 阈值 |
 |--------|-----------------------------------|------|
-| 后端   | `pyproject.toml` `fail_under`     | 70%  |
+| 后端   | `pyproject.toml` `fail_under`     | 80%  |
 | 前端   | `vitest.config.ts` lines/statements/functions | 70%  |
 | 前端   | `vitest.config.ts` branches       | 60%  |
 

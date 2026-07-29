@@ -5,6 +5,18 @@ runs RAG pipeline for each question, computes four metrics,
 and persists results to the database.
 """
 
+# 兼容性 patch：ragas 0.2.x 依赖 langchain_community.chat_models.vertexai.ChatVertexAI，
+# 但新版 langchain_community 已移除该模块（迁移到 langchain-google-vertexai 独立包）。
+# 注入 mock 模块避免 ImportError，使 ragas 能正常 import（本项目不使用 VertexAI）。
+# 同 conftest.py 中的 patch 保持一致，确保生产环境与测试环境行为统一。
+import sys as _sys
+from unittest.mock import MagicMock as _MagicMock
+
+if "langchain_community.chat_models.vertexai" not in _sys.modules:
+    _mock_vertexai = _MagicMock()
+    _mock_vertexai.ChatVertexAI = _MagicMock
+    _sys.modules["langchain_community.chat_models.vertexai"] = _mock_vertexai
+
 import asyncio
 import json
 import re

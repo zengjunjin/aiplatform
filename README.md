@@ -40,7 +40,7 @@ graph TB
     end
 
     subgraph Edge["接入层"]
-        Nginx["Nginx<br/>反向代理 + TLS + CSP"]
+        Nginx["Nginx<br/>反向代理 + 安全响应头(CSP)"]
     end
 
     subgraph Backend["应用层"]
@@ -64,7 +64,7 @@ graph TB
     end
 
     Web --> Nginx
-    Tauri -->|"HTTP / SSE / WebSocket"| FastAPI
+    Tauri -->|"HTTP / SSE"| FastAPI
     Nginx --> FastAPI
     FastAPI --> Postgres
     FastAPI --> Redis
@@ -85,28 +85,31 @@ graph TB
 1. **问答流**：用户在 Web / Tauri 发起问答 → Nginx 反代到 FastAPI → BM25 关键词检索 + Qdrant 向量检索 → RRF 融合 → Reranker 重排序 → Ollama LLM 流式生成 → SSE 推送回前端
 2. **文档流**：FastAPI 接收上传 → 落盘到 `storage/` → 投递 Celery 任务 → Celery 调用 Ollama Embedding + 写入 Qdrant + 更新 PostgreSQL
 3. **可观测性**：Prometheus 抓取 `/internal/metrics`，OTel SDK 自动埋点 FastAPI / SQLAlchemy / Celery / httpx 调用并上报 Jaeger，结构化日志通过 `contextvars` 注入 `request_id`
+   - **Docker Desktop WSL2 注意**：在 WSL2 环境下，`node-exporter` / `nginx-exporter` 抓取的是 Docker VM（WSL2 轻量 VM）而非宿主机指标。Grafana dashboard 标题建议标注 "Docker VM (WSL2)"，避免与宿主机监控混淆。生产部署（Linux 裸机 / K8s）不受此影响。
 4. **鉴权**：JWT（iss=rag-platform, aud=rag-client）+ Redis 黑名单 + 单次刷新令牌 + 速率限制（60/min 默认，5/h 重解析等高成本端点更严）
 
 ## 快速开始
 
 ### 便捷命令 (Makefile)
 
-项目在 `deploy/` 目录提供了 Makefile，简化常用操作：
+项目**根目录**提供了 Makefile，简化常用操作（自动携带 `-f deploy/docker-compose.yml`，无需手动切换目录）：
 
 ```bash
-make up        # 启动所有服务 (docker-compose up -d)
+make build     # 构建所有镜像 (docker compose -f deploy/docker-compose.yml build)
+make up        # 启动所有服务
 make down      # 停止所有服务
 make logs      # 查看后端和 worker 日志 (实时跟踪)
 make migrate   # 执行数据库迁移 (alembic upgrade head)
 make restart   # 重启后端和 worker
-make init-models  # 拉取 Ollama 模型 (qwen2.5:7b 等)
+make init-models  # 拉取 Ollama 模型 (qwen2.5:7b / bge-m3 / bge-reranker-base)
 make test      # 运行后端单元测试
 make clean     # 清理所有容器和数据卷
 make backend-shell          # 进入 backend 容器交互式 shell
 make create-migration msg=<name>  # 生成新的 Alembic 迁移脚本
+make backup    # 数据库备份 (make backup ARGS=--dry-run 试运行)
 ```
 
-> 提示: Makefile 会自动 `cd deploy && docker-compose ...`，无需手动切换目录。
+> 提示: 根 Makefile 使用 `docker compose -f deploy/docker-compose.yml ...`（Compose v2 语法），无需 cd。
 
 ### 方式一: Docker Compose (推荐)
 
@@ -114,16 +117,20 @@ make create-migration msg=<name>  # 生成新的 Alembic 迁移脚本
 # 克隆项目后进入目录
 cd aiplatform
 
-# 启动所有服务
-docker-compose up -d
+# 准备环境变量（必填：POSTGRES_PASSWORD / GRAFANA_ADMIN_PASSWORD 等，见文件内注释）
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env 填入你的配置
+
+# 启动所有服务（根目录 docker-compose.yml 通过 include 指向 deploy/docker-compose.yml）
+docker compose up -d
 
 # 初始化数据库
-docker-compose exec backend alembic upgrade head
+docker compose exec backend alembic upgrade head
 
 # 创建管理员账号
 # 管理员密码通过 INITIAL_ADMIN_PASSWORD 环境变量设置，未设置时自动生成随机密码
-docker-compose exec backend python init_db.py
-# 或显式指定密码：docker-compose exec -e INITIAL_ADMIN_PASSWORD=your-strong-password backend python init_db.py
+docker compose exec backend python init_db.py
+# 或显式指定密码：docker compose exec -e INITIAL_ADMIN_PASSWORD=your-strong-password backend python init_db.py
 ```
 
 访问: http://localhost:8000
@@ -162,7 +169,7 @@ poetry run python init_db.py
 poetry run uvicorn app.main:app --reload
 
 # 启动 Celery worker (另开终端)
-poetry run celery -A app.core.celery_app worker --loglevel=info
+poetry run celery -A app.tasks.celery_app worker --loglevel=info
 
 # 启动前端 (另开终端)
 cd ../frontend
@@ -236,18 +243,18 @@ aiplatform/
 │   │   │   ├── deps.py
 │   │   │   └── v1/
 │   │   │       ├── auth.py
-│   │   │       ├── chat.py
+│   │   │       ├── chat.py           # 仅路由装配，SSE 编排下沉到 services/chat_pipeline.py
 │   │   │       ├── documents.py
 │   │   │       ├── evaluation.py
+│   │   │       ├── feedback.py       # 反馈路由（从 chat.py 拆分）
 │   │   │       ├── knowledge_bases.py
 │   │   │       ├── router.py
 │   │   │       ├── system.py
 │   │   │       ├── users.py
-│   │   │       └── ws.py
-│   │   ├── core/             # 核心模块
+│   │   │       └── ws.py             # WebSocket 通知（非聊天流式）
+│   │   ├── core/             # 核心模块（禁止反向依赖 services/api）
 │   │   │   ├── cache.py
 │   │   │   ├── errors.py
-│   │   │   ├── evaluation.py
 │   │   │   ├── events.py
 │   │   │   ├── exceptions.py
 │   │   │   ├── health_checks.py
@@ -258,7 +265,8 @@ aiplatform/
 │   │   │   ├── notification_manager.py
 │   │   │   ├── prompt_optimizer.py
 │   │   │   ├── redis_scripts.py
-│   │   │   └── security.py
+│   │   │   ├── security.py
+│   │   │   └── sse_registry.py       # 活跃 SSE Task 注册表（解耦 chat.py 与 main.py）
 │   │   ├── db/               # 数据库模型
 │   │   │   ├── audit_log.py
 │   │   │   ├── base.py
@@ -276,6 +284,7 @@ aiplatform/
 │   │   │   ├── base.py
 │   │   │   ├── cached_embedding.py
 │   │   │   ├── factory.py
+│   │   │   ├── langchain_ollama_wrapper.py  # RAGAS 专用薄适配层（非 RAG 主管线依赖）
 │   │   │   ├── ollama_provider.py
 │   │   │   ├── openai_compatible_provider.py
 │   │   │   └── reranker_provider.py
@@ -288,6 +297,7 @@ aiplatform/
 │   │   │   ├── text_like_parser.py
 │   │   │   └── text_parser.py
 │   │   ├── rag/              # RAG 核心
+│   │   │   ├── answer.py            # get_rag_answer（评估链路入口，下沉到此避免 core→services 依赖）
 │   │   │   ├── bm25.py
 │   │   │   ├── context_manager.py
 │   │   │   ├── prompt_builder.py
@@ -306,8 +316,10 @@ aiplatform/
 │   │   ├── services/         # 业务服务
 │   │   │   ├── audit_service.py
 │   │   │   ├── auth_service.py
+│   │   │   ├── chat_pipeline.py     # SSE 流式编排（从 chat.py 抽出）
 │   │   │   ├── chat_service.py
 │   │   │   ├── document_service.py
+│   │   │   ├── evaluation_engine.py # RAGAS 评估引擎（从 core/evaluation.py 迁入）
 │   │   │   ├── evaluation_service.py
 │   │   │   ├── feedback_service.py
 │   │   │   ├── kb_service.py
@@ -368,7 +380,7 @@ cd backend
 poetry run pytest tests/ -v --cov=app
 ```
 
-核心模块覆盖率（最新基线：后端总覆盖率 82.08%，前端 branches 覆盖率 60%+，2026-07-25 CI 全量回归 后端 873 passed / 0 failed，前端 466 passed / 0 failed）:
+核心模块覆盖率（最新基线：后端总覆盖率 82.08%，前端 branches 覆盖率 60%+，2026-07-25 CI 全量回归 后端 873 passed / 0 failed，前端 466 passed / 0 failed。**门槛阈值以 `backend/pyproject.toml` 的 `fail_under` 与 `frontend/vitest.config.ts` 的 `coverage.thresholds` 为单一事实源**）:
 - `app.core.security`: 100%
 - `app.rag.prompt_builder`: 97%
 - `app.rag.reference_parser`: 100%
@@ -437,8 +449,8 @@ poetry run pytest tests/ -v --cov=app
 
 - **Conventional Commits**：`feat(scope): ...` / `fix(scope): ...` / `chore(scope): ...` / `docs(scope): ...` / `refactor(scope): ...` / `test(scope): ...` / `perf(scope): ...` / `ci(scope): ...` / `build(scope): ...` / `security(scope): ...`，scope 对照表见 CONTRIBUTING.md
 - **PR 流程**：fork → 切 feature branch（命名 `feat/xxx` / `fix/xxx`）→ 提 PR → CI 通过 → review → merge；PR 模板包含 Breaking Changes / Test Plan / Checklist
-- **Coverage 门槛**：
-  - 后端 ≥ 70%（`backend/pyproject.toml` 中 `--cov-fail-under=70`）
+- **Coverage 门槛**（单一事实源：`backend/pyproject.toml` 与 `frontend/vitest.config.ts`）：
+  - 后端 ≥ 80%（`backend/pyproject.toml` 中 `fail_under = 80`）
   - 前端 lines / statements / functions ≥ 70% / branches ≥ 60%（`frontend/vitest.config.ts`）
 - **测试约定**：新增功能必须配套单测；bug 修复必须先写复现测试；E2E 测试新增 `tests/e2e/test_NN_xxx_e2e.py`，编号自增
 - **安全约束**：
