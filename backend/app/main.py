@@ -13,7 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api.deps import get_admin_user
 from app.api.v1.router import api_router
 from app.config import settings
-from app.core import health_checks
+from app.core import health_checks, sse_registry
 from app.core.exceptions import (
     AppException,
     app_exception_handler,
@@ -30,9 +30,8 @@ from app.db.user import User
 from app.redis_client import get_redis, init_redis
 from app.tasks.metrics_collector import metrics_collector_loop
 
-# Task 32: 跟踪进行中的 SSE 请求，用于优雅关闭时等待其完成。
-# 在 chat._run_sse_stream 中将当前 asyncio.Task 加入此集合，finally 中移除。
-_active_sse_requests: set[asyncio.Task] = set()
+# Task 32: sse_registry 集中管理活跃 SSE 请求，替代原 main 本地集合，解除 chat→main 反向依赖循环
+# （_active_sse_requests 移至 app/core/sse_registry.py，chat.py 直接 import registry 无循环）
 
 # Task 13: 跟踪 LLM warmup 任务，shutdown 时取消避免挂起
 _warmup_task: asyncio.Task | None = None
@@ -204,25 +203,26 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # Task 32: 优雅关闭 — 等待进行中的 SSE 请求完成（超时由 settings.GRACEFUL_SHUTDOWN_TIMEOUT 控制）
-        if _active_sse_requests:
+        # Task 32: 优雅关闭 — 通过 sse_registry 获取活跃 SSE 请求副本，等待完成或超时取消
+        active_sse = sse_registry.all()
+        if active_sse:
             logger.info(
-                f"Graceful shutdown: waiting for {len(_active_sse_requests)} active SSE requests"
+                f"Graceful shutdown: waiting for {len(active_sse)} active SSE requests"
             )
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*_active_sse_requests, return_exceptions=True),
+                    asyncio.gather(*active_sse, return_exceptions=True),
                     timeout=settings.GRACEFUL_SHUTDOWN_TIMEOUT,
                 )
             except TimeoutError:
-                still_active = len(_active_sse_requests)
+                still_active = sse_registry.all()
                 logger.warning(
-                    f"Graceful shutdown: {still_active} SSE requests still active after "
+                    f"Graceful shutdown: {len(still_active)} SSE requests still active after "
                     f"{settings.GRACEFUL_SHUTDOWN_TIMEOUT}s, force cancelling"
                 )
-                for task in list(_active_sse_requests):
+                for task in list(still_active):
                     task.cancel()
-                await asyncio.gather(*_active_sse_requests, return_exceptions=True)
+                await asyncio.gather(*sse_registry.all(), return_exceptions=True)
         # Task 13: 取消未完成的 warmup 任务，避免 shutdown 挂起
         if _warmup_task is not None and not _warmup_task.done():
             _warmup_task.cancel()

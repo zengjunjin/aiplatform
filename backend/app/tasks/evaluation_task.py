@@ -15,7 +15,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.evaluation import aggregate_metrics
+from app.services.evaluation_engine import aggregate_metrics
 from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.sync_session import get_sync_session
@@ -236,11 +236,9 @@ async def _generate_dataset_async(
     - contexts：retriever 对 question 重新检索得到
 
     P1-6 修复：消除函数级重复与行为漂移。
-    - 删除本文件内 `_generate_ground_truth_async` / `_generate_question_async`，
-      改为调用 evaluation_service 层公共函数 `generate_question_from_chunk` /
-      `generate_ground_truth`（温度统一 0.3，消除原 0.7 漂移）。
-    - provider 仍由 task 创建独立实例（避免 ModelFactory 单例的 event loop 绑定问题），
-      但通过 settings.LLM_PROVIDER 选择（与 ModelFactory 行为对齐），不再硬编码 Ollama。
+    - 删除本文件内独立的问题生成函数，改为调用 evaluation_service 层公共函数
+      `generate_question_from_chunk` / `generate_ground_truth`（温度统一 0.3）。
+    - provider 通过 ModelFactory._create_llm_instance() 创建独立实例（避免单例 event loop 绑定）。
     """
     from app.config import settings
     from app.rag.retriever import retriever
@@ -255,7 +253,7 @@ async def _generate_dataset_async(
     llm = _create_evaluation_llm()
     semaphore = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
 
-    async def _gen_with_sem(idx: int, chunk_content: str) -> dict | None:
+    async def _process_chunk(idx: int, chunk_content: str) -> dict | None:
         async with semaphore:
             question_data = await generate_question_from_chunk(chunk_content, llm)
             if not question_data:
@@ -281,7 +279,7 @@ async def _generate_dataset_async(
             }
 
     try:
-        tasks = [_gen_with_sem(idx, chunk.content) for idx, chunk in enumerate(target_chunks)]
+        tasks = [_process_chunk(idx, chunk.content) for idx, chunk in enumerate(target_chunks)]
         dataset = await asyncio.gather(*tasks, return_exceptions=False)
     finally:
         await llm.close()
@@ -291,19 +289,14 @@ async def _generate_dataset_async(
 
 
 def _create_evaluation_llm():
-    """P1-6: 按 settings.LLM_PROVIDER 创建独立 LLM 实例。
+    """Blade 3 Step 4: 通过 ModelFactory 逻辑创建独立 LLM 实例。
 
-    与 ModelFactory.create_llm 行为对齐（不再硬编码 OllamaLLMProvider），
-    但返回独立实例避免单例的 event loop 绑定问题（Celery 每任务新建 loop）。
+    不再硬编码 OllamaLLMProvider()，改为走 ModelFactory._create_llm_instance()
+    （返回新实例，不走单例缓存，避免 Celery event loop 绑定问题）。
     """
-    from app.config import settings
+    from app.models.factory import ModelFactory
 
-    provider = settings.LLM_PROVIDER
-    if provider == "ollama":
-        from app.models.ollama_provider import OllamaLLMProvider
-
-        return OllamaLLMProvider()
-    raise ValueError(f"Unknown LLM provider: {provider}")
+    return ModelFactory._create_llm_instance()
 
 
 # ---------------------------------------------------------------------------
@@ -361,8 +354,7 @@ async def _run_single_evaluation(kb_id: int, item: dict, llm=None) -> dict:
 
     T8（P3）：llm 参数由 _run_evaluations 传入，复用同一实例。
     """
-    from app.core.evaluation import _compute_ragas_metrics
-    from app.services.evaluation_service import get_rag_answer
+    from app.services.evaluation_engine import _compute_ragas_metrics, get_rag_answer
 
     question = item["question"]
     ground_truth = item["ground_truth"]

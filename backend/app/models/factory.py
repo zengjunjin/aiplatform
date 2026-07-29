@@ -105,12 +105,20 @@ class ModelFactory:
     @staticmethod
     def create_llm() -> BaseLLMProvider:
         if ModelFactory._llm is None:
-            provider = settings.LLM_PROVIDER
-            if provider == "ollama":
-                ModelFactory._llm = OllamaLLMProvider()
-            else:
-                raise ValueError(f"Unknown LLM provider: {provider}")
+            ModelFactory._llm = ModelFactory._create_llm_instance()
         return ModelFactory._llm
+
+    @staticmethod
+    def _create_llm_instance() -> BaseLLMProvider:
+        """创建新 LLM 实例（不走单例缓存）。
+
+        Blade 3 Step 4：供 Celery task 使用——每个 task 有独立 event loop，
+        不能复用单例（会绑定到第一个 loop 导致跨任务报错）。
+        """
+        provider = settings.LLM_PROVIDER
+        if provider == "ollama":
+            return OllamaLLMProvider()
+        raise ValueError(f"Unknown LLM provider: {provider}")
 
     @staticmethod
     def create_embedding() -> BaseEmbeddingProvider:

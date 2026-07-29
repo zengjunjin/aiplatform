@@ -1,5 +1,13 @@
 name: rag-platform
 
+# 全栈统一日志轮转（json-file 10m×3），一处修改全栈生效
+# 防止容器日志无界增长写爆 Docker Desktop vhdx（G:\DockerData）
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,11 +28,7 @@ services:
     mem_limit: 1g
     cpus: "2"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   redis:
     image: redis:7-alpine
@@ -40,11 +44,7 @@ services:
     mem_limit: 512m
     cpus: "1"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   qdrant:
     image: qdrant/qdrant:v1.18.3
@@ -65,11 +65,7 @@ services:
     mem_limit: 1g
     cpus: "1"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   ollama:
     image: ollama/ollama:0.3.14
@@ -80,7 +76,9 @@ services:
     environment:
       - OLLAMA_KEEP_ALIVE=24h
       # GPU 加速后可支撑更高并发
-      - OLLAMA_NUM_PARALLEL=8
+      # 本机 RTX 4060 Laptop 8GB：qwen2.5:7b 常驻约 6.2GB 显存，并行 3 为舒适区
+      # （8 路并行会爆显存触发 CPU offload，多用户同时问答时速度骤降）
+      - OLLAMA_NUM_PARALLEL=3
     # NVIDIA GPU 支持（Docker Desktop WSL2 使用 deploy.resources.reservations.devices）
     deploy:
       resources:
@@ -100,13 +98,10 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   backend:
+    image: rag-platform-backend:latest
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -159,16 +154,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   celery_worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    # Blade 4 Step 1: 复用 backend 镜像，仅 command 不同（消除重复 build）
+    image: rag-platform-backend:latest
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2 -Q queue_parsing,queue_evaluation,queue_default
     env_file:
       - .env
@@ -214,11 +204,7 @@ services:
     mem_limit: 2g
     cpus: "2"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
 
   # --- Observability (Task 3/6/7: Prometheus + Grafana 链路启用) ---
@@ -239,6 +225,7 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     cpus: "0.5"
+    logging: *default-logging
 
   # Task 1: redis-exporter 暴露 Redis 指标供 Prometheus 抓取
   redis-exporter:
@@ -250,6 +237,7 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     cpus: "0.25"
+    logging: *default-logging
 
   # Task 1: node-exporter 暴露主机指标（CPU/内存/磁盘）供 Prometheus 抓取
   node-exporter:
@@ -267,6 +255,7 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     cpus: "0.25"
+    logging: *default-logging
 
   # Task 7: 启用 Grafana 服务，挂载 provisioning 和 dashboards 目录实现自动加载
   grafana:
@@ -291,6 +280,7 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     cpus: "0.5"
+    logging: *default-logging
 
   # Task 87: Loki — 日志聚合后端，接收 Promtail 推送的容器日志
   loki:
@@ -310,6 +300,7 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     cpus: "0.5"
+    logging: *default-logging
 
   # Task 87: Promtail — 采集 Docker 容器日志并推送到 Loki
   promtail:
@@ -324,6 +315,7 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     cpus: "0.25"
+    logging: *default-logging
 
   # Task 88: Flower — Celery 任务监控，暴露 metrics 供 Prometheus 抓取
   flower:
@@ -341,6 +333,7 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     cpus: "0.5"
+    logging: *default-logging
 
   # Jaeger：分布式追踪后端（Task 47）
   # 通过 OTLP 接收 OpenTelemetry traces，UI 在 16686 端口
@@ -369,11 +362,7 @@ services:
     mem_limit: 256m
     cpus: "1"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
@@ -390,6 +379,7 @@ services:
     cpus: 0.5
     depends_on:
       - prometheus
+    logging: *default-logging
 
   # Task 5: alertmanager-webhook-receiver 接收告警并写入本地文件 + 控制台打印
   alertmanager-webhook-receiver:
@@ -414,6 +404,7 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+    logging: *default-logging
 
   frontend:
     build:
@@ -432,6 +423,7 @@ services:
     mem_limit: 256m
     cpus: "1"
     restart: unless-stopped
+    logging: *default-logging
 
   nginx:
     image: nginx:alpine
@@ -451,11 +443,7 @@ services:
     mem_limit: 128m
     cpus: "1"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   # Task 88: nginx-exporter — 抓取 nginx stub_status 指标供 Prometheus
   nginx-exporter:
@@ -469,6 +457,7 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     cpus: "0.25"
+    logging: *default-logging
 
 volumes:
   pg_data:

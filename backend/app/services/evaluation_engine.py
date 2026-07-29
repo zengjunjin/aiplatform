@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
-from app.services.evaluation_service import get_rag_answer
+from app.rag.answer import get_rag_answer
 
 # Task 1.7: 问题生成公共常量与函数（消除 evaluation_task / evaluation_service 重复）
 _QUESTION_PREFIXES = ["问题：", "Question:", "Q:", "问："]

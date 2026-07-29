@@ -586,11 +586,11 @@ class TestRunSingleEvaluation:
 
         with (
             patch(
-                "app.services.evaluation_service.get_rag_answer",
+                "app.services.evaluation_engine.get_rag_answer",
                 new=AsyncMock(return_value=("AI是人工智能", ["ctx1", "ctx2"])),
             ),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=fake_metrics),
             ),
         ):

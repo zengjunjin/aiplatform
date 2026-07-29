@@ -41,7 +41,8 @@ class FeedbackStats(BaseModel):
     by_type: dict[str, int]
 
 
-class FeedbackDetail(BaseModel):
+# 执行文档刀二 Step 1 (P1-1): 从 FeedbackDetail 重命名为 FeedbackDetailOut 保持 chat 语义一致
+class FeedbackDetailOut(BaseModel):
     id: int
     message_id: int
     rating: int

@@ -1,4 +1,4 @@
-"""Tests for app.core.evaluation Task 15 并发改造.
+"""Tests for app.services.evaluation_engine Task 15 并发改造.
 
 覆盖:
   - _eval_single_question 成功路径
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core import evaluation
+from app.services import evaluation_engine as evaluation
 
 
 def _make_dataset(n=3):
@@ -38,11 +38,11 @@ class TestEvalSingleQuestionSuccess:
 
         with (
             patch(
-                "app.core.evaluation.get_rag_answer",
+                "app.services.evaluation_engine.get_rag_answer",
                 new=AsyncMock(return_value=("answer", ["retrieved"])),
             ),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=fake_metrics),
             ),
         ):
@@ -64,7 +64,7 @@ class TestEvalSingleQuestionFailure:
         semaphore = asyncio.Semaphore(8)
 
         with patch(
-            "app.core.evaluation.get_rag_answer",
+            "app.services.evaluation_engine.get_rag_answer",
             new=AsyncMock(side_effect=RuntimeError("rag down")),
         ):
             result = await evaluation._eval_single_question(item, kb_id=1, semaphore=semaphore)
@@ -84,11 +84,11 @@ class TestEvalSingleQuestionFailure:
 
         with (
             patch(
-                "app.core.evaluation.get_rag_answer",
+                "app.services.evaluation_engine.get_rag_answer",
                 new=AsyncMock(return_value=("answer", ["retrieved"])),
             ),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(side_effect=RuntimeError("ragas lib error")),
             ),
         ):
@@ -119,11 +119,11 @@ class TestRunEvaluationConcurrency:
 
         with (
             patch(
-                "app.core.evaluation.get_rag_answer",
+                "app.services.evaluation_engine.get_rag_answer",
                 new=AsyncMock(return_value=("answer", ["ctx"])),
             ),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=fake_metrics),
             ),
         ):
@@ -165,9 +165,9 @@ class TestRunEvaluationConcurrency:
         }
 
         with (
-            patch("app.core.evaluation.get_rag_answer", new=fake_get_rag_answer),
+            patch("app.services.evaluation_engine.get_rag_answer", new=fake_get_rag_answer),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=good_metrics),
             ),
         ):
@@ -199,9 +199,9 @@ class TestRunEvaluationConcurrency:
         fake_metrics = {"faithfulness": 0.5}
 
         with (
-            patch("app.core.evaluation.get_rag_answer", new=AsyncMock(return_value=("a", ["c"]))),
+            patch("app.services.evaluation_engine.get_rag_answer", new=AsyncMock(return_value=("a", ["c"]))),
             patch(
-                "app.core.evaluation._compute_ragas_metrics",
+                "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=fake_metrics),
             ),
         ):

@@ -4,7 +4,7 @@ RAGAS requires Langchain BaseLanguageModel and Embeddings to compute metrics.
 These wrappers call Ollama HTTP API directly, avoiding the need for
 langchain-ollama package (which is not installed in the container).
 
-Used only by RAGAS evaluation pipeline (app.core.evaluation._compute_ragas_metrics).
+Used only by RAGAS evaluation pipeline (app.services.evaluation_engine._compute_ragas_metrics).
 """
 
 from typing import Any

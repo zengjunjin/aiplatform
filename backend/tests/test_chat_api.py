@@ -467,7 +467,7 @@ class TestSendMessage:
                 "app.rag.context_manager.context_manager.build_messages", return_value=fake_messages
             ),
             patch("app.core.model_router.ModelRouter.select", new=AsyncMock(return_value=fake_llm)),
-            patch("app.api.v1.chat.async_session", new=mock_async_session),
+            patch("app.services.chat_pipeline.async_session", new=mock_async_session),
         ):
             response = await chat.send_message(
                 request=request_mock, session_id=1, req=req, user=user, db=db
@@ -496,7 +496,7 @@ class TestSSEConcurrentLimit:
         redis_mock.eval = AsyncMock(return_value=4)
 
         with (
-            patch("app.api.v1.chat.get_redis", return_value=redis_mock),
+            patch("app.services.chat_pipeline.get_redis", return_value=redis_mock),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
         ):
             with pytest.raises(HTTPException) as exc_info:
@@ -531,7 +531,7 @@ class TestSSEConcurrentLimit:
         fake_llm.chat_stream = fake_chat_stream
 
         with (
-            patch("app.api.v1.chat.get_redis", return_value=redis_mock),
+            patch("app.services.chat_pipeline.get_redis", return_value=redis_mock),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
             patch(
                 "app.services.chat_service.save_message",
@@ -583,7 +583,7 @@ class TestSSEConcurrentLimit:
         fake_llm.chat_stream = fake_chat_stream
 
         with (
-            patch("app.api.v1.chat.get_redis", return_value=redis_mock),
+            patch("app.services.chat_pipeline.get_redis", return_value=redis_mock),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
             patch(
                 "app.services.chat_service.save_message",
@@ -626,7 +626,7 @@ class TestSSEConcurrentLimit:
 
         # save_message 抛异常（pre-try 阶段）
         with (
-            patch("app.api.v1.chat.get_redis", return_value=redis_mock),
+            patch("app.services.chat_pipeline.get_redis", return_value=redis_mock),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
             patch(
                 "app.services.chat_service.save_message",
@@ -665,7 +665,7 @@ class TestSSEConcurrentLimit:
 
         # Redis 返回 None（未初始化）
         with (
-            patch("app.api.v1.chat.get_redis", return_value=None),
+            patch("app.services.chat_pipeline.get_redis", return_value=None),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
             patch(
                 "app.services.chat_service.save_message",
@@ -714,7 +714,7 @@ class TestSSEConcurrentLimit:
         fake_llm.chat_stream = fake_chat_stream
 
         with (
-            patch("app.api.v1.chat.get_redis", return_value=redis_mock),
+            patch("app.services.chat_pipeline.get_redis", return_value=redis_mock),
             patch("app.services.chat_service.get_session", new=AsyncMock(return_value=session)),
             patch(
                 "app.services.chat_service.save_message",
@@ -919,14 +919,13 @@ class TestLLMFallbackRelease:
 
     @pytest.mark.asyncio
     async def test_chat_py_source_uses_primary_provider_variable(self):
-        """Task 8: 验证 chat.py 源码使用 primary_provider 变量, 而非 actual_provider"""
+        """Task 8: 验证 LLM fallback 代码使用 primary_provider 变量（已迁移至 chat_pipeline.py），
+        非 actual_provider，finally 中 release 正确。
+        """
         import inspect
 
-        from app.api.v1 import chat as chat_module
+        from app.services import chat_pipeline as chat_module
 
         src = inspect.getsource(chat_module)
-        # 应有 primary_provider 变量
         assert "primary_provider" in src
-        # finally 中应 release(primary_provider), 不是 actual_provider
-        # 查找 finally 块附近的 release 调用
         assert "model_router.release(primary_provider)" in src

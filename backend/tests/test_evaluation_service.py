@@ -12,6 +12,7 @@ from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
 from app.services import evaluation_service
+from app.rag.answer import get_rag_answer
 
 # ---------- 辅助函数 ----------
 
@@ -283,7 +284,7 @@ class TestGetRagAnswer:
             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
         ):
-            answer, contexts = await evaluation_service.get_rag_answer("什么是 RAG？", kb_id=1)
+            answer, contexts = await get_rag_answer("什么是 RAG？", kb_id=1)
 
         assert answer == "RAG 是检索增强生成。"
         assert len(contexts) == 2
@@ -292,7 +293,7 @@ class TestGetRagAnswer:
     @pytest.mark.asyncio
     async def test_empty_contexts_returns_unable_message(self):
         with patch("app.rag.retriever.retriever.retrieve", new=AsyncMock(return_value=[])):
-            answer, contexts = await evaluation_service.get_rag_answer("query", kb_id=1)
+            answer, contexts = await get_rag_answer("query", kb_id=1)
 
         assert "无法获取" in answer
         assert contexts == []
@@ -309,7 +310,7 @@ class TestGetRagAnswer:
         ):
             # 异常应直接传播，由调用方 _run_evaluations 做失败隔离
             with pytest.raises(RuntimeError, match="retriever down"):
-                await evaluation_service.get_rag_answer("query", kb_id=1)
+                await get_rag_answer("query", kb_id=1)
 
     @pytest.mark.asyncio
     async def test_empty_answer_replaced_with_empty_string(self):
@@ -322,7 +323,7 @@ class TestGetRagAnswer:
             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
         ):
-            answer, contexts = await evaluation_service.get_rag_answer("query", kb_id=1)
+            answer, contexts = await get_rag_answer("query", kb_id=1)
 
         assert answer == ""
         assert contexts == ["ctx"]
@@ -346,7 +347,7 @@ class TestGetRagAnswer:
             patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm),
             patch("app.rag.prompt_builder.build_rag_prompt", return_value="prompt"),
         ):
-            await evaluation_service.get_rag_answer("query", kb_id=1)
+            await get_rag_answer("query", kb_id=1)
 
         assert captured_top_k == [settings.RETRIEVAL_TOP_K]
         # 确保不是旧的硬编码值 5（除非 settings 恰好配置为 5）

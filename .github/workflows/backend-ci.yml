@@ -1,4 +1,4 @@
-﻿name: Backend CI
+name: Backend CI
 
 on:
   push:
@@ -71,15 +71,13 @@ jobs:
         run: poetry run python scripts/check_migrations.py
 
       - name: Check code formatting with Ruff
-        run: |
-          if poetry run ruff --version 2>/dev/null; then
-            poetry run ruff check .
-          else
-            echo "Ruff not configured, skipping lint check"
-          fi
+        run: poetry run ruff check .
 
       - name: Ruff format check
         run: poetry run ruff format --check .
+
+      - name: Import layer contract (lint-imports)
+        run: poetry run lint-imports
 
       - name: Security audit (pip-audit, fail on critical)
         run: |

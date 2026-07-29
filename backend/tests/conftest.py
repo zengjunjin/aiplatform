@@ -32,11 +32,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from starlette.requests import Request
 
-# test_auth_full_flow.py 是独立脚本（模块顶层调用 requests + sys.exit），
-# 不是 pytest 测试模块。若被 pytest 导入会导致收集阶段 ConnectionError，
-# 因此显式排除其收集。
-collect_ignore = ["test_auth_full_flow.py"]
-
 
 def pytest_configure(config):
     """条件性启用 pytest-rerunfailures 的 --reruns 选项。

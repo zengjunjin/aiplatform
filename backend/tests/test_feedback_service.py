@@ -1,4 +1,4 @@
-"""Tests for app.services.feedback_service
+﻿"""Tests for app.services.feedback_service
 
 使用 mock AsyncSession 测试业务逻辑，不依赖真实 PostgreSQL。
 """
@@ -12,7 +12,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.chat_message import ChatMessage
 from app.db.chat_session import ChatSession
 from app.db.feedback import MessageFeedback
-from app.schemas.feedback import FeedbackCreate, FeedbackDetail, FeedbackStats
+from app.schemas.feedback import FeedbackCreate, FeedbackDetailOut, FeedbackStats
 from app.services import feedback_service
 
 # ---------- 辅助函数 ----------
@@ -348,7 +348,7 @@ class TestAnalyzeFeedback:
             by_type={"faithfulness_issue": 2, "incompleteness": 1},
         )
         low_rated = [
-            FeedbackDetail(
+            FeedbackDetailOut(
                 id=1,
                 message_id=10,
                 rating=-1,
@@ -360,7 +360,7 @@ class TestAnalyzeFeedback:
                 session_id=1,
                 kb_id=1,
             ),
-            FeedbackDetail(
+            FeedbackDetailOut(
                 id=2,
                 message_id=11,
                 rating=-1,

@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
-from app.core.evaluation import aggregate_metrics
+from app.services.evaluation_engine import aggregate_metrics
 from app.db.document_chunk import DocumentChunk
 from app.db.user import User
 from app.services.evaluation_service import generate_test_dataset

@@ -41,6 +41,9 @@ jieba = "^0.42.1"
 
 sentence-transformers = "^3.0.0"
 
+# Blade 4 Step 2: torch CPU-only（reranker CPU 推理用，避免 nvidia CUDA 包膨胀镜像 ~5GB）
+torch = { version = "2.12.1+cpu", source = "pytorch-cpu" }
+
 slowapi = "^0.1.9"
 
 loguru = "^0.7.0"
@@ -82,6 +85,7 @@ ruff = "^0.6.0"
 websocket-client = "^1.7.0"
 mutmut = "^3.0"
 mypy = "^2.3.0"
+import-linter = "^2.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -103,7 +107,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py", "*/__init__.py"]
+omit = ["*/__init__.py"]
 
 [tool.coverage.report]
 show_missing = true
@@ -177,3 +181,24 @@ disable_error_code = [
     "call-arg",         # Pydantic model 必需字段（ErrorCode）
     "valid-type",       # 类型注解表达式无效（SQLAlchemy Column）
 ]
+
+# Blade 4 Step 2: pytorch CPU-only 源（避免 nvidia CUDA 包膨胀镜像 ~5GB）
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "分层契约：api → services → db，core 不依赖 services"
+type = "layers"
+layers = ["app.api", "app.services", "app.db"]
+containers = ["app"]
+
+[[tool.importlinter.contracts]]
+name = "core 禁止反向依赖 services"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.services", "app.api"]

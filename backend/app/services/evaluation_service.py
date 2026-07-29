@@ -11,6 +11,7 @@ from app.core.exceptions import NotFoundError
 from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
+from app.rag.answer import get_rag_answer
 from app.rag.retriever import retriever
 from app.services import kb_service
 
@@ -107,7 +108,7 @@ async def generate_question_from_chunk(chunk_content: str, llm) -> dict | None:
     温度统一为 0.3（与 service 一致，消除原 task 的 0.7 漂移）。
     """
     try:
-        from app.core.evaluation import build_question_prompt, parse_question_response
+        from app.services.evaluation_engine import build_question_prompt, parse_question_response
 
         prompt = build_question_prompt(chunk_content)
 
@@ -144,44 +145,6 @@ async def generate_ground_truth(llm, question: str, kb_description: str) -> str:
     if not response or not response.strip():
         raise RuntimeError("LLM returned empty ground_truth")
     return response.strip()
-
-
-async def get_rag_answer(
-    query: str, kb_id: int, llm=None
-) -> tuple[str, list[str]]:
-    """Run the RAG pipeline to get an answer and retrieved contexts.
-
-    修复（v0.4.0）：移除宽泛 except Exception，让异常向上抛出。
-    调用方 _run_evaluations 用 asyncio.gather(return_exceptions=True) 捕获异常做失败隔离。
-    之前吞异常导致失败题目被记为"成功评估"，错误答案污染聚合结果。
-
-    T8（P3）：llm 参数允许调用方传入已有实例，避免每次评估都创建新 LLM 连接。
-    """
-    from app.rag.prompt_builder import build_rag_prompt
-    from app.rag.retriever import retriever
-
-    # Retrieve relevant chunks
-    # Task 9: 使用 settings.RETRIEVAL_TOP_K 保持评估与生产一致，避免评估结果系统性偏低
-    chunks = await retriever.retrieve(query, kb_id, top_k=settings.RETRIEVAL_TOP_K)
-    contexts = [c.get("content", "") for c in chunks]
-
-    if not contexts:
-        return "无法获取相关内容来回答此问题。", []
-
-    # Build prompt
-    prompt = build_rag_prompt(query, chunks)
-
-    # Generate answer — 复用传入的 LLM 实例，或按需创建
-    if llm is None:
-        from app.models.factory import ModelFactory
-        llm = ModelFactory.create_llm()
-    answer = await llm.chat(
-        [{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
-    answer = answer or ""
-
-    return answer, contexts
 
 
 async def trigger_evaluation(

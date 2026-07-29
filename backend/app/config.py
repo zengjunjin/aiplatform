@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     CHAT_HISTORY_LIMIT: int = 20
     CHAT_HISTORY_KEEP_RECENT: int = 4
 
+    # Blade 2 Step 5: 分页默认值可配（消除 chat.py 路由参数中的硬编码魔法数字）
+    CHAT_SESSION_PAGE_SIZE: int = 20
+    CHAT_MESSAGE_PAGE_SIZE: int = 50
+
     # Task 13: Redis 聊天上下文缓存配置（TTL + 保留条数）
     CHAT_HISTORY_TTL_SECONDS: int = 86400
     CHAT_HISTORY_REDIS_KEEP_RECENT: int = 20

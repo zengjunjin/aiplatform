@@ -32,14 +32,8 @@ RUN poetry config virtualenvs.in-project true \
     && poetry cache clear --all . 2>/dev/null; \
     rm -rf /root/.cache/pypoetry /root/.cache/pip
 
-# 替换 torch 为 CPU-only 版本，移除 nvidia CUDA 依赖（约减 5GB 镜像体积）
-# 后端容器中 torch 仅用于 reranker (sentence-transformers) 的 CPU 推理，不需要 CUDA
-RUN .venv/bin/pip uninstall -y torch nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc \
-    nvidia-cuda-runtime nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand \
-    nvidia-cusolver nvidia-cusparse nvidia-cusparselt-cu13 nvidia-nccl-cu13 \
-    nvidia-nvjitlink nvidia-nvshmem-cu13 nvidia-nvtx \
-    cuda-bindings cuda-pathfinder cuda-toolkit triton 2>/dev/null; \
-    .venv/bin/pip install --no-cache-dir torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+# Blade 4 Step 2: torch CPU-only 通过 pyproject.toml [pytorch-cpu] source 直接安装
+# （删除原 uninstall+重装块，poetry install 时直接拉取 CPU-only torch）
 
 # 复制源码（.dockerignore 会排除 tests/ storage/ .git/ 等）
 COPY . .

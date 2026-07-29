@@ -1,4 +1,4 @@
-from collections import Counter
+﻿from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger
@@ -11,7 +11,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.chat_message import ChatMessage
 from app.db.chat_session import ChatSession
 from app.db.feedback import MessageFeedback
-from app.schemas.feedback import FeedbackCreate, FeedbackDetail, FeedbackStats
+from app.schemas.feedback import FeedbackCreate, FeedbackDetailOut, FeedbackStats
 from app.services.audit_service import log_audit
 
 # 与 schemas/feedback.py 中 Literal 定义保持一致的反馈类型集合
@@ -233,7 +233,7 @@ def _build_feedback_detail(
     msg: ChatMessage,
     session: ChatSession | None,
     user_msgs: list[ChatMessage],
-) -> FeedbackDetail:
+) -> FeedbackDetailOut:
     """构建单条反馈详情。"""
     # Find the latest user message before this assistant message
     question_content = ""
@@ -242,7 +242,7 @@ def _build_feedback_detail(
             question_content = um.content
             break
 
-    return FeedbackDetail(
+    return FeedbackDetailOut(
         id=fb.id,
         message_id=fb.message_id,
         rating=fb.rating,
@@ -264,7 +264,7 @@ async def get_low_rated_feedbacks(
     feedback_type: str | None = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[FeedbackDetail], int]:
+) -> tuple[list[FeedbackDetailOut], int]:
     """获取低分反馈列表（用于分析）"""
     # 查询负反馈
     query = select(MessageFeedback).where(MessageFeedback.rating == -1)

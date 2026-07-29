@@ -5,7 +5,7 @@
 
 设计要点：
 1. 15 条 golden QA（query + expected_answer_keywords + expected_context_keywords）
-2. 每条 QA 通过 evaluation_service.get_rag_answer() 跑完整 RAG 管线
+2. 每条 QA 通过 rag.answer.get_rag_answer() 跑完整 RAG 管线
 3. 用真实 ragas.evaluate 计算 faithfulness / context_recall 等指标
    - 强制依赖 ragas：ImportError 时测试自然 fail（不再 skip）
 4. 断言 faithfulness > 0.7、context_recall > 0.6
@@ -272,7 +272,7 @@ async def _compute_ragas_metrics(
 ) -> dict[str, float | None]:
     """调用真实 ragas.evaluate 计算指标。
 
-    参考 app.core.evaluation._compute_ragas_metrics 的调用方式。
+    参考 app.services.evaluation_engine._compute_ragas_metrics 的调用方式。
     ragas 未安装时 ImportError 向上传播，测试 fail（不再 skip）。
     """
     from datasets import Dataset

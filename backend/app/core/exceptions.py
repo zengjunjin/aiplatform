@@ -67,6 +67,33 @@ class ValidationError(AppException):
         )
 
 
+class AllProvidersFailedError(AppException):
+    """主 provider 失败 + 所有 fallback provider 均失败时抛出（Blade 2 Step 5 专用异常，
+    替代原通用 Exception("All LLM providers failed after fallback attempts")），
+    便于上游按类型精确处理 / 埋点监控 / 写专用单测。"""
+
+    def __init__(
+        self,
+        message: str | None = None,
+        primary: str | None = None,
+        fallbacks_tried: int = 0,
+    ):
+        detail_parts = []
+        if primary:
+            detail_parts.append(f"primary={primary}")
+        detail_parts.append(f"fallbacks_tried={fallbacks_tried}")
+        msg = message or (
+            f"All LLM providers failed after fallback attempts ({', '.join(detail_parts)})"
+        )
+        super().__init__(
+            code=ErrorCode.INTERNAL_ERROR,
+            message=msg,
+            status_code=502,
+        )
+        self.primary = primary
+        self.fallbacks_tried = fallbacks_tried
+
+
 async def app_exception_handler(request: Request, exc: AppException):
     logger.warning(
         f"AppException: {exc.code} - {exc.message} - {request.method} {request.url.path}"
