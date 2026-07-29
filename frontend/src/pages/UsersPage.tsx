@@ -50,10 +50,12 @@ export default function UsersPage() {
   fetchUsersRef.current = fetchUsers;
 
   // Task 23 (P1-FE-09): AbortController 防止组件卸载后 setState
+  // Task 45: fetchUsersRef 模式有意只挂载一次，page/pageSize 变化由 useCallback 闭包捕获
   useEffect(() => {
     const abortController = new AbortController();
     fetchUsersRef.current(page, pageSize, abortController.signal);
     return () => { abortController.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRoleChange = async (userId: number, role: 'user' | 'admin') => {

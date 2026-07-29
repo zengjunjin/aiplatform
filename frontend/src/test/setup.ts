@@ -2,6 +2,12 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
+// antd Select 的虚拟列表依赖 ResizeObserver+实际布局高度，jsdom 下不渲染全部 option
+// 全局禁用 Select 虚拟化，保证 getByRole('option') 可以找到全部选项
+import * as antd from 'antd';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(antd.Select as any).defaultProps = { ...((antd.Select as any).defaultProps || {}), virtual: false };
+
 afterEach(() => {
   cleanup();
 });

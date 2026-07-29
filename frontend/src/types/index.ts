@@ -106,7 +106,8 @@ export interface PaginatedResponse<T> {
 }
 
 // Task 55: Message 继承 ChatMessage, 字段名已与后端 MessageOut.references 统一
-export interface Message extends ChatMessage {}
+// 用 type alias 替代空 interface 以满足 @typescript-eslint/no-empty-object-type
+export type Message = ChatMessage;
 
 export interface MessageWithRefs {
   id?: number;
