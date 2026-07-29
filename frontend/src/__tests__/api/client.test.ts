@@ -209,7 +209,7 @@ describe('api/client', () => {
   });
 
   describe('response interceptor - retry logic', () => {
-    it('should not retry non-GET requests', async () => {
+    it('should not retry non-GET requests on 5xx error', async () => {
       const adapter = vi.fn().mockRejectedValue({
         response: { status: 500, data: { message: 'Server error' } },
         config: { url: '/post', method: 'post', _retryCount: 0 },
@@ -219,6 +219,103 @@ describe('api/client', () => {
 
       await expect(client.post('/post')).rejects.toThrow('Server error');
       expect(adapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry GET request on 5xx error up to 2 times', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: { status: 500, data: { message: 'Server error' } },
+        config: { url: '/test', method: 'get', _retryCount: 0 },
+        message: 'Request failed',
+      });
+      client.defaults.adapter = adapter as any;
+
+      const promise = client.get('/test');
+      promise.catch(() => {}); // 防止 unhandled rejection 警告
+      await vi.runAllTimersAsync();
+      await expect(promise).rejects.toThrow('Server error');
+      // 初始调用 + 2 次重试 = 3 次
+      expect(adapter).toHaveBeenCalledTimes(3);
+
+      vi.useRealTimers();
+    });
+
+    it('should succeed when retry succeeds after 5xx error', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      let callCount = 0;
+      const adapter = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject({
+            response: { status: 500, data: { message: 'Server error' } },
+            config: { url: '/test', method: 'get', _retryCount: 0 },
+            message: 'Request failed',
+          });
+        }
+        return Promise.resolve({
+          data: { code: 0, data: { ok: true } },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: { url: '/test', method: 'get' },
+        } as any);
+      });
+      client.defaults.adapter = adapter as any;
+
+      const promise = client.get('/test');
+      await vi.advanceTimersByTimeAsync(1000);
+      const res = await promise;
+      expect(res.data.data).toEqual({ ok: true });
+      expect(adapter).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
+
+    it('should not retry on 4xx error', async () => {
+      const adapter = vi.fn().mockRejectedValue({
+        response: { status: 404, data: { message: 'Not found' } },
+        config: { url: '/test', method: 'get', _retryCount: 0 },
+        message: 'Request failed',
+      });
+      client.defaults.adapter = adapter as any;
+
+      await expect(client.get('/test')).rejects.toThrow('Not found');
+      expect(adapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('should use exponential backoff (1s, 2s) for retries', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: { status: 500, data: { message: 'Server error' } },
+        config: { url: '/test', method: 'get', _retryCount: 0 },
+        message: 'Request failed',
+      });
+      client.defaults.adapter = adapter as any;
+
+      const promise = client.get('/test');
+      promise.catch(() => {}); // 防止 unhandled rejection 警告
+
+      // 第一次重试在 1s (1000ms) 后
+      await vi.advanceTimersByTimeAsync(999);
+      expect(adapter).toHaveBeenCalledTimes(1); // 尚未重试
+      await vi.advanceTimersByTimeAsync(1);
+      expect(adapter).toHaveBeenCalledTimes(2); // 第一次重试完成
+
+      // 第二次重试在 2s (2000ms) 后
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(adapter).toHaveBeenCalledTimes(2); // 尚未重试
+      await vi.advanceTimersByTimeAsync(1);
+      expect(adapter).toHaveBeenCalledTimes(3); // 第二次重试完成
+
+      await expect(promise).rejects.toThrow('Server error');
+
+      vi.useRealTimers();
     });
   });
 });

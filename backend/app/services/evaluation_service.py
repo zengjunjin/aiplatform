@@ -144,15 +144,17 @@ async def _generate_ground_truth(llm, question: str, kb_description: str) -> str
     return response.strip()
 
 
-async def get_rag_answer(query: str, kb_id: int) -> tuple[str, list[str]]:
+async def get_rag_answer(
+    query: str, kb_id: int, llm=None
+) -> tuple[str, list[str]]:
     """Run the RAG pipeline to get an answer and retrieved contexts.
 
     修复（v0.4.0）：移除宽泛 except Exception，让异常向上抛出。
     调用方 _run_evaluations 用 asyncio.gather(return_exceptions=True) 捕获异常做失败隔离。
     之前吞异常导致失败题目被记为"成功评估"，错误答案污染聚合结果。
+
+    T8（P3）：llm 参数允许调用方传入已有实例，避免每次评估都创建新 LLM 连接。
     """
-    # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
-    from app.models.factory import ModelFactory
     from app.rag.prompt_builder import build_rag_prompt
     from app.rag.retriever import retriever
 
@@ -167,8 +169,10 @@ async def get_rag_answer(query: str, kb_id: int) -> tuple[str, list[str]]:
     # Build prompt
     prompt = build_rag_prompt(query, chunks)
 
-    # Generate answer
-    llm = ModelFactory.create_llm()
+    # Generate answer — 复用传入的 LLM 实例，或按需创建
+    if llm is None:
+        from app.models.factory import ModelFactory
+        llm = ModelFactory.create_llm()
     answer = await llm.chat(
         [{"role": "user", "content": prompt}],
         temperature=0.3,

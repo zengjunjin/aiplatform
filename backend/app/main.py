@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, ORJSONResponse, Response
 from loguru import logger
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi.errors import RateLimitExceeded
@@ -273,6 +273,8 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.ENABLE_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
+    # Task 4: 使用 ORJSONResponse 替代默认 JSONResponse，提升 JSON 序列化性能
+    default_response_class=ORJSONResponse,
 )
 
 # FastAPI OpenTelemetry 仪器化必须在 app 创建后、启动前调用

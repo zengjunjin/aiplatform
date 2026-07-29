@@ -7,8 +7,9 @@ class TextChunker:
     """文本分块器:按段落 + 字符数分块"""
 
     def __init__(self, chunk_size: int | None = None, overlap: int | None = None):
-        self.chunk_size = chunk_size or settings.CHUNK_SIZE
-        self.overlap = overlap or settings.CHUNK_OVERLAP
+        # 用 `is not None` 而非 `or`，避免 overlap=0 被当作 falsy 回退到默认值
+        self.chunk_size = chunk_size if chunk_size is not None else settings.CHUNK_SIZE
+        self.overlap = overlap if overlap is not None else settings.CHUNK_OVERLAP
 
     def _clean_text(self, text: str) -> str:
         """清洗文本: 去除 NUL 字符和其他不可见控制字符(保留换行、制表符)"""
@@ -46,10 +47,25 @@ class TextChunker:
                 buffer = (buffer + "\n\n" + para) if buffer else para
 
             # 如果单个段落超过 chunk_size,强制拆分
-            while len(buffer) > self.chunk_size * 1.5:
+            # 安全网：限制最大迭代次数，防止任何边缘情况导致无限循环
+            max_splits = 1000
+            split_count = 0
+            while len(buffer) > self.chunk_size * 1.5 and split_count < max_splits:
                 split_pos = self._find_split_pos(buffer, self.chunk_size)
+                # 确保 split_pos 至少为 1，避免无限循环
+                split_pos = max(split_pos, 1)
                 chunks.append(self._make_chunk(buffer[:split_pos], buffer_start_page))
-                buffer = buffer[max(split_pos - self.overlap, 0) :]
+                new_start = max(split_pos - self.overlap, 0)
+                # 如果 new_start >= len(buffer) 或 new_start == 0，说明无法继续缩小
+                if new_start >= len(buffer) or new_start == 0:
+                    # 强制前进至少 1 个字符
+                    if new_start == 0 and len(buffer) > 0:
+                        new_start = 1
+                    else:
+                        buffer = ""
+                        break
+                buffer = buffer[new_start:]
+                split_count += 1
 
         if buffer.strip():
             chunks.append(self._make_chunk(buffer, buffer_start_page))
@@ -73,6 +89,7 @@ class TextChunker:
         for i in range(min(target, len(text)), max(0, target - 100), -1):
             if text[i] in " \t":
                 return i + 1
+        # 最后才在 target 位置截断
         return target
 
 

@@ -12,6 +12,8 @@ python = "^3.12"
 
 fastapi = "^0.115.0"
 uvicorn = { version = "^0.30.0", extras = ["standard"] }
+# Task 4: ORJSONResponse 替代默认 JSONResponse，提升 JSON 序列化性能
+orjson = "^3.10.0"
 
 sqlalchemy = "^2.0.0"
 alembic = "^1.13.0"

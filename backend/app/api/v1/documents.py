@@ -9,6 +9,7 @@ from app.config import (
     RATE_LIMIT_SEVERE,
     RATE_LIMIT_VERY_STRICT,
 )
+from app.core.cache import cache_delete_pattern, cache_get, cache_set
 from app.core.exceptions import ConflictError
 from app.core.middleware import limiter
 from app.database import get_db
@@ -32,6 +33,8 @@ async def upload_document(
     """上传文档到知识库。业务逻辑下沉到 document_service.upload_document。"""
     doc, task = await document_service.upload_document(file, kb_id, user, db)
     logger.info(f"Document uploaded: id={doc.id} kb={kb_id} user={user.id} name={doc.filename}")
+    # 缓存失效：清除该用户的文档列表缓存
+    await cache_delete_pattern(f"doc:list:{user.id}:*")
     return ok(
         data={
             "document_id": doc.id,
@@ -51,8 +54,19 @@ async def list_documents(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """分页查询文档列表。使用 Redis 缓存，TTL 5 分钟。"""
+    # 尝试命中缓存
+    cache_key = f"doc:list:{user.id}:{kb_id}:{page}:{page_size}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return paginated_ok(
+            items=cached["items"], total=cached["total"], page=page, page_size=page_size
+        )
+
     docs, total = await document_service.list_documents(user.id, db, kb_id, page, page_size)
     items = [DocumentOut.model_validate(d).model_dump() for d in docs]
+    # 写入缓存
+    await cache_set(cache_key, {"items": items, "total": total})
     return paginated_ok(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -96,6 +110,8 @@ async def delete_document(
         raise ConflictError(message="文档正在处理中，无法删除，请稍候")
     await document_service.delete_document(doc_id, user.id, db)
     logger.info(f"Document deleted: id={doc_id} user={user.id}")
+    # 缓存失效
+    await cache_delete_pattern(f"doc:list:{user.id}:*")
     return ok(message="Deleted")
 
 
@@ -111,6 +127,8 @@ async def reparse_document(
     # 使用 service 的原子锁, 防止并发重复触发
     doc, task = await document_service.reparse_document(doc_id, user.id, db, force=force)
     logger.info(f"Document reparse: id={doc_id} user={user.id} force={force}")
+    # 缓存失效
+    await cache_delete_pattern(f"doc:list:{user.id}:*")
     return ok(data={"document_id": doc.id, "task_id": task.id})
 
 

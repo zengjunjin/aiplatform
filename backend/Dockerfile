@@ -28,7 +28,9 @@ COPY pyproject.toml poetry.lock* ./
 # sentence_transformers -> sklearn -> scipy 加载失败，reranker 无法工作
 RUN poetry config virtualenvs.in-project true \
     && poetry install --without dev --no-interaction --no-ansi --no-root \
-    && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2' 'scipy>=1.13,<1.14'
+    && .venv/bin/pip install --no-cache-dir 'pyarrow>=14,<15' 'numpy<2' 'scipy>=1.13,<1.14' \
+    && poetry cache clear --all . 2>/dev/null; \
+    rm -rf /root/.cache/pypoetry /root/.cache/pip
 
 # 替换 torch 为 CPU-only 版本，移除 nvidia CUDA 依赖（约减 5GB 镜像体积）
 # 后端容器中 torch 仅用于 reranker (sentence-transformers) 的 CPU 推理，不需要 CUDA

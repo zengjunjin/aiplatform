@@ -333,17 +333,29 @@ async def _run_evaluations(kb_id: int, dataset: list[dict]) -> list[dict]:
 
     用 asyncio.gather + Semaphore 替代串行 for 循环，
     Semaphore 复用 settings.EVAL_CONCURRENCY 限制并发度。
+
+    T8（P3）：创建单一 LLM 实例供所有评估任务复用，避免每次 get_rag_answer 都创建新连接。
     """
+    from app.models.ollama_provider import OllamaLLMProvider
+
+    # T8: 创建单一 LLM 实例供全流程复用
+    llm = OllamaLLMProvider()
+    logger.info("T8: Created shared LLM instance for evaluation pipeline")
+
     semaphore = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
 
     async def _eval_single(item: dict) -> dict:
         async with semaphore:
-            return await _run_single_evaluation(kb_id, item)
+            return await _run_single_evaluation(kb_id, item, llm)
 
-    results = await asyncio.gather(
-        *[_eval_single(item) for item in dataset],
-        return_exceptions=True,
-    )
+    try:
+        results = await asyncio.gather(
+            *[_eval_single(item) for item in dataset],
+            return_exceptions=True,
+        )
+    finally:
+        await llm.close()
+        logger.info("T8: Closed shared LLM instance")
 
     # 将异常转换为错误条目（保留原有异常处理语义）
     processed = []
@@ -363,15 +375,18 @@ async def _run_evaluations(kb_id: int, dataset: list[dict]) -> list[dict]:
     return processed
 
 
-async def _run_single_evaluation(kb_id: int, item: dict) -> dict:
-    """对单个问题执行 RAG 检索 + RAGAS 指标计算。"""
+async def _run_single_evaluation(kb_id: int, item: dict, llm=None) -> dict:
+    """对单个问题执行 RAG 检索 + RAGAS 指标计算。
+
+    T8（P3）：llm 参数由 _run_evaluations 传入，复用同一实例。
+    """
     from app.core.evaluation import _compute_ragas_metrics
     from app.services.evaluation_service import get_rag_answer
 
     question = item["question"]
     ground_truth = item["ground_truth"]
 
-    answer, contexts = await get_rag_answer(question, kb_id)
+    answer, contexts = await get_rag_answer(question, kb_id, llm=llm)
     metrics = await _compute_ragas_metrics(
         question=question,
         answer=answer,
