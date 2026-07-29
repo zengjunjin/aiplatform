@@ -107,7 +107,7 @@ async def get_history_context(
                         continue
                 return messages
         except Exception as e:
-            logger.warning("Redis history fetch failed, fallback to DB: %s", e)
+            logger.warning("Redis history fetch failed, fallback to DB: {}", e)
     # DB fallback: Redis 不可用 / key 不存在 / 查询异常
     if db is not None:
         result = await db.execute(

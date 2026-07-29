@@ -12,10 +12,14 @@ SAMPLE_DOCS = [
 
 class TestBM25Store:
     def test_build_with_chunks(self):
-        """_build should create a BM25Okapi from chunks."""
+        """_build should create a BM25Okapi from chunks and return tokenized for reuse.
+
+        P1-4 修复后 _build 返回 (bm25, tokenized) 元组，序列化时复用 tokenized 避免重复分词。
+        """
         store = BM25Store()
-        bm25 = store._build(SAMPLE_DOCS)
+        bm25, tokenized = store._build(SAMPLE_DOCS)
         assert bm25 is not None
+        assert len(tokenized) == 4
         scores = bm25.get_scores(store._tokenize("fox"))
         assert len(scores) == 4
 

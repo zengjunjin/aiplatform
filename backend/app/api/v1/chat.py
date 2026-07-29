@@ -463,6 +463,8 @@ async def _run_sse_stream(
         # Pre-cancel check: 若在开始生成前已被取消（双击发送取消）
         if await chat_service.is_cancelled(session_id):
             yield _send_sse({"event": "cancelled", "message": "生成已取消"})
+            # [DONE] 在正常结束路径发送，不放 finally（避免客户端断连时 GeneratorExit + yield 冲突）
+            yield "data: [DONE]\n\n"
             return
 
         # Query rewrite: 消解多轮对话中的代词（仅用于检索，不影响用户原文）
@@ -541,11 +543,15 @@ async def _run_sse_stream(
             yield _send_sse({"event": "cancelled", "message_id": msg_id, "message": "生成已取消"})
         else:
             yield _send_sse({"event": "done", "message_id": msg_id, "references": references})
+        # [DONE] 在正常结束路径发送，不放 finally（避免客户端断连时 GeneratorExit + yield 冲突）
+        yield "data: [DONE]\n\n"
 
     except Exception as e:
         logger.exception(f"Chat SSE error: {e}")
         yield _send_sse_error("服务内部错误,请稍后重试")
-        return  # error occurred, do not send [DONE]
+        # [DONE] 在异常路径也发送：客户端仍连接时需要 [DONE] 来正常关闭 SSE 连接。
+        # 不放 finally（避免客户端断连时 GeneratorExit + yield 冲突）
+        yield "data: [DONE]\n\n"
     finally:
         # Task 32: 从全局集合移除当前 SSE 请求
         if current_task is not None:
@@ -563,7 +569,6 @@ async def _run_sse_stream(
         # 递减 SSE 并发计数器（无论正常结束、异常或客户端断开都会执行）
         # counter_cm 的 __aexit__ 触发 DECR（仅在成功获取配额时）
         await counter_cm.__aexit__(None, None, None)
-        yield "data: [DONE]\n\n"
 
 
 @router.post("/sessions")

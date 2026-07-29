@@ -305,6 +305,10 @@ export const useChatStore = create<ChatState>()(
         if (evt.event === 'searching') {
           accContent = '';
           updateAssistant(true);
+        } else if (evt.event === 'restart') {
+          // LLM fallback 时后端发 restart 事件，清空已显示的 primary 部分输出
+          accContent = '';
+          updateAssistant(true);
         } else if (evt.event === 'model') {
           // 模型信息事件，静默处理（前端可通过 model_name 显示当前使用的模型）
         } else if (evt.event === 'delta') {

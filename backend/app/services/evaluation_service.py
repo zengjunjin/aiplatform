@@ -53,21 +53,21 @@ async def generate_test_dataset(
 
     # 并发生成问题（Semaphore 限制并发度，避免打爆 LLM 服务）
     sem = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
+    # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
+    from app.models.factory import ModelFactory
+
+    shared_llm = ModelFactory.create_llm()
 
     async def _gen(chunk):
         async with sem:
             # 1. 由 chunk 生成问题（失败返回 None，跳过该条）
-            question_data = await _generate_question_from_chunk(chunk.content)
+            question_data = await generate_question_from_chunk(chunk.content, shared_llm)
             if not question_data:
                 return None
             question = question_data["question"]
             # 2. 独立生成 ground_truth：LLM 仅依据 question + kb_description 生成参考答案，
             #    不看 chunk 内容；生成失败时 raise，不 fallback 到 chunk.content
-            # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
-            from app.models.factory import ModelFactory
-
-            llm = ModelFactory.create_llm()
-            ground_truth = await _generate_ground_truth(llm, question, kb_description)
+            ground_truth = await generate_ground_truth(shared_llm, question, kb_description)
             # 3. contexts 由 retriever 对 question 重新检索得到，与 ground_truth 不同源
             retrieved = await retriever.retrieve(question, kb_id, top_k=settings.RETRIEVAL_TOP_K)
             contexts = [c.get("content", "") for c in retrieved]
@@ -96,18 +96,18 @@ async def generate_test_dataset(
     return dataset
 
 
-async def _generate_question_from_chunk(chunk_content: str) -> dict | None:
+async def generate_question_from_chunk(chunk_content: str, llm) -> dict | None:
     """Use LLM to generate a question that can be answered by the chunk.
 
     Task 1.5: 返回 dict 包含 question/question_type/difficulty。
+
+    P1-6 修复：函数级去重，原 task 内的 `_generate_question_async` 已删除，
+    Celery 任务直接调用此公共函数；llm 由调用方传入（task 可注入独立实例
+    避免 ModelFactory 单例的 event loop 绑定问题）。
+    温度统一为 0.3（与 service 一致，消除原 task 的 0.7 漂移）。
     """
     try:
         from app.core.evaluation import build_question_prompt, parse_question_response
-
-        # 延迟 import 避免循环依赖：evaluation_service ↔ ModelFactory
-        from app.models.factory import ModelFactory
-
-        llm = ModelFactory.create_llm()
 
         prompt = build_question_prompt(chunk_content)
 
@@ -123,11 +123,13 @@ async def _generate_question_from_chunk(chunk_content: str) -> dict | None:
         return None
 
 
-async def _generate_ground_truth(llm, question: str, kb_description: str) -> str:
+async def generate_ground_truth(llm, question: str, kb_description: str) -> str:
     """由 LLM 仅依据 question 和 kb_description 独立生成参考答案。
 
     LLM 不看 chunk 内容，避免与 contexts 同源导致 RAGAS 指标循环验证、虚高。
     生成失败时 raise，不 fallback 到 chunk.content。
+
+    P1-6 修复：公共函数，原 task 内 `_generate_ground_truth_async` 逐字重复已删除。
     """
     prompt = (
         "你是一个领域专家。请针对以下问题给出一个准确、简洁的参考答案。\n\n"

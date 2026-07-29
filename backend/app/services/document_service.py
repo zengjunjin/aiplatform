@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime
@@ -165,7 +166,9 @@ async def _save_file_and_verify_hash(
 ) -> None:
     """保存文件 + 重复 hash 检查 + 更新 doc 元数据。"""
     try:
-        file_path, file_type, file_size, file_hash = save_upload_file(file, kb_id, doc.id)
+        file_path, file_type, file_size, file_hash = await asyncio.to_thread(
+            save_upload_file, file, kb_id, doc.id
+        )
 
         existing = await db.execute(
             select(Document).where(

@@ -18,8 +18,8 @@ for _stub in ("qdrant_client", "rank_bm25", "app.rag.bm25", "app.rag.retriever")
 from app.db.evaluation import EvaluationStatus
 from app.tasks import evaluation_task
 from app.tasks.evaluation_task import (
+    _create_evaluation_llm,
     _generate_dataset_async,
-    _generate_question_async,
     _prepare_dataset,
     _run_evaluations,
     _run_single_evaluation,
@@ -390,7 +390,12 @@ class TestPrepareDataset:
 
 
 class TestGenerateDatasetAsync:
-    """_generate_dataset_async: 并发 LLM 生成 + 过滤 None (lines 187-221)"""
+    """_generate_dataset_async: 并发 LLM 生成 + 过滤 None (lines 187-221)
+
+    P1-6 修复后：函数内调用 evaluation_service.generate_question_from_chunk /
+    generate_ground_truth（不再有 _generate_question_async / _generate_ground_truth_async），
+    provider 通过 _create_evaluation_llm 创建（不再硬编码 OllamaLLMProvider）。
+    """
 
     async def test_generate_dataset_async_success(self):
         """所有 chunk 成功生成 → 返回完整数据集，llm.close 被调用"""
@@ -401,23 +406,22 @@ class TestGenerateDatasetAsync:
         mock_retriever = MagicMock()
         mock_retriever.retrieve = AsyncMock(return_value=[{"content": "ctx1"}])
 
+        mock_llm = AsyncMock()
+
         with (
             patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
-            patch("app.models.ollama_provider.OllamaLLMProvider") as MockProvider,
             patch.object(
-                evaluation_task,
-                "_generate_question_async",
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch(
+                "app.services.evaluation_service.generate_question_from_chunk",
                 new=AsyncMock(return_value=question_data),
             ),
-            patch.object(
-                evaluation_task,
-                "_generate_ground_truth_async",
+            patch(
+                "app.services.evaluation_service.generate_ground_truth",
                 new=AsyncMock(return_value="ground_truth"),
             ),
         ):
-            mock_llm = AsyncMock()
-            MockProvider.return_value = mock_llm
-
             result = await _generate_dataset_async(chunks, "kb desc", 1)
 
         assert len(result) == 3
@@ -425,7 +429,7 @@ class TestGenerateDatasetAsync:
             assert item["question"] == "q"
             assert item["question_type"] == "factual"
             assert item["difficulty"] == "easy"
-            # ground_truth 由 _generate_ground_truth_async 独立生成
+            # ground_truth 由 generate_ground_truth 独立生成
             assert item["ground_truth"] == "ground_truth"
             # contexts 由 retriever.retrieve 重新检索得到
             assert item["contexts"] == ["ctx1"]
@@ -440,23 +444,22 @@ class TestGenerateDatasetAsync:
         mock_retriever = MagicMock()
         mock_retriever.retrieve = AsyncMock(return_value=[{"content": "ctx1"}])
 
+        mock_llm = AsyncMock()
+
         with (
             patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
-            patch("app.models.ollama_provider.OllamaLLMProvider") as MockProvider,
             patch.object(
-                evaluation_task,
-                "_generate_question_async",
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch(
+                "app.services.evaluation_service.generate_question_from_chunk",
                 new=AsyncMock(side_effect=[None, question_data]),
             ),
-            patch.object(
-                evaluation_task,
-                "_generate_ground_truth_async",
+            patch(
+                "app.services.evaluation_service.generate_ground_truth",
                 new=AsyncMock(return_value="ground_truth"),
             ),
         ):
-            mock_llm = AsyncMock()
-            MockProvider.return_value = mock_llm
-
             result = await _generate_dataset_async(chunks, "kb desc", 1)
 
         # None 被过滤，只保留 1 条
@@ -466,59 +469,28 @@ class TestGenerateDatasetAsync:
 
     async def test_generate_dataset_async_empty_chunks(self):
         """空 chunks 列表 → 返回空数据集，llm.close 仍被调用"""
+        mock_llm = AsyncMock()
+
         with (
-            patch("app.models.ollama_provider.OllamaLLMProvider") as MockProvider,
             patch.object(
-                evaluation_task, "_generate_question_async", new=AsyncMock()
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch(
+                "app.services.evaluation_service.generate_question_from_chunk",
+                new=AsyncMock(),
             ),
         ):
-            mock_llm = AsyncMock()
-            MockProvider.return_value = mock_llm
-
             result = await _generate_dataset_async([], "kb desc", 1)
 
         assert result == []
         mock_llm.close.assert_awaited_once()
 
 
-class TestGenerateQuestionAsync:
-    """_generate_question_async: LLM 调用 + 异常处理 (lines 224-241)"""
-
-    async def test_generate_question_success(self):
-        """LLM 返回有效响应 → 解析后返回 dict"""
-        llm = AsyncMock()
-        parsed = {"question": "什么是AI", "question_type": "factual", "difficulty": "easy"}
-
-        with (
-            patch("app.core.evaluation.build_question_prompt", return_value="prompt"),
-            patch("app.core.evaluation.parse_question_response", return_value=parsed),
-        ):
-            result = await _generate_question_async("content", llm)
-
-        assert result == parsed
-        llm.chat.assert_awaited_once()
-        # temperature=0.7 被传入
-        _, kwargs = llm.chat.call_args
-        assert kwargs.get("temperature") == 0.7
-
-    async def test_generate_question_llm_failure_returns_none(self):
-        """LLM 调用抛异常 → 捕获后返回 None（单题失败不阻断）"""
-        llm = AsyncMock()
-        llm.chat.side_effect = RuntimeError("LLM unavailable")
-
-        with (
-            patch("app.core.evaluation.build_question_prompt", return_value="prompt"),
-            patch("app.core.evaluation.parse_question_response") as mock_parse,
-        ):
-            result = await _generate_question_async("content", llm)
-
-        assert result is None
-        # LLM 失败 → parse 不被调用
-        mock_parse.assert_not_called()
-
-
 class TestRunEvaluations:
-    """_run_evaluations: 并发评估 + 异常转错误条目 (lines 249-281)"""
+    """_run_evaluations: 并发评估 + 异常转错误条目 (lines 249-281)
+
+    P1-6 修复后：provider 通过 _create_evaluation_llm 创建（不再硬编码 OllamaLLMProvider）。
+    """
 
     async def test_run_evaluations_all_success(self):
         """所有问题评估成功 → 返回所有结果"""
@@ -527,14 +499,22 @@ class TestRunEvaluations:
             "question": "q", "ground_truth": "gt", "answer": "a",
             "contexts": ["c"], "faithfulness": 0.9,
         }
+        mock_llm = AsyncMock()
 
-        with patch.object(
-            evaluation_task, "_run_single_evaluation", new=AsyncMock(return_value=single_result)
+        with (
+            patch.object(
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch.object(
+                evaluation_task, "_run_single_evaluation", new=AsyncMock(return_value=single_result)
+            ),
         ):
             results = await _run_evaluations(kb_id=1, dataset=dataset)
 
         assert len(results) == 3
         assert all(r["faithfulness"] == 0.9 for r in results)
+        # finally 块: llm.close 被调用
+        mock_llm.close.assert_awaited_once()
 
     async def test_run_evaluations_exception_converted_to_error_entry(self):
         """单题评估抛异常 → 转为错误条目，不阻断整体"""
@@ -546,11 +526,17 @@ class TestRunEvaluations:
             "question": "q1", "ground_truth": "gt1", "answer": "a1",
             "contexts": ["c1"], "faithfulness": 0.8,
         }
+        mock_llm = AsyncMock()
 
-        with patch.object(
-            evaluation_task,
-            "_run_single_evaluation",
-            new=AsyncMock(side_effect=[RuntimeError("eval failed"), ok_result]),
+        with (
+            patch.object(
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch.object(
+                evaluation_task,
+                "_run_single_evaluation",
+                new=AsyncMock(side_effect=[RuntimeError("eval failed"), ok_result]),
+            ),
         ):
             results = await _run_evaluations(kb_id=1, dataset=dataset)
 
@@ -563,16 +549,26 @@ class TestRunEvaluations:
         # 第二题正常
         assert results[1]["answer"] == "a1"
         assert results[1]["faithfulness"] == 0.8
+        mock_llm.close.assert_awaited_once()
 
     async def test_run_evaluations_empty_dataset(self):
         """空数据集 → 返回空列表"""
-        with patch.object(
-            evaluation_task, "_run_single_evaluation", new=AsyncMock()
-        ) as mock_single:
+        mock_llm = AsyncMock()
+
+        with (
+            patch.object(
+                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
+            ),
+            patch.object(
+                evaluation_task, "_run_single_evaluation", new=AsyncMock()
+            ) as mock_single,
+        ):
             results = await _run_evaluations(kb_id=1, dataset=[])
 
         assert results == []
         mock_single.assert_not_awaited()
+        # 即使空数据集，_create_evaluation_llm 已在 finally 前调用，llm.close 仍被调用
+        mock_llm.close.assert_awaited_once()
 
 
 class TestRunSingleEvaluation:

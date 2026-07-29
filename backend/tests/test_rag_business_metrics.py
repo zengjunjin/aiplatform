@@ -23,13 +23,34 @@ from app.tasks import metrics_collector
 class TestRetrievalLatencyMetrics:
     @pytest.mark.asyncio
     async def test_retrieve_observes_all_latency_stages(self):
-        """retrieve() 完成后应 observe vector/bm25/rrf/total 四个 stage"""
+        """retrieve() 完成后应 observe vector/bm25/rrf/total 四个 stage
+
+        P1-9 修复后：vector/bm25 的计时挪进 _vector_search / _bm25_search_with_metrics
+        内部。测试中 mock _vector_search 时需让其 side_effect 也触发 observe(stage="vector")，
+        以模拟真实 _vector_search 的计时行为。
+        """
+        from app.rag import retriever as retriever_module
         from app.rag.retriever import HybridRetriever
 
         r = HybridRetriever()
         # mock 依赖方法，避免真实 IO
         r._get_chunks_for_bm25 = AsyncMock(return_value=[])
-        r._vector_search = AsyncMock(return_value=[{"chunk_id": 1, "content": "a", "score": 0.9}])
+
+        # mock _vector_search：side_effect 中触发 observe(stage="vector")，
+        # 模拟真实 _vector_search 内部的计时行为（P1-9 后计时在内部）
+        # 注意：通过模块属性访问 RAG_RETRIEVAL_LATENCY，确保 with patch 生效
+        async def fake_vector_search(query, kb_id, top_k, qdrant_filter=None):
+            import time as _time
+
+            _t0 = _time.perf_counter()
+            try:
+                return [{"chunk_id": 1, "content": "a", "score": 0.9}]
+            finally:
+                retriever_module.RAG_RETRIEVAL_LATENCY.labels(stage="vector").observe(
+                    _time.perf_counter() - _t0
+                )
+
+        r._vector_search = AsyncMock(side_effect=fake_vector_search)
 
         with (
             patch("app.rag.retriever.bm25_store") as mock_bm25,

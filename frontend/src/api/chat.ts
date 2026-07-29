@@ -67,7 +67,7 @@ function isSSEEvent(obj: unknown): obj is SSEEvent {
   }
   const evt = (obj as { event: unknown }).event;
   if (typeof evt !== 'string') return false;
-  return ['searching', 'delta', 'done', 'model', 'error', 'cancelled', 'warn'].includes(evt);
+  return ['searching', 'delta', 'done', 'model', 'error', 'cancelled', 'warn', 'restart'].includes(evt);
 }
 
 /**

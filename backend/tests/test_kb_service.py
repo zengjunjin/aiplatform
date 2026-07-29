@@ -200,8 +200,12 @@ class TestRemoveCollaborator:
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_remove_collaborator_owner_self_removal_noop(self):
-        """owner 不可自移除：owner 不在 collaborators 列表中，调用为 no-op。"""
+    async def test_remove_collaborator_owner_self_removal_rejected(self):
+        """owner 不可自移除：显式拒绝（与 add_collaborator 对称，防止误以为已踢出 owner）。
+
+        commit 7311a21 有意将 owner 自移除从 no-op 改为抛 ForbiddenError，
+        与 add_collaborator 的 "Cannot add owner as collaborator" 保持对称。
+        """
         kb = _make_kb(
             owner_id=10,
             collaborators=[{"user_id": 20, "permission": "write"}],
@@ -209,10 +213,10 @@ class TestRemoveCollaborator:
         db = _make_db_with_kb(kb)
 
         with patch("app.services.kb_service.log_audit", new=AsyncMock()):
-            # owner 调用 remove_collaborator(target=owner_id)
-            await kb_service.remove_collaborator(1, 10, 10, db)
+            with pytest.raises(ForbiddenError, match="Cannot remove owner as collaborator"):
+                await kb_service.remove_collaborator(1, 10, 10, db)
 
-        # 列表不变（owner 本来就不在列表中）
+        # 列表不变（拒绝操作不应修改数据）
         assert len(kb.collaborators) == 1
         assert kb.collaborators[0]["user_id"] == 20
 
@@ -606,8 +610,12 @@ class TestOwnerSelfManagementBoundary:
             await kb_service.add_collaborator(1, 20, 10, "admin", db)
 
     @pytest.mark.asyncio
-    async def test_owner_self_removal_is_noop(self):
-        """owner 调用 remove_collaborator(target=owner) → no-op（不在列表中）。"""
+    async def test_owner_self_removal_rejected(self):
+        """owner 调用 remove_collaborator(target=owner) → 显式抛 ForbiddenError。
+
+        与 add_collaborator 的 owner 拒绝对称（commit 7311a21 有意改之），
+        防止调用方误以为已踢出 owner。
+        """
         kb = _make_kb(
             owner_id=10,
             collaborators=[{"user_id": 20, "permission": "write"}],
@@ -615,7 +623,8 @@ class TestOwnerSelfManagementBoundary:
         db = _make_db_with_kb(kb)
 
         with patch("app.services.kb_service.log_audit", new=AsyncMock()):
-            await kb_service.remove_collaborator(1, 10, 10, db)
+            with pytest.raises(ForbiddenError, match="Cannot remove owner as collaborator"):
+                await kb_service.remove_collaborator(1, 10, 10, db)
 
-        # 列表不变（owner 不在 collaborators 中）
+        # 列表不变（拒绝操作不应修改数据）
         assert len(kb.collaborators) == 1

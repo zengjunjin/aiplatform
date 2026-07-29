@@ -134,16 +134,13 @@ class HybridRetriever:
         # 并行执行 vector + BM25 检索，缩短端到端延迟
         # 异常处理：_vector_search 内部已 try/except 返回 []；
         # bm25_store.search 异常向上传播（与原串行行为一致）
-        vec_t0 = time.perf_counter()
-        bm25_t0 = time.perf_counter()
+        # P1-9 修复：计时挪进各阶段内部，避免并行总时长被同时记到两个指标
         vec_results, bm25_results = await asyncio.gather(
             self._vector_search(query, kb_id, top_k * 2, qdrant_filter=qdrant_filter),
-            bm25_store.search(kb_id, query, top_k * 2, chunks=chunks_for_bm25),
+            self._bm25_search_with_metrics(kb_id, query, top_k * 2, chunks_for_bm25),
         )
         # BM25 内存过滤（filters 为空时直接返回原结果，无额外开销）
         bm25_results = self._filter_bm25_results(bm25_results, filters)
-        RAG_RETRIEVAL_LATENCY.labels(stage="vector").observe(time.perf_counter() - vec_t0)
-        RAG_RETRIEVAL_LATENCY.labels(stage="bm25").observe(time.perf_counter() - bm25_t0)
         rrf_t0 = time.perf_counter()
         if alpha is None:
             # 默认走 RRF 融合，保持向后兼容（避免破坏现有测试）
@@ -154,6 +151,16 @@ class HybridRetriever:
         RAG_RETRIEVAL_LATENCY.labels(stage="rrf").observe(time.perf_counter() - rrf_t0)
         RAG_RETRIEVAL_LATENCY.labels(stage="total").observe(time.perf_counter() - total_start)
         return merged[:top_k]
+
+    async def _bm25_search_with_metrics(
+        self, kb_id: int, query: str, top_k: int, chunks: list[dict] | None
+    ) -> list[dict]:
+        """BM25 检索 + 自身耗时计时（P1-9：避免与 vector 指标互相污染）。"""
+        bm25_t0 = time.perf_counter()
+        try:
+            return await bm25_store.search(kb_id, query, top_k, chunks=chunks)
+        finally:
+            RAG_RETRIEVAL_LATENCY.labels(stage="bm25").observe(time.perf_counter() - bm25_t0)
 
     async def _get_chunks_for_bm25(self, kb_id: int) -> list[dict]:
         """获取 KB 的所有 chunks 元数据（带缓存 + singleflight）。
@@ -354,6 +361,8 @@ class HybridRetriever:
     async def _vector_search(
         self, query: str, kb_id: int, top_k: int, qdrant_filter: Filter | None = None
     ) -> list[dict]:
+        # P1-9 修复：vector 阶段计时挪进此函数，避免与 bm25 指标互相污染
+        vec_t0 = time.perf_counter()
         try:
             # 获取 embedding 模型名（兼容 CachedEmbeddingProvider 包装）
             emb = self.embedding
@@ -404,12 +413,23 @@ class HybridRetriever:
             else:
                 logger.warning("vector search data error (degraded): {}", e)
             return []
+        finally:
+            RAG_RETRIEVAL_LATENCY.labels(stage="vector").observe(time.perf_counter() - vec_t0)
 
     async def add_chunks(self, kb_id: int, chunks: list[dict], vectors: list[list[float]]):
-        """Add chunks to Qdrant collection."""
+        """Add chunks to Qdrant collection.
+
+        P1-8 修复：chunks 与 vectors 长度不一致时显式报错，避免 zip 静默截断
+        导致部分 chunk 丢失写入 Qdrant（检索缺失且难以排查）。
+        """
+        if len(chunks) != len(vectors):
+            raise ValueError(
+                f"add_chunks length mismatch: chunks={len(chunks)} vectors={len(vectors)} "
+                f"(kb_id={kb_id}); refusing to silently truncate"
+            )
         await self._ensure_collection(kb_id)
         points = []
-        for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False)):
+        for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=True)):
             point_id = chunk.get("chunk_id") or chunk.get("id") or i + 1
             points.append(
                 PointStruct(

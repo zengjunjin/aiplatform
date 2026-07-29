@@ -112,9 +112,14 @@ class BM25Store:
             try:
                 await self._async_redis.ping()
             except Exception as e:
-                # 健康检查失败（如 event loop 已关闭/网络中断），重置连接后下次重新创建
+                # 健康检查失败（如 event loop 已关闭/网络中断），关闭旧连接后重置
                 logger.debug(f"BM25 async redis ping failed, resetting: {e}")
+                old = self._async_redis
                 self._async_redis = None
+                try:
+                    await old.aclose()
+                except Exception:
+                    pass
         if self._async_redis is None:
             try:
                 self._async_redis = redis_async_lib.from_url(
@@ -129,9 +134,10 @@ class BM25Store:
         return self._async_redis
 
     # ---------- building / tokenizing ----------
-    def _build(self, chunks: list[dict]) -> BM25Okapi:
+    def _build(self, chunks: list[dict]) -> tuple[BM25Okapi, list[list[str]]]:
+        """分词 + 构建 BM25Okapi 索引，返回 (bm25, tokenized) 供序列化复用。"""
         tokenized = [self._tokenize(c["content"]) for c in chunks]
-        return BM25Okapi(tokenized)
+        return BM25Okapi(tokenized), tokenized
 
     def _tokenize(self, text: str) -> list[str]:
         """分词 + 大小写归一化。
@@ -144,9 +150,11 @@ class BM25Store:
         tokens = list(jieba.cut(text.lower()))
         return tokens
 
-    def _serialize_index(self, chunks: list[dict]) -> str:
-        """将 tokenized 语料序列化为 JSON（替代 pickle, 避免 RCE 风险）。"""
-        tokenized = [self._tokenize(c["content"]) for c in chunks]
+    def _serialize_index(self, tokenized: list[list[str]]) -> str:
+        """将已分词的语料序列化为 JSON（替代 pickle, 避免 RCE 风险）。
+
+        注意：参数是已分词的 tokenized 列表，不再重复分词（P1-4 修复）。
+        """
         return json.dumps(tokenized, ensure_ascii=False)
 
     def _deserialize_index(self, raw: str | None) -> BM25Okapi | None:
@@ -327,7 +335,8 @@ class BM25Store:
     async def rebuild(self, kb_id: int, chunks: list[dict]):
         """全量重建 BM25 索引，并缓存 chunks 元数据。"""
         # CPU: jieba 分词 + BM25Okapi 构建，offload 到线程池避免阻塞事件循环
-        bm25 = await asyncio.to_thread(self._build, chunks)
+        # _build 返回 (bm25, tokenized)，序列化时复用 tokenized 避免重复分词（P1-4 修复）
+        bm25, tokenized = await asyncio.to_thread(self._build, chunks)
         async with self._get_async_lock():
             self._cache[kb_id] = bm25
             if len(self._cache) > self._cache_max:
@@ -336,8 +345,8 @@ class BM25Store:
         self._set_chunks_meta(kb_id, chunks)
         redis = await self._get_async_redis()
         if redis:
-            # CPU: jieba 分词 + JSON 序列化
-            serialized_index = await asyncio.to_thread(self._serialize_index, chunks)
+            # 复用 _build 已分词的 tokenized，不再重复分词
+            serialized_index = await asyncio.to_thread(self._serialize_index, tokenized)
             await redis.set(self._key(kb_id), serialized_index, ex=settings.BM25_INDEX_TTL)
             await redis.set(
                 self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=settings.BM25_INDEX_TTL
@@ -386,7 +395,7 @@ class BM25Store:
     # ---------- sync API (Celery tasks) ----------
     def rebuild_sync(self, kb_id: int, chunks: list[dict]):
         """全量重建 BM25 索引，并缓存 chunks 元数据（sync 版本）。"""
-        bm25 = self._build(chunks)
+        bm25, tokenized = self._build(chunks)
         self._cache[kb_id] = bm25
         if len(self._cache) > self._cache_max:
             self._cache.popitem(last=False)
@@ -394,7 +403,7 @@ class BM25Store:
         self._set_chunks_meta(kb_id, chunks)
         redis = self._get_sync_redis()
         if redis:
-            redis.set(self._key(kb_id), self._serialize_index(chunks), ex=settings.BM25_INDEX_TTL)
+            redis.set(self._key(kb_id), self._serialize_index(tokenized), ex=settings.BM25_INDEX_TTL)
             redis.set(
                 self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=settings.BM25_INDEX_TTL
             )
@@ -464,7 +473,7 @@ class BM25Store:
                         if len(self._cache) > self._cache_max:
                             self._cache.popitem(last=False)
             if bm25 is None and chunks:
-                bm25 = self._build(chunks)
+                bm25, tokenized = self._build(chunks)
                 self._cache[kb_id] = bm25
                 if len(self._cache) > self._cache_max:
                     self._cache.popitem(last=False)
@@ -472,7 +481,7 @@ class BM25Store:
                 self._set_chunks_meta(kb_id, chunks)
                 if redis:
                     redis.set(
-                        self._key(kb_id), self._serialize_index(chunks), ex=settings.BM25_INDEX_TTL
+                        self._key(kb_id), self._serialize_index(tokenized), ex=settings.BM25_INDEX_TTL
                     )
                     redis.set(
                         self._chunks_key(kb_id),

@@ -80,8 +80,8 @@ class TestGenerateTestDataset:
         ]
         db = _mock_db_kb_then_chunks(kb, chunks)
 
-        # Mock _generate_question_from_chunk 返回 dict (Task 1.5: question/question_type/difficulty)
-        async def fake_gen(content):
+        # P1-6: 新签名 generate_question_from_chunk(content, llm)，fake_gen 接收两参
+        async def fake_gen(content, llm):
             return {
                 "question": f"关于 {content[:6]} 的问题？",
                 "question_type": "factual",
@@ -94,12 +94,12 @@ class TestGenerateTestDataset:
         with (
             patch.object(
                 evaluation_service,
-                "_generate_question_from_chunk",
+                "generate_question_from_chunk",
                 new=AsyncMock(side_effect=fake_gen),
             ),
             patch.object(
                 evaluation_service,
-                "_generate_ground_truth",
+                "generate_ground_truth",
                 new=AsyncMock(return_value=fake_ground_truth),
             ),
             patch.object(
@@ -128,7 +128,8 @@ class TestGenerateTestDataset:
         db = _mock_db_kb_then_chunks(kb, chunks)
 
         # 第一个 chunk 返回 None（失败），第二个返回 dict，第三个抛异常
-        async def fake_gen(content):
+        # P1-6: 新签名 generate_question_from_chunk(content, llm)
+        async def fake_gen(content, llm):
             if "A" in content:
                 return None
             if "C" in content:
@@ -145,12 +146,12 @@ class TestGenerateTestDataset:
         with (
             patch.object(
                 evaluation_service,
-                "_generate_question_from_chunk",
+                "generate_question_from_chunk",
                 new=AsyncMock(side_effect=fake_gen),
             ),
             patch.object(
                 evaluation_service,
-                "_generate_ground_truth",
+                "generate_ground_truth",
                 new=AsyncMock(return_value=fake_ground_truth),
             ),
             patch.object(
@@ -170,7 +171,7 @@ class TestGenerateTestDataset:
         chunks = [_make_chunk(chunk_id=i, content=f"chunk {i}") for i in range(10)]
         db = _mock_db_kb_then_chunks(kb, chunks)
 
-        async def fake_gen(content):
+        async def fake_gen(content, llm):
             return {
                 "question": "问题" + content,
                 "question_type": "factual",
@@ -183,12 +184,12 @@ class TestGenerateTestDataset:
         with (
             patch.object(
                 evaluation_service,
-                "_generate_question_from_chunk",
+                "generate_question_from_chunk",
                 new=AsyncMock(side_effect=fake_gen),
             ) as mock_gen,
             patch.object(
                 evaluation_service,
-                "_generate_ground_truth",
+                "generate_ground_truth",
                 new=AsyncMock(return_value=fake_ground_truth),
             ),
             patch.object(
@@ -197,12 +198,12 @@ class TestGenerateTestDataset:
         ):
             result = await evaluation_service.generate_test_dataset(kb_id=1, db=db, num_questions=3)
 
-        # _generate_question_from_chunk 应只被调用 3 次
+        # generate_question_from_chunk 应只被调用 3 次
         assert mock_gen.await_count == 3
         assert len(result) == 3
 
 
-# ---------- _generate_question_from_chunk ----------
+# ---------- generate_question_from_chunk ----------
 
 
 class TestGenerateQuestionFromChunk:
@@ -211,8 +212,10 @@ class TestGenerateQuestionFromChunk:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="什么是 RAG？")
 
-        with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
-            result = await evaluation_service._generate_question_from_chunk("RAG 是检索增强生成。")
+        # P1-6: 新签名 generate_question_from_chunk(content, llm)，llm 由调用方传入
+        result = await evaluation_service.generate_question_from_chunk(
+            "RAG 是检索增强生成。", fake_llm
+        )
 
         # Task 1.5: 返回 dict，包含 question/question_type/difficulty
         # 非 JSON 输入走 parse_question_response 的 fallback 分支，标签默认 factual/medium
@@ -226,8 +229,7 @@ class TestGenerateQuestionFromChunk:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="问题：什么是 RAG？")
 
-        with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
-            result = await evaluation_service._generate_question_from_chunk("content")
+        result = await evaluation_service.generate_question_from_chunk("content", fake_llm)
 
         # Task 1.5: 返回 dict；sanitize_question 仍会去除 "问题：" 前缀
         assert result is not None
@@ -240,8 +242,7 @@ class TestGenerateQuestionFromChunk:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="ab")  # len < 5
 
-        with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
-            result = await evaluation_service._generate_question_from_chunk("content")
+        result = await evaluation_service.generate_question_from_chunk("content", fake_llm)
 
         assert result is None
 
@@ -250,8 +251,7 @@ class TestGenerateQuestionFromChunk:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
 
-        with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
-            result = await evaluation_service._generate_question_from_chunk("content")
+        result = await evaluation_service.generate_question_from_chunk("content", fake_llm)
 
         assert result is None
 
@@ -260,8 +260,7 @@ class TestGenerateQuestionFromChunk:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="")
 
-        with patch("app.models.factory.ModelFactory.create_llm", return_value=fake_llm):
-            result = await evaluation_service._generate_question_from_chunk("content")
+        result = await evaluation_service.generate_question_from_chunk("content", fake_llm)
 
         assert result is None
 
@@ -354,7 +353,7 @@ class TestGetRagAnswer:
         assert settings.RETRIEVAL_TOP_K == 10  # 默认值
 
 
-# ---------- _generate_ground_truth ----------
+# ---------- generate_ground_truth ----------
 
 
 class TestGenerateGroundTruth:
@@ -363,7 +362,8 @@ class TestGenerateGroundTruth:
         fake_llm = AsyncMock()
         fake_llm.chat = AsyncMock(return_value="  参考答案  ")
 
-        result = await evaluation_service._generate_ground_truth(
+        # P1-6: 公共函数 generate_ground_truth（原 _generate_ground_truth 改名）
+        result = await evaluation_service.generate_ground_truth(
             fake_llm, "什么是 RAG？", "KB 描述"
         )
 
@@ -376,7 +376,7 @@ class TestGenerateGroundTruth:
         fake_llm.chat = AsyncMock(return_value="   ")
 
         with pytest.raises(RuntimeError, match="empty ground_truth"):
-            await evaluation_service._generate_ground_truth(
+            await evaluation_service.generate_ground_truth(
                 fake_llm, "什么是 RAG？", "KB 描述"
             )
 
@@ -386,7 +386,7 @@ class TestGenerateGroundTruth:
         fake_llm.chat = AsyncMock(return_value=None)
 
         with pytest.raises(RuntimeError, match="empty ground_truth"):
-            await evaluation_service._generate_ground_truth(
+            await evaluation_service.generate_ground_truth(
                 fake_llm, "什么是 RAG？", "KB 描述"
             )
 

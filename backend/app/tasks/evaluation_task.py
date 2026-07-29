@@ -10,8 +10,6 @@ Task 11: run_evaluation_task 拆分为子函数（主函数 ≤ 50 行）
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
-
 from loguru import logger
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -236,23 +234,35 @@ async def _generate_dataset_async(
     修复（v0.4.0）：ground_truth 与 contexts 不再同源。
     - ground_truth：LLM 仅依据 question + kb_description 独立生成
     - contexts：retriever 对 question 重新检索得到
+
+    P1-6 修复：消除函数级重复与行为漂移。
+    - 删除本文件内 `_generate_ground_truth_async` / `_generate_question_async`，
+      改为调用 evaluation_service 层公共函数 `generate_question_from_chunk` /
+      `generate_ground_truth`（温度统一 0.3，消除原 0.7 漂移）。
+    - provider 仍由 task 创建独立实例（避免 ModelFactory 单例的 event loop 绑定问题），
+      但通过 settings.LLM_PROVIDER 选择（与 ModelFactory 行为对齐），不再硬编码 Ollama。
     """
-    from app.models.ollama_provider import OllamaLLMProvider
+    from app.config import settings
     from app.rag.retriever import retriever
+    from app.services.evaluation_service import (
+        generate_ground_truth,
+        generate_question_from_chunk,
+    )
 
     target_chunks = chunks
-    # Task 14.3: 创建独立 OllamaLLMProvider 实例（避免 ModelFactory 单例的 event loop 绑定问题）
-    llm = OllamaLLMProvider()
+    # 创建独立 LLM 实例（避免 ModelFactory 单例的 event loop 绑定问题）
+    # 按 settings.LLM_PROVIDER 选择 provider，与 ModelFactory 行为对齐
+    llm = _create_evaluation_llm()
     semaphore = asyncio.Semaphore(settings.EVAL_CONCURRENCY)
 
     async def _gen_with_sem(idx: int, chunk_content: str) -> dict | None:
         async with semaphore:
-            question_data = await _generate_question_async(chunk_content, llm)
+            question_data = await generate_question_from_chunk(chunk_content, llm)
             if not question_data:
                 return None
             question = question_data["question"]
             # 独立生成 ground_truth：LLM 不看 chunk 内容，避免与 contexts 同源
-            ground_truth = await _generate_ground_truth_async(llm, question, kb_description)
+            ground_truth = await generate_ground_truth(llm, question, kb_description)
             # contexts 由 retriever 对 question 重新检索得到
             try:
                 retrieved = await retriever.retrieve(
@@ -280,47 +290,20 @@ async def _generate_dataset_async(
     return [d for d in dataset if d is not None]
 
 
-async def _generate_ground_truth_async(
-    llm, question: str, kb_description: str
-) -> str:
-    """由 LLM 仅依据 question 和 kb_description 独立生成参考答案。
+def _create_evaluation_llm():
+    """P1-6: 按 settings.LLM_PROVIDER 创建独立 LLM 实例。
 
-    LLM 不看 chunk 内容，避免与 contexts 同源导致 RAGAS 指标循环验证、虚高。
-    生成失败时 raise，不 fallback 到 chunk.content。
+    与 ModelFactory.create_llm 行为对齐（不再硬编码 OllamaLLMProvider），
+    但返回独立实例避免单例的 event loop 绑定问题（Celery 每任务新建 loop）。
     """
-    prompt = (
-        "你是一个领域专家。请针对以下问题给出一个准确、简洁的参考答案。\n\n"
-        f"知识库描述：{kb_description}\n"
-        f"问题：{question}\n"
-        "参考答案："
-    )
-    response = await llm.chat(
-        [{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
-    if not response or not response.strip():
-        raise RuntimeError("LLM returned empty ground_truth")
-    return response.strip()
+    from app.config import settings
 
+    provider = settings.LLM_PROVIDER
+    if provider == "ollama":
+        from app.models.ollama_provider import OllamaLLMProvider
 
-async def _generate_question_async(chunk_content: str, llm: Any) -> dict | None:
-    """Generate a question from chunk content using async LLM Provider.
-
-    Task 14.3: 用 llm.chat() 替代 requests.post 同步调用。
-    Task 1.7: prompt 与清理逻辑改用 core/evaluation.py 公共函数。
-    Task 1.5: 返回 dict 包含 question/question_type/difficulty。
-    llm: BaseLLMProvider 实例（如 OllamaLLMProvider）。
-    """
-    from app.core.evaluation import build_question_prompt, parse_question_response
-
-    prompt = build_question_prompt(chunk_content)
-
-    try:
-        response = await llm.chat([{"role": "user", "content": prompt}], temperature=0.7)
-        return parse_question_response(response)
-    except Exception as e:
-        logger.warning(f"Failed to generate question: {e}")
-        return None
+        return OllamaLLMProvider()
+    raise ValueError(f"Unknown LLM provider: {provider}")
 
 
 # ---------------------------------------------------------------------------
@@ -336,10 +319,8 @@ async def _run_evaluations(kb_id: int, dataset: list[dict]) -> list[dict]:
 
     T8（P3）：创建单一 LLM 实例供所有评估任务复用，避免每次 get_rag_answer 都创建新连接。
     """
-    from app.models.ollama_provider import OllamaLLMProvider
-
-    # T8: 创建单一 LLM 实例供全流程复用
-    llm = OllamaLLMProvider()
+    # T8: 创建单一 LLM 实例供全流程复用（P1-6: 走 _create_evaluation_llm 与 ModelFactory 对齐）
+    llm = _create_evaluation_llm()
     logger.info("T8: Created shared LLM instance for evaluation pipeline")
 
     semaphore = asyncio.Semaphore(settings.EVAL_CONCURRENCY)

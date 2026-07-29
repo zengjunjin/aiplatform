@@ -63,7 +63,7 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
             )
         else:
             # Task 32: 非 AppException（内部异常）也记录审计，便于排查 5xx 类故障
-            logger.exception("login internal error for username=%s", req.username)
+            logger.exception("login internal error for username={}", req.username)
             await log_audit(
                 action="user.login",
                 user_id=None,
