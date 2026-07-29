@@ -1,7 +1,7 @@
 # ---- Builder stage ----
 # 编译期依赖：build-essential / libpq-dev / poetry 仅在此阶段存在，
 # 不会进入最终 runtime 镜像，显著减小镜像体积。
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -45,7 +45,7 @@ RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \
 
 # ---- Runtime stage ----
 # 仅包含运行时所需的系统库与 Python 运行时，不含编译工具链。
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # 运行时系统依赖：
 #   libpq5         - asyncpg / psycopg2 运行时所需
