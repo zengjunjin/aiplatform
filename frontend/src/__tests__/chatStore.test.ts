@@ -351,5 +351,24 @@ describe('chatStore', () => {
       const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
       expect(assistantMsg.content).toBe('result');
     });
+
+    it('should clear accumulated content when restart event arrives', async () => {
+      // P0-1: LLM fallback 时后端发 restart 事件，store 必须清空 accContent
+      // 事件序列: delta("abc") → restart → delta("xyz") → done
+      // 最终消息内容必须为 "xyz"，不得为 "abcxyz"（修复前 Bug 表现）
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { event: 'delta', content: 'abc' };
+        yield { event: 'restart' };
+        yield { event: 'delta', content: 'xyz' };
+        yield { event: 'done', references: [], message_id: 300 };
+      });
+
+      await useChatStore.getState().sendMessage(1, 'hi');
+
+      const msgs = useChatStore.getState().getMessagesBySession(1);
+      const assistantMsg = msgs.find((m: any) => m.role === 'assistant')!;
+      // restart 后只保留 fallback 输出 "xyz"，不含 primary 的 "abc"
+      expect(assistantMsg.content).toBe('xyz');
+    });
   });
 });

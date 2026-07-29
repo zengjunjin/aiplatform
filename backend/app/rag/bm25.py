@@ -269,7 +269,8 @@ class BM25Store:
 
         if chunks:
             # CPU: jieba 分词 + BM25Okapi 构建
-            bm25 = await asyncio.to_thread(self._build, chunks)
+            # _build 返回 (bm25, tokenized)，序列化时复用 tokenized 避免重复分词（P1-4 修复）
+            bm25, tokenized = await asyncio.to_thread(self._build, chunks)
             async with self._get_async_lock():
                 self._cache[kb_id] = bm25
                 if len(self._cache) > self._cache_max:
@@ -277,8 +278,8 @@ class BM25Store:
             # 同步写入内存级 chunks 元数据缓存（Redis fallback）
             self._set_chunks_meta(kb_id, chunks)
             if redis:
-                # CPU: jieba 分词 + JSON 序列化
-                serialized = await asyncio.to_thread(self._serialize_index, chunks)
+                # CPU: JSON 序列化（复用 _build 已分词的 tokenized）
+                serialized = await asyncio.to_thread(self._serialize_index, tokenized)
                 await redis.set(self._key(kb_id), serialized, ex=settings.BM25_INDEX_TTL)
                 await redis.set(
                     self._chunks_key(kb_id),

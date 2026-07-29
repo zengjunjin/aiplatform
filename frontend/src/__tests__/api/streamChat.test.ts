@@ -225,6 +225,34 @@ describe('streamChat', () => {
     expect(events[1].references).toHaveLength(1);
   });
 
+  it('should yield restart event (LLM fallback signal)', async () => {
+    // P0-1: restart 事件在 LLM fallback 时由后端发送，前端 isSSEEvent 白名单必须放行
+    // 事件序列: delta("partial") → restart → delta("restarted") → [DONE]
+    const sseData = [
+      'data: {"event":"delta","content":"partial"}\n',
+      'data: {"event":"restart"}\n',
+      'data: {"event":"delta","content":"restarted"}\n',
+      'data: [DONE]\n',
+    ];
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createMockStream(sseData),
+      text: () => Promise.resolve(''),
+    } as any);
+
+    const events: any[] = [];
+    for await (const evt of streamChat(1, 'hi')) {
+      events.push(evt);
+    }
+
+    // restart 事件应被 yield（isSSEEvent 白名单已包含 'restart'）
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ event: 'delta', content: 'partial' });
+    expect(events[1]).toEqual({ event: 'restart' });
+    expect(events[2]).toEqual({ event: 'delta', content: 'restarted' });
+  });
+
   it('should handle pre-aborted signal', async () => {
     const controller = new AbortController();
     controller.abort();
