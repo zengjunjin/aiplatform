@@ -10,14 +10,14 @@ packages = [{ include = "app" }]
 [tool.poetry.dependencies]
 python = "^3.12"
 
-fastapi = "^0.115.0"
-uvicorn = { version = "^0.30.0", extras = ["standard"] }
+fastapi = ">=0.115,<0.142"
+uvicorn = { version = ">=0.30,<0.53", extras = ["standard"] }
 # Task 4: ORJSONResponse 替代默认 JSONResponse，提升 JSON 序列化性能
 orjson = "^3.10.0"
 
 sqlalchemy = "^2.0.0"
 alembic = "^1.13.0"
-asyncpg = "^0.29.0"
+asyncpg = ">=0.29,<0.32"
 psycopg2-binary = "^2.9.0"
 
 pydantic = "^2.7.0"
@@ -42,7 +42,7 @@ jieba = "^0.42.1"
 sentence-transformers = "^3.0.0"
 
 # Blade 4 Step 2: torch CPU-only（reranker CPU 推理用，避免 nvidia CUDA 包膨胀镜像 ~5GB）
-torch = { version = "2.12.1+cpu", source = "pytorch-cpu" }
+torch = { version = "2.13.0+cpu", source = "pytorch-cpu" }
 
 slowapi = "^0.1.9"
 
@@ -54,9 +54,9 @@ pdfplumber = "^0.11.0"
 python-docx = "^1.1.0"
 markdown = "^3.6.0"
 
-tiktoken = "^0.7.0"
+tiktoken = ">=0.7,<0.14"
 email-validator = "^2.3.0"
-prometheus-client = "^0.21.0"
+prometheus-client = ">=0.21,<0.27"
 
 ragas = ">=0.2.0"
 datasets = ">=2.14"
@@ -81,7 +81,7 @@ pytest-xdist = "^3.5"
 pytest-rerunfailures = "^14.0"
 pytest-timeout = "^2.3"
 httpx = ">=0.28.0"
-ruff = "^0.6.0"
+ruff = ">=0.6,<0.17"
 websocket-client = "^1.7.0"
 mutmut = "^3.0"
 mypy = "^2.3.0"
