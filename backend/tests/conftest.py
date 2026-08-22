@@ -9,12 +9,17 @@ asyncio_mode = auto（见 pyproject.toml）会自动管理事件循环。
 # pyarrow 兼容性 patch：datasets 2.14.x 依赖 pa.PyExtensionType，
 # 但 pyarrow 15+ 移除了该属性（改用 pa.ExtensionType）。
 # 在 import datasets/ragas 之前 patch，避免 AttributeError 导致测试收集失败。
+# B1.5 加固：缺 pyarrow 的环境（如最小化 CI）下降级跳过 patch，
+# 不让 ImportError 阻断整个测试套件的收集（QA 曾被迫在仓库外放桩绕过）。
 import contextlib
 
-import pyarrow as _pa
+try:
+    import pyarrow as _pa
 
-if not hasattr(_pa, "PyExtensionType"):
-    _pa.PyExtensionType = _pa.ExtensionType
+    if not hasattr(_pa, "PyExtensionType"):
+        _pa.PyExtensionType = _pa.ExtensionType
+except ImportError:
+    _pa = None  # datasets/ragas 相关用例应自行 skip，conftest 不阻断收集
 
 # ragas 兼容性 patch：ragas 0.2.x 依赖 langchain_community.chat_models.vertexai.ChatVertexAI，
 # 但新版 langchain_community 已移除该模块（迁移到 langchain-google-vertexai 独立包）。
@@ -45,10 +50,8 @@ def pytest_configure(config):
     # test_evaluation_task.py 用 `if _stub not in sys.modules` 守卫，
     # 预导入后守卫不满足，就不会用 MagicMock 替换真实模块。
     # HybridRetriever.__init__ 是懒加载（仅初始化 None/空 dict），无连接副作用。
-    try:
+    with contextlib.suppress(Exception):  # 容器环境异常时降级，保留原 stub 行为
         import app.rag.retriever  # noqa: F401
-    except Exception:
-        pass  # 容器环境异常时降级，保留原 stub 行为
 
     try:
         import pytest_rerunfailures  # noqa: F401

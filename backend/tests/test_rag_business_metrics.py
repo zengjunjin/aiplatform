@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.api.v1 import chat as chat_module
+from app.services import chat_pipeline as chat_module
 from app.tasks import metrics_collector
 
 # ---------------------------------------------------------------------------
@@ -103,8 +103,8 @@ class TestLLMMetrics:
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
 
         with (
-            patch("app.api.v1.chat.RAG_LLM_TTFT") as mock_ttft,
-            patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
+            patch("app.services.chat_pipeline.RAG_LLM_TTFT") as mock_ttft,
+            patch("app.services.chat_pipeline.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
         ):
             events = []
             async for evt in chat_module._stream_llm_with_fallback(
@@ -143,8 +143,8 @@ class TestLLMMetrics:
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
 
         with (
-            patch("app.api.v1.chat.RAG_LLM_TTFT"),
-            patch("app.api.v1.chat.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
+            patch("app.services.chat_pipeline.RAG_LLM_TTFT"),
+            patch("app.services.chat_pipeline.RAG_LLM_TOKENS_PER_SECOND") as mock_tps,
         ):
             async for _ in chat_module._stream_llm_with_fallback(
                 messages=[{"role": "user", "content": "hi"}],
@@ -173,13 +173,18 @@ class TestE2ELatencyMetric:
         counter_cm.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch("app.api.v1.chat._save_user_msg", new=AsyncMock()),
-            patch("app.api.v1.chat.chat_service") as mock_chat_svc,
-            patch("app.api.v1.chat._retrieve_and_rerank", new=AsyncMock(return_value=([], []))),
-            patch("app.api.v1.chat._stream_llm_with_fallback") as mock_stream,
-            patch("app.api.v1.chat._save_assistant_msg", new=AsyncMock(return_value=100)),
-            patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e,
-            patch("app.api.v1.chat.settings"),
+            patch("app.services.chat_pipeline._save_user_msg", new=AsyncMock()),
+            patch("app.services.chat_pipeline.chat_service") as mock_chat_svc,
+            patch(
+                "app.services.chat_pipeline._retrieve_and_rerank",
+                new=AsyncMock(return_value=([], [])),
+            ),
+            patch("app.services.chat_pipeline._stream_llm_with_fallback") as mock_stream,
+            patch(
+                "app.services.chat_pipeline._save_assistant_msg", new=AsyncMock(return_value=100)
+            ),
+            patch("app.services.chat_pipeline.RAG_E2E_LATENCY") as mock_e2e,
+            patch("app.services.chat_pipeline.settings"),
         ):
             mock_chat_svc.get_history_context = AsyncMock(return_value=[])
             mock_chat_svc.is_cancelled = AsyncMock(return_value=False)
@@ -215,11 +220,12 @@ class TestE2ELatencyMetric:
 
         with (
             patch(
-                "app.api.v1.chat._save_user_msg", new=AsyncMock(side_effect=RuntimeError("boom"))
+                "app.services.chat_pipeline._save_user_msg",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
             ),
-            patch("app.api.v1.chat.chat_service") as mock_chat_svc,
-            patch("app.api.v1.chat.RAG_E2E_LATENCY") as mock_e2e,
-            patch("app.api.v1.chat.settings"),
+            patch("app.services.chat_pipeline.chat_service") as mock_chat_svc,
+            patch("app.services.chat_pipeline.RAG_E2E_LATENCY") as mock_e2e,
+            patch("app.services.chat_pipeline.settings"),
         ):
             mock_chat_svc.clear_cancel = AsyncMock()
 
