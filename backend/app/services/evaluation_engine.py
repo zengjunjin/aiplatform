@@ -48,9 +48,10 @@ def _get_ragas_clients():
     """
     global _ragas_llm, _ragas_embeddings
     if _ragas_llm is None or _ragas_embeddings is None:
-        from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
         from ragas.embeddings import LangchainEmbeddingsWrapper
         from ragas.llms import LangchainLLMWrapper
+
+        from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
 
         ollama_llm = ChatOllama(model=settings.LLM_MODEL, host=settings.OLLAMA_HOST)
         ollama_embeddings = OllamaEmbeddings(
@@ -291,16 +292,12 @@ async def _compute_ragas_metrics(
     """
     from datasets import Dataset
     from ragas import evaluate
-    from ragas.embeddings import LangchainEmbeddingsWrapper
-    from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import (
         answer_relevancy,
         context_precision,
         context_recall,
         faithfulness,
     )
-
-    from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
 
     # Build a single-row dataset
     ds = Dataset.from_dict(
@@ -319,6 +316,7 @@ async def _compute_ragas_metrics(
     # RAGAS 默认 max_workers=16 会让 Ollama 过载导致 TimeoutError，所有指标返回 None）。
     # max_workers=2 + OLLAMA_NUM_PARALLEL=4 平衡并行度与 Ollama 处理能力。
     from ragas.run_config import RunConfig
+
     run_config = RunConfig(timeout=600, max_retries=1, max_wait=30, max_workers=2)
 
     result = evaluate(
@@ -402,7 +400,7 @@ def aggregate_metrics(results: list[dict]) -> dict[str, dict[str, float]]:
         raw_values = [r.get(key) for r in results if r.get(key) is not None]
         values = cast(
             list[float],
-            [v for v in raw_values if isinstance(v, (int, float)) and not math.isnan(v)],
+            [v for v in raw_values if isinstance(v, int | float) and not math.isnan(v)],
         )
         if values:
             aggregated[key] = {

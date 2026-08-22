@@ -36,7 +36,9 @@ class ChatOllama(BaseChatModel):
         # H4: 长生命周期 client，复用连接池
         self._client = httpx.Client(
             timeout=httpx.Timeout(self.timeout, connect=10.0),
-            limits=httpx.Limits(max_connections=8, max_keepalive_connections=4, keepalive_expiry=30),
+            limits=httpx.Limits(
+                max_connections=8, max_keepalive_connections=4, keepalive_expiry=30
+            ),
         )
 
     @property
@@ -94,7 +96,9 @@ class OllamaEmbeddings(Embeddings):
         # H4: 长生命周期 client，复用连接池
         self._client = httpx.Client(
             timeout=httpx.Timeout(self.timeout, connect=10.0),
-            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2, keepalive_expiry=30),
+            limits=httpx.Limits(
+                max_connections=4, max_keepalive_connections=2, keepalive_expiry=30
+            ),
         )
 
     def _embed(self, texts: list[str]) -> list[list[float]]:

@@ -16,15 +16,16 @@
 
 H14 修复：_inject_auth_token 中的 JS `return` 顶层语句非法，用 IIFE 包裹。
 """
+
 import json
 import os
 import time
+
 import pytest
 import requests
 
 from tests.e2e.conftest import extract_data
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -66,6 +67,7 @@ def _inject_auth_token(cdp, admin_token):
 
 # ============ API 层 E2E（无需 CDP）============
 
+
 def test_dashboard_kb_api(base_url, admin_headers):
     """Dashboard 数据源 1：KB 列表 API
 
@@ -76,14 +78,16 @@ def test_dashboard_kb_api(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/knowledge-bases",
         params={"page": 1, "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     if r.status_code == 429:
         time.sleep(60)
         r = requests.get(
             f"{base_url}/knowledge-bases",
             params={"page": 1, "page_size": 5},
-            headers=admin_headers, timeout=10,
+            headers=admin_headers,
+            timeout=10,
         )
     assert r.status_code == 200, f"KB list failed: {r.text}"
     data = extract_data(r)
@@ -95,7 +99,8 @@ def test_dashboard_feedback_stats_api(base_url, admin_headers):
     """Dashboard 数据源 2：反馈统计 API"""
     r = requests.get(
         f"{base_url}/chat/feedback/stats",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Feedback stats failed: {r.text}"
     data = extract_data(r)
@@ -107,7 +112,8 @@ def test_dashboard_evaluation_runs_api(base_url, admin_headers):
     r = requests.get(
         f"{base_url}/evaluation/runs",
         params={"page": 1, "page_size": 5},
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"Evaluation runs failed: {r.text}"
     data = extract_data(r)
@@ -118,7 +124,8 @@ def test_dashboard_system_status_api(base_url, admin_headers):
     """Dashboard 数据源 4：系统状态 API（admin only）"""
     r = requests.get(
         f"{base_url}/system/status",
-        headers=admin_headers, timeout=15,
+        headers=admin_headers,
+        timeout=15,
     )
     assert r.status_code == 200, f"System status failed: {r.text}"
     data = extract_data(r)
@@ -130,12 +137,14 @@ def test_dashboard_system_status_forbidden_for_user(base_url, test_user_headers)
     """非 admin 不能访问 system status（Dashboard 安全约束）"""
     r = requests.get(
         f"{base_url}/system/status",
-        headers=test_user_headers, timeout=10,
+        headers=test_user_headers,
+        timeout=10,
     )
     assert r.status_code == 403, f"Expected 403, got {r.status_code}"
 
 
 # ============ CDP UI 层 E2E（需要 Tauri CDP）============
+
 
 @pytest.fixture(scope="module")
 def cdp(admin_token):

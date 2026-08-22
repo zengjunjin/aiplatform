@@ -84,7 +84,13 @@ class TestUpdateKb:
 class TestDeleteKb:
     @pytest.mark.asyncio
     async def test_delete_kb_calls_service(self, user, db, request_mock):
-        with patch("app.services.kb_service.delete_kb", new=AsyncMock()) as mock_del:
+        # 3184060 后路由删除前会调 get_collaborators（用于级联清缓存），
+        # 本地 db fixture 为裸 AsyncMock，其 scalar_one_or_none() 返回 coroutine，
+        # 未 mock 时在 _get_kb_with_perm 中触发 AttributeError。补 patch 返回空列表。
+        with (
+            patch("app.services.kb_service.get_collaborators", new=AsyncMock(return_value=[])),
+            patch("app.services.kb_service.delete_kb", new=AsyncMock()) as mock_del,
+        ):
             result = (
                 await kb.delete_kb(kb_id=10, request=request_mock, user=user, db=db)
             ).model_dump()

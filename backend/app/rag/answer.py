@@ -8,16 +8,13 @@
 
 依赖方向：services/evaluation_engine → rag/answer → rag/retriever / rag/prompt_builder / models/factory
 """
-from __future__ import annotations
 
-from loguru import logger
+from __future__ import annotations
 
 from app.config import settings
 
 
-async def get_rag_answer(
-    query: str, kb_id: int, llm=None
-) -> tuple[str, list[str]]:
+async def get_rag_answer(query: str, kb_id: int, llm=None) -> tuple[str, list[str]]:
     """Run the RAG pipeline to get an answer and retrieved contexts.
 
     修复（v0.4.0）：移除宽泛 except Exception，让异常向上抛出。
@@ -43,6 +40,7 @@ async def get_rag_answer(
     # Generate answer — 复用传入的 LLM 实例，或按需创建
     if llm is None:
         from app.models.factory import ModelFactory
+
         llm = ModelFactory.create_llm()
     answer = await llm.chat(
         [{"role": "user", "content": prompt}],

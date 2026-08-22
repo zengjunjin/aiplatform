@@ -10,12 +10,12 @@ chat._run_sse_stream 通过函数级 `from app.main import _active_sse_requests`
   main.py 从 sse_registry 导入 `all()` 做优雅关闭，
   chat.py 从 sse_registry 导入 `register/discard` 做生命周期管理。
 """
+
 from __future__ import annotations
 
 import asyncio
-from typing import Set
 
-_active_sse_requests: Set[asyncio.Task] = set()
+_active_sse_requests: set[asyncio.Task] = set()
 
 
 def register(task: asyncio.Task) -> None:
@@ -28,6 +28,6 @@ def discard(task: asyncio.Task) -> None:
     _active_sse_requests.discard(task)
 
 
-def all() -> Set[asyncio.Task]:
+def all() -> set[asyncio.Task]:
     """返回当前全部活跃 SSE Task 的引用副本（防止 shutdown 迭代期间并发修改）。"""
     return set(_active_sse_requests)

@@ -81,9 +81,9 @@ class TestTextChunker:
         assert len(chunks) > 1
         # 非末块应在句号边界结束
         for chunk in chunks[:-1]:
-            assert chunk["content"][-1] == ".", (
-                f"Chunk does not end at period: ...{chunk['content'][-15:]!r}"
-            )
+            assert (
+                chunk["content"][-1] == "."
+            ), f"Chunk does not end at period: ...{chunk['content'][-15:]!r}"
 
     def test_url_not_cut_at_space_boundary(self):
         """URL 文本不被切断（通过空格边界优先于 target 截断）"""
@@ -112,6 +112,6 @@ class TestTextChunker:
         assert len(chunks) > 1
         # 非末块应在中文/英文句号边界结束
         for chunk in chunks[:-1]:
-            assert chunk["content"][-1] in "。.", (
-                f"Chunk does not end at sentence boundary: ...{chunk['content'][-15:]!r}"
-            )
+            assert (
+                chunk["content"][-1] in "。."
+            ), f"Chunk does not end at sentence boundary: ...{chunk['content'][-15:]!r}"

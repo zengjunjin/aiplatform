@@ -262,9 +262,7 @@ class TestEventBusHandlerTimeout:
         async def _listen_gen():
             yield {
                 "type": "message",
-                "data": json.dumps(
-                    {"event_type": "test.timeout", "payload": {"x": 1}}
-                ),
+                "data": json.dumps({"event_type": "test.timeout", "payload": {"x": 1}}),
             }
             raise asyncio.CancelledError()
 
@@ -286,9 +284,7 @@ class TestEventBusHandlerTimeout:
         # 快 handler 仍正常执行
         assert ("fast", {"x": 1}) in call_log
         # 顺序：slow_start 在 fast 之前
-        assert call_log.index(("slow_start", {"x": 1})) < call_log.index(
-            ("fast", {"x": 1})
-        )
+        assert call_log.index(("slow_start", {"x": 1})) < call_log.index(("fast", {"x": 1}))
 
 
 # ---------- P1-BE-09: 跨事件循环 publish fallback ----------

@@ -542,7 +542,9 @@ class TestMemoryBlacklistHelpers:
 
     async def test_memory_blacklist_add_and_contains(self):
         """加入后能查到。"""
-        await auth_service._memory_blacklist_add("access", "tok1", datetime.now(UTC).timestamp() + 100)
+        await auth_service._memory_blacklist_add(
+            "access", "tok1", datetime.now(UTC).timestamp() + 100
+        )
         assert await auth_service._memory_blacklist_contains("access", "tok1") is True
 
     async def test_memory_blacklist_not_contains(self):

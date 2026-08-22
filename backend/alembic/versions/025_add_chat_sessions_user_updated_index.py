@@ -37,7 +37,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP INDEX IF EXISTS ix_chat_sessions_user_id_updated_at_desc"
-    )
+    op.execute("DROP INDEX IF EXISTS ix_chat_sessions_user_id_updated_at_desc")
     op.drop_index("ix_chat_sessions_user_id_updated_at", table_name="chat_sessions")

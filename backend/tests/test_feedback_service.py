@@ -1,4 +1,4 @@
-﻿"""Tests for app.services.feedback_service
+"""Tests for app.services.feedback_service
 
 使用 mock AsyncSession 测试业务逻辑，不依赖真实 PostgreSQL。
 """

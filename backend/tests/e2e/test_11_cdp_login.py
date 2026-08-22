@@ -65,9 +65,7 @@ def test_login_flow(cdp):
     INITIAL_ADMIN_PASSWORD 不匹配导致 401 登录失败）。
     """
     admin_password = (
-        os.getenv("E2E_ADMIN_PASSWORD")
-        or os.getenv("INITIAL_ADMIN_PASSWORD")
-        or "admin123"
+        os.getenv("E2E_ADMIN_PASSWORD") or os.getenv("INITIAL_ADMIN_PASSWORD") or "admin123"
     )
     cdp.navigate(TAURI_HOME)
     wait_for_dom_ready(cdp, timeout=10)

@@ -11,7 +11,6 @@ from app.core.exceptions import NotFoundError
 from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
-from app.rag.answer import get_rag_answer
 from app.rag.retriever import retriever
 from app.services import kb_service
 

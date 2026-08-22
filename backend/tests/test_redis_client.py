@@ -29,9 +29,7 @@ class TestInitRedis:
     def test_init_redis_creates_client_and_returns_it(self):
         """init_redis 调用 redis.from_url 并把结果赋给 redis_client，同时返回它。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             result = redis_module.init_redis()
 
         assert result is fake_redis
@@ -49,9 +47,7 @@ class TestInitRedis:
     def test_init_redis_uses_settings_redis_url(self):
         """验证 from_url 的第一个位置参数来自 settings.redis_url。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         args, _ = mock_from_url.call_args
         assert args[0] == settings.redis_url
@@ -65,9 +61,7 @@ class TestRedisSocketTimeout:
     def test_socket_timeout_is_set(self):
         """from_url 调用应包含 socket_timeout=5（秒）。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         _, kwargs = mock_from_url.call_args
         assert kwargs.get("socket_timeout") == 5
@@ -75,9 +69,7 @@ class TestRedisSocketTimeout:
     def test_socket_connect_timeout_is_set(self):
         """from_url 调用应包含 socket_connect_timeout=2（秒）。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         _, kwargs = mock_from_url.call_args
         assert kwargs.get("socket_connect_timeout") == 2
@@ -85,9 +77,7 @@ class TestRedisSocketTimeout:
     def test_health_check_interval_is_set(self):
         """from_url 调用应包含 health_check_interval=30（秒）。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         _, kwargs = mock_from_url.call_args
         assert kwargs.get("health_check_interval") == 30
@@ -95,9 +85,7 @@ class TestRedisSocketTimeout:
     def test_retry_on_timeout_is_enabled(self):
         """from_url 调用应包含 retry_on_timeout=True。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         _, kwargs = mock_from_url.call_args
         assert kwargs.get("retry_on_timeout") is True
@@ -105,9 +93,7 @@ class TestRedisSocketTimeout:
     def test_all_timeout_kwargs_present(self):
         """综合验证：所有 4 个超时/健康检查参数都被正确传入。"""
         fake_redis = MagicMock()
-        with patch(
-            "app.redis_client.redis.from_url", return_value=fake_redis
-        ) as mock_from_url:
+        with patch("app.redis_client.redis.from_url", return_value=fake_redis) as mock_from_url:
             redis_module.init_redis()
         _, kwargs = mock_from_url.call_args
         assert kwargs == {
@@ -195,9 +181,7 @@ class TestSetSummaryCache:
 
         await redis_module.set_summary_cache(5, "my summary", ttl=120)
 
-        fake_redis.set.assert_awaited_once_with(
-            "chat:session:5:summary", "my summary", ex=120
-        )
+        fake_redis.set.assert_awaited_once_with("chat:session:5:summary", "my summary", ex=120)
 
     @pytest.mark.asyncio
     async def test_uses_default_ttl_from_settings(self):

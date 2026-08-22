@@ -10,15 +10,16 @@ Task 11: run_evaluation_task 拆分为子函数（主函数 ≤ 50 行）
 
 import asyncio
 from datetime import UTC, datetime
+
 from loguru import logger
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.evaluation_engine import aggregate_metrics
 from app.db.document_chunk import DocumentChunk
 from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
 from app.db.sync_session import get_sync_session
+from app.services.evaluation_engine import aggregate_metrics
 from app.tasks.celery_app import celery_app
 
 
@@ -55,7 +56,7 @@ def run_evaluation_task(self, run_id: int):
                 f"Evaluation run {run_id} failed (attempt {self.request.retries + 1}), "
                 f"retrying in 60s: {exc}"
             )
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc) from exc
         # 重试次数用尽，标记 FAILED
         loop.run_until_complete(
             _mark_run_failed(run_id, f"评估失败（重试 {self.request.retries} 次后仍失败）: {exc}")
@@ -107,7 +108,7 @@ async def _run_evaluation_async(run_id: int) -> dict:
 
         results = await _run_evaluations(kb_id, dataset)
         return await _compute_and_persist_metrics(session, run_id, results)
-    except Exception as exc:
+    except Exception:
         logger.exception(f"Evaluation run {run_id} failed")
         if session.is_active:
             try:
@@ -222,9 +223,7 @@ async def _prepare_dataset(session: Session, run: EvaluationRun) -> list[dict]:
     return await _generate_dataset_async(chunks, kb_description, run.knowledge_base_id)
 
 
-async def _generate_dataset_async(
-    chunks: list, kb_description: str, kb_id: int
-) -> list[dict]:
+async def _generate_dataset_async(chunks: list, kb_description: str, kb_id: int) -> list[dict]:
     """Async dataset generation: 并发用 LLM Provider 生成问题。
 
     Task 14.3: 移除 requests.post 同步调用，改用 OllamaLLMProvider.chat() 异步调用。

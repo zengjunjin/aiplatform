@@ -37,9 +37,7 @@ class Reranker:
         if not provider.is_loaded():
             try:
                 # 带超时地等待模型加载，避免长时间阻塞 chat 流
-                await asyncio.wait_for(
-                    provider.ensure_loaded(), timeout=self.LOAD_WAIT_TIMEOUT
-                )
+                await asyncio.wait_for(provider.ensure_loaded(), timeout=self.LOAD_WAIT_TIMEOUT)
             except TimeoutError:
                 logger.warning(
                     f"Reranker model still loading after {self.LOAD_WAIT_TIMEOUT}s, "
@@ -47,7 +45,7 @@ class Reranker:
                 )
                 # 返回原 chunks（截断到 top_k），不重排序
                 return chunks[:top_k]
-            except Exception as e:
+            except Exception:
                 # 加载失败，抛出由上层 fallback 处理
                 raise
 

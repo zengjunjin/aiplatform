@@ -78,7 +78,9 @@ def run_feedback_analysis(self) -> dict:
                 try:
                     mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=UTC)
                     if mtime > cutoff:
-                        logger.info(f"Recent report exists: {filepath}, skipping (idempotent fallback)")
+                        logger.info(
+                            f"Recent report exists: {filepath}, skipping (idempotent fallback)"
+                        )
                         return {"status": "skipped", "reason": "recent_report_exists_file_fallback"}
                 except OSError as oe:
                     logger.warning(f"Failed to stat {filepath}: {oe}")

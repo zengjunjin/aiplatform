@@ -347,9 +347,7 @@ class PrometheusMiddleware:
         finally:
             # 无论成功或异常都记录指标
             if status_code is not None:
-                REQUEST_TOTAL.labels(
-                    method=method, path=metric_path, status_code=status_code
-                ).inc()
+                REQUEST_TOTAL.labels(method=method, path=metric_path, status_code=status_code).inc()
                 latency = time.time() - start_time
                 REQUEST_LATENCY.labels(method=method, path=metric_path).observe(latency)
             REQUEST_IN_PROGRESS.dec()

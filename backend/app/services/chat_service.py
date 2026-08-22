@@ -1,7 +1,8 @@
 import json
 
 from loguru import logger
-from sqlalchemy import func, select, update as sa_update
+from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings

@@ -24,7 +24,6 @@ from tests.e2e.helpers.cdp_client import CdpClient
 from tests.e2e.helpers.waiters import (
     wait_for_dom_ready,
     wait_for_element,
-    wait_for_url_change,
 )
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))

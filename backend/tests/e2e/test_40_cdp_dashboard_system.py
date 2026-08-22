@@ -40,9 +40,7 @@ def logged_in_cdp(base_url):
     H14 修复：增加 INITIAL_ADMIN_PASSWORD 回退，与 conftest.py 保持一致。
     """
     admin_password = (
-        os.getenv("E2E_ADMIN_PASSWORD")
-        or os.getenv("INITIAL_ADMIN_PASSWORD")
-        or "admin123"
+        os.getenv("E2E_ADMIN_PASSWORD") or os.getenv("INITIAL_ADMIN_PASSWORD") or "admin123"
     )
     r = requests.post(
         f"{base_url}/auth/login",

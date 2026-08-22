@@ -1021,7 +1021,7 @@ class TestGetCachedQueryEmbedding:
         r._embedding = fake_embedding
 
         fake_redis = AsyncMock()
-        fake_redis.get = AsyncMock(return_value='[0.5, 0.6]')
+        fake_redis.get = AsyncMock(return_value="[0.5, 0.6]")
 
         with patch("app.rag.retriever.get_redis", return_value=fake_redis):
             result = await r._get_cached_query_embedding("query", "model")
@@ -1189,9 +1189,7 @@ class TestVectorSearchConnectionErrors:
 
         with (
             patch.object(r, "_ensure_collection"),
-            patch.object(
-                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
-            ),
+            patch.object(r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])),
             patch("app.rag.retriever.logger") as mock_logger,
         ):
             result = await r._vector_search("query", kb_id=1, top_k=5)
@@ -1209,9 +1207,7 @@ class TestVectorSearchConnectionErrors:
 
         with (
             patch.object(r, "_ensure_collection"),
-            patch.object(
-                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
-            ),
+            patch.object(r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])),
             patch("app.rag.retriever.logger") as mock_logger,
         ):
             result = await r._vector_search("query", kb_id=1, top_k=5)
@@ -1227,16 +1223,12 @@ class TestVectorSearchConnectionErrors:
         r = HybridRetriever()
         r._embedding = MagicMock()
         fake_qdrant = MagicMock()
-        fake_qdrant.query_points = MagicMock(
-            side_effect=ResponseHandlingException("timeout")
-        )
+        fake_qdrant.query_points = MagicMock(side_effect=ResponseHandlingException("timeout"))
         r._qdrant_client = fake_qdrant
 
         with (
             patch.object(r, "_ensure_collection"),
-            patch.object(
-                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
-            ),
+            patch.object(r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])),
             patch("app.rag.retriever.logger") as mock_logger,
         ):
             result = await r._vector_search("query", kb_id=1, top_k=5)
@@ -1255,9 +1247,7 @@ class TestVectorSearchConnectionErrors:
 
         with (
             patch.object(r, "_ensure_collection"),
-            patch.object(
-                r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])
-            ),
+            patch.object(r, "_get_cached_query_embedding", AsyncMock(return_value=[0.1, 0.2])),
             patch("app.rag.retriever.logger") as mock_logger,
         ):
             result = await r._vector_search("query", kb_id=1, top_k=5)

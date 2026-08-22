@@ -231,7 +231,7 @@ def test_filter_by_rating(logged_in_cdp, feedback_data, kb_with_doc):
     # H14 修复：使用 CDP 真实鼠标点击 + 重试机制打开 KB 筛选 Select 下拉
     # 点击第一个 Select（KB 筛选），通过 getBoundingClientRect 获取精确坐标
     dropdown_opened = False
-    for attempt in range(3):
+    for _attempt in range(3):
         coords = cdp.evaluate("""
             (function() {
                 const selects = document.querySelectorAll('.ant-select-selector');
@@ -345,7 +345,7 @@ def test_filter_by_type(logged_in_cdp):
     # H14 修复：使用 CDP 真实鼠标点击 + 重试机制打开类型筛选 Select 下拉
     # 点击最后一个 Select（类型筛选），通过 JS 定位最后一个 .ant-select-selector 的坐标
     dropdown_opened = False
-    for attempt in range(3):
+    for _attempt in range(3):
         # 获取最后一个 Select 的坐标并用 CDP 真实点击
         coords = cdp.evaluate("""
             (function() {

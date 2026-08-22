@@ -163,9 +163,7 @@ async def lifespan(app: FastAPI):
             llm = await router.select(None)
             logger.info(f"Warming up LLM model: {llm.model_name}")
             # 短 prompt 预热，仅触发模型加载
-            async for _ in llm.chat_stream(
-                [{"role": "user", "content": "hi"}], temperature=0.1
-            ):
+            async for _ in llm.chat_stream([{"role": "user", "content": "hi"}], temperature=0.1):
                 break  # 只取第一个 token 即可确认模型已加载
             logger.info(f"LLM warmup done: {llm.model_name}")
         except Exception as exc:
@@ -206,9 +204,7 @@ async def lifespan(app: FastAPI):
         # Task 32: 优雅关闭 — 通过 sse_registry 获取活跃 SSE 请求副本，等待完成或超时取消
         active_sse = sse_registry.all()
         if active_sse:
-            logger.info(
-                f"Graceful shutdown: waiting for {len(active_sse)} active SSE requests"
-            )
+            logger.info(f"Graceful shutdown: waiting for {len(active_sse)} active SSE requests")
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*active_sse, return_exceptions=True),

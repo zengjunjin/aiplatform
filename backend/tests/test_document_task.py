@@ -131,6 +131,7 @@ class TestEmbedTextsSync:
         """空文本列表 → 空向量列表"""
         # _embed_texts_sync 已合并到 _embed_and_store，直接测试 _embed_texts_async
         import asyncio
+
         result = asyncio.new_event_loop().run_until_complete(document_task._embed_texts_async([]))
         assert result == []
 

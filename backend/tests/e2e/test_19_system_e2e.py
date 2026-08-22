@@ -17,15 +17,16 @@ H14 修复：
   /auth/login 限流；原 UI 登录路径会让 admin_token 在多文件场景下被拉黑或触发 429。
 - 测试主页面的 .ant-card 断言改为同时支持 Card/Skeleton/Tag（与 SystemPage 实际渲染一致）。
 """
+
 import json
 import os
 import time
+
 import pytest
 import requests
 
 from tests.e2e.conftest import extract_data
 from tests.e2e.helpers.cdp_client import CdpClient
-from tests.e2e.helpers.waiters import wait_for_element
 
 CDP_PORT = int(os.getenv("CDP_PORT", "9223"))
 TAURI_HOME = "http://tauri.localhost/"
@@ -57,11 +58,13 @@ def _inject_auth_token(cdp, admin_token):
 
 # ============ API 层 E2E（无需 CDP）============
 
+
 def test_system_status_returns_all_components(base_url, admin_headers):
     """SystemPage 数据源：/system/status 应返回所有 5 个组件状态"""
     r = requests.get(
         f"{base_url}/system/status",
-        headers=admin_headers, timeout=15,
+        headers=admin_headers,
+        timeout=15,
     )
     assert r.status_code == 200, f"System status failed: {r.text}"
     data = extract_data(r)
@@ -73,7 +76,8 @@ def test_system_models_list(base_url, admin_headers):
     """SystemPage 数据源：/system/models 返回模型列表"""
     r = requests.get(
         f"{base_url}/system/models",
-        headers=admin_headers, timeout=10,
+        headers=admin_headers,
+        timeout=10,
     )
     assert r.status_code == 200, f"List models failed: {r.text}"
     data = extract_data(r)
@@ -85,7 +89,8 @@ def test_system_status_forbidden(base_url, test_user_headers):
     """非 admin 不能访问 system status"""
     r = requests.get(
         f"{base_url}/system/status",
-        headers=test_user_headers, timeout=10,
+        headers=test_user_headers,
+        timeout=10,
     )
     assert r.status_code == 403, f"Expected 403, got {r.status_code}"
 
@@ -95,11 +100,11 @@ def test_metrics_admin_ok(base_url, admin_headers):
     metrics_url = base_url.replace("/api/v1", "") + "/metrics"
     r = requests.get(metrics_url, headers=admin_headers, timeout=10)
     assert r.status_code == 200, f"Metrics failed: {r.text}"
-    assert "# HELP" in r.text or "# TYPE" in r.text, \
-        "Response is not Prometheus format"
+    assert "# HELP" in r.text or "# TYPE" in r.text, "Response is not Prometheus format"
 
 
 # ============ CDP UI 层 E2E（需要 Tauri CDP）============
+
 
 @pytest.fixture(scope="module")
 def cdp(admin_token):
@@ -153,7 +158,7 @@ def test_system_page_renders(cdp):
     _ensure_logged_in(cdp)
     cdp.evaluate("window.location.hash = '#/system'")
     time.sleep(3)
-    url = cdp.evaluate("window.location.href") or ""
+    cdp.evaluate("window.location.href") or ""
     # 非 admin 用户会被重定向或显示 403；admin 应进入 /system
     has_content = cdp.evaluate("""
         (function() {

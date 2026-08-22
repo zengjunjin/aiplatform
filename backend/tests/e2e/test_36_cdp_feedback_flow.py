@@ -72,6 +72,7 @@ def test_feedback_stats_overview(logged_in_cdp):
     # overlay 可能延迟第 4 个卡片的渲染。先等待 Spin 消失，再计数。
     # 容忍 >= 3（部分场景 stats API 延迟导致第 4 个卡片未及时渲染）。
     import time
+
     time.sleep(2)  # 等待 stats API 响应 + Spin 关闭
     stats_count = cdp.evaluate("""
         (function() {
@@ -94,7 +95,7 @@ def test_filter_by_kb(logged_in_cdp):
     cdp.evaluate("document.body.click()")  # 关闭残留 UI
     time.sleep(0.5)
     dropdown_opened = False
-    for attempt in range(3):
+    for _attempt in range(3):
         try:
             cdp.click_element(".ant-select-selector")
         except Exception:
@@ -160,7 +161,7 @@ def test_filter_by_type(logged_in_cdp):
     cdp.evaluate("document.body.click()")  # 关闭残留 UI
     time.sleep(0.5)
     dropdown_opened = False
-    for attempt in range(3):
+    for _attempt in range(3):
         box = cdp.evaluate("""
             (function() {
                 const selects = document.querySelectorAll('.ant-select-selector');
@@ -171,7 +172,7 @@ def test_filter_by_type(logged_in_cdp):
             })();
         """)
         if box:
-            cdp.click(int(box.get('x', 0)), int(box.get('y', 0)))
+            cdp.click(int(box.get("x", 0)), int(box.get("y", 0)))
         else:
             cdp.evaluate("""
                 (function() {

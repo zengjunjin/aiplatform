@@ -199,7 +199,10 @@ class TestRunEvaluationConcurrency:
         fake_metrics = {"faithfulness": 0.5}
 
         with (
-            patch("app.services.evaluation_engine.get_rag_answer", new=AsyncMock(return_value=("a", ["c"]))),
+            patch(
+                "app.services.evaluation_engine.get_rag_answer",
+                new=AsyncMock(return_value=("a", ["c"])),
+            ),
             patch(
                 "app.services.evaluation_engine._compute_ragas_metrics",
                 new=AsyncMock(return_value=fake_metrics),

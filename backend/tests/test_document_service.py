@@ -306,7 +306,7 @@ class TestOnKbDeleted:
     async def test_kb_id_none_returns_early(self):
         with (
             patch("app.rag.retriever.retriever") as mock_retriever,
-            patch("app.rag.bm25.bm25_store") as mock_bm25,
+            patch("app.rag.bm25.bm25_store"),
         ):
             await document_service._on_kb_deleted({"kb_id": None})
 
@@ -387,9 +387,7 @@ class TestOnKbDeleted:
 class TestRegisterEventHandlers:
     def test_registers_kb_deleted_handler(self):
         """注册 KB_DELETED 事件订阅者。"""
-        with patch.object(
-            document_service.EventBus, "subscribe_sync"
-        ) as mock_subscribe:
+        with patch.object(document_service.EventBus, "subscribe_sync") as mock_subscribe:
             document_service.register_event_handlers()
 
         mock_subscribe.assert_called_once()
@@ -452,9 +450,7 @@ class TestUploadDocumentCeleryDispatchFailure:
                 "app.tasks.document_task.parse_document_task.delay",
                 side_effect=RuntimeError("celery down"),
             ),
-            patch(
-                "app.db.knowledge_base.KnowledgeBase"
-            ),  # 防止 KB doc_count+1 触发实际查询
+            patch("app.db.knowledge_base.KnowledgeBase"),  # 防止 KB doc_count+1 触发实际查询
         ):
             with pytest.raises(RuntimeError, match="celery down"):
                 await document_service.upload_document(file, 1, user, db)
@@ -583,12 +579,8 @@ class TestListDocuments:
         db.execute = AsyncMock(return_value=result_mock)
         db.scalar = AsyncMock(return_value=1)
 
-        with patch(
-            "app.services.kb_service.get_kb_for_read", new=AsyncMock()
-        ) as mock_read:
-            docs_ret, total = await document_service.list_documents(
-                user_id=1, db=db, kb_id=5
-            )
+        with patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()) as mock_read:
+            docs_ret, total = await document_service.list_documents(user_id=1, db=db, kb_id=5)
 
         mock_read.assert_awaited_once_with(5, 1, db)
         assert docs_ret == docs
@@ -621,9 +613,7 @@ class TestGetDocument:
         result_mock.scalar_one_or_none.return_value = doc
         db.execute = AsyncMock(return_value=result_mock)
 
-        with patch(
-            "app.services.kb_service.get_kb_for_read", new=AsyncMock()
-        ) as mock_read:
+        with patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()) as mock_read:
             got = await document_service.get_document(10, 1, db)
 
         assert got is doc
@@ -652,9 +642,7 @@ class TestGetDocumentForWrite:
         result_mock.scalar_one_or_none.return_value = doc
         db.execute = AsyncMock(return_value=result_mock)
 
-        with patch(
-            "app.services.kb_service.get_kb_for_write", new=AsyncMock()
-        ) as mock_write:
+        with patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()) as mock_write:
             got = await document_service.get_document_for_write(10, 1, db)
 
         assert got is doc
@@ -746,14 +734,10 @@ class TestDeleteDocument:
 
         with (
             patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
-            patch(
-                "app.services.document_service.log_audit", new=AsyncMock()
-            ) as mock_audit,
+            patch("app.services.document_service.log_audit", new=AsyncMock()) as mock_audit,
             patch("app.rag.retriever.retriever") as mock_retriever,
             patch("app.rag.bm25.bm25_store", new=AsyncMock()) as mock_bm25,
-            patch(
-                "app.services.document_service.get_kb_dir"
-            ) as mock_get_kb_dir,
+            patch("app.services.document_service.get_kb_dir") as mock_get_kb_dir,
         ):
             mock_get_kb_dir.return_value.iterdir.return_value = []
             await document_service.delete_document(10, 1, db)
@@ -795,13 +779,9 @@ class TestDeleteDocument:
         with (
             patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
             patch("app.services.document_service.log_audit", new=AsyncMock()),
-            patch(
-                "app.rag.retriever.retriever"
-            ) as mock_retriever_mod,
+            patch("app.rag.retriever.retriever") as mock_retriever_mod,
             patch("app.rag.bm25.bm25_store", new=AsyncMock()) as mock_bm25,
-            patch(
-                "app.services.document_service.get_kb_dir"
-            ) as mock_get_kb_dir,
+            patch("app.services.document_service.get_kb_dir") as mock_get_kb_dir,
         ):
             mock_retriever_mod.delete_by_doc_id.side_effect = RuntimeError("qdrant down")
             mock_get_kb_dir.return_value.iterdir.return_value = []
@@ -826,12 +806,8 @@ class TestDeleteDocument:
             patch("app.services.kb_service.get_kb_for_write", new=AsyncMock()),
             patch("app.services.document_service.log_audit", new=AsyncMock()),
             patch("app.rag.retriever.retriever"),
-            patch(
-                "app.rag.bm25.bm25_store", new=AsyncMock()
-            ) as mock_bm25,
-            patch(
-                "app.services.document_service.get_kb_dir"
-            ) as mock_get_kb_dir,
+            patch("app.rag.bm25.bm25_store", new=AsyncMock()) as mock_bm25,
+            patch("app.services.document_service.get_kb_dir") as mock_get_kb_dir,
         ):
             mock_bm25.remove_document.side_effect = RuntimeError("redis down")
             mock_get_kb_dir.return_value.iterdir.return_value = []
@@ -863,12 +839,8 @@ class TestDeleteDocument:
             patch("app.services.document_service.log_audit", new=AsyncMock()),
             patch("app.rag.retriever.retriever"),
             patch("app.rag.bm25.bm25_store", new=AsyncMock()),
-            patch(
-                "app.services.document_service.get_kb_dir"
-            ) as mock_get_kb_dir,
-            patch(
-                "app.services.document_service.delete_file"
-            ) as mock_delete_file,
+            patch("app.services.document_service.get_kb_dir") as mock_get_kb_dir,
+            patch("app.services.document_service.delete_file") as mock_delete_file,
         ):
             mock_get_kb_dir.return_value.iterdir.return_value = [
                 f_match,
@@ -1088,9 +1060,7 @@ class TestReparseDocument:
                 return_value=fake_task,
             ) as mock_delay,
         ):
-            ret_doc, ret_task = await document_service.reparse_document(
-                10, 1, db, force=True
-            )
+            ret_doc, ret_task = await document_service.reparse_document(10, 1, db, force=True)
 
         assert ret_doc is doc
         assert ret_task is fake_task
@@ -1365,9 +1335,7 @@ class TestPreviewDocument:
             patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
             patch("app.parsers.get_parser", return_value=fake_parser),
         ):
-            result = await document_service.preview_document(
-                10, 1, db, page=1, page_size=2
-            )
+            result = await document_service.preview_document(10, 1, db, page=1, page_size=2)
 
         assert result["filename"] == "test.md"
         assert result["file_type"] == "md"
@@ -1381,9 +1349,7 @@ class TestPreviewDocument:
     async def test_normal_preview_second_page(self):
         """分页：第二页内容正确。"""
         raw_text = "line1\nline2\nline3\nline4\nline5"
-        doc = MagicMock(
-            id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md"
-        )
+        doc = MagicMock(id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md")
         db = AsyncMock()
         doc_result = MagicMock()
         doc_result.scalar_one_or_none.return_value = doc
@@ -1396,9 +1362,7 @@ class TestPreviewDocument:
             patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
             patch("app.parsers.get_parser", return_value=fake_parser),
         ):
-            result = await document_service.preview_document(
-                10, 1, db, page=2, page_size=2
-            )
+            result = await document_service.preview_document(10, 1, db, page=2, page_size=2)
 
         assert result["content"] == "line3\nline4"
         assert result["page"] == 2
@@ -1407,9 +1371,7 @@ class TestPreviewDocument:
     async def test_page_clamped_to_total_pages(self):
         """page 超出 total_pages 时被钳制为 total_pages。"""
         raw_text = "line1\nline2\nline3"
-        doc = MagicMock(
-            id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md"
-        )
+        doc = MagicMock(id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md")
         db = AsyncMock()
         doc_result = MagicMock()
         doc_result.scalar_one_or_none.return_value = doc
@@ -1422,9 +1384,7 @@ class TestPreviewDocument:
             patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
             patch("app.parsers.get_parser", return_value=fake_parser),
         ):
-            result = await document_service.preview_document(
-                10, 1, db, page=99, page_size=2
-            )
+            result = await document_service.preview_document(10, 1, db, page=99, page_size=2)
 
         # total_pages = ceil(3/2) = 2; page=99 应被钳制为 2
         assert result["page"] == 2
@@ -1434,9 +1394,7 @@ class TestPreviewDocument:
     async def test_page_below_one_clamped_to_one(self):
         """page < 1 时被钳制为 1。"""
         raw_text = "line1\nline2"
-        doc = MagicMock(
-            id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md"
-        )
+        doc = MagicMock(id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md")
         db = AsyncMock()
         doc_result = MagicMock()
         doc_result.scalar_one_or_none.return_value = doc
@@ -1449,18 +1407,14 @@ class TestPreviewDocument:
             patch("app.services.kb_service.get_kb_for_read", new=AsyncMock()),
             patch("app.parsers.get_parser", return_value=fake_parser),
         ):
-            result = await document_service.preview_document(
-                10, 1, db, page=0, page_size=2
-            )
+            result = await document_service.preview_document(10, 1, db, page=0, page_size=2)
 
         assert result["page"] == 1
 
     @pytest.mark.asyncio
     async def test_empty_file_returns_single_page(self):
         """空文件：total_pages=1，content 为空字符串。"""
-        doc = MagicMock(
-            id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md"
-        )
+        doc = MagicMock(id=10, kb_id=5, filename="t.md", file_type="md", file_path="/tmp/t.md")
         db = AsyncMock()
         doc_result = MagicMock()
         doc_result.scalar_one_or_none.return_value = doc

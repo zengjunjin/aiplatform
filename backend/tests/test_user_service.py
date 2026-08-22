@@ -62,9 +62,7 @@ class TestListUsersKeywordSearch:
 
         db.execute = AsyncMock(side_effect=[count_result, users_result])
 
-        items, total = await user_service.list_users(
-            db, page=1, page_size=20, keyword="alice"
-        )
+        items, total = await user_service.list_users(db, page=1, page_size=20, keyword="alice")
         assert total == 1
         assert items == users
 

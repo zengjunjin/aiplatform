@@ -9,10 +9,10 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.db.document_chunk import DocumentChunk
-from app.db.evaluation import EvaluationResult, EvaluationRun, EvaluationStatus
+from app.db.evaluation import EvaluationStatus
 from app.db.knowledge_base import KnowledgeBase
-from app.services import evaluation_service
 from app.rag.answer import get_rag_answer
+from app.services import evaluation_service
 
 # ---------- 辅助函数 ----------
 
@@ -364,9 +364,7 @@ class TestGenerateGroundTruth:
         fake_llm.chat = AsyncMock(return_value="  参考答案  ")
 
         # P1-6: 公共函数 generate_ground_truth（原 _generate_ground_truth 改名）
-        result = await evaluation_service.generate_ground_truth(
-            fake_llm, "什么是 RAG？", "KB 描述"
-        )
+        result = await evaluation_service.generate_ground_truth(fake_llm, "什么是 RAG？", "KB 描述")
 
         assert result == "参考答案"
         fake_llm.chat.assert_awaited_once()
@@ -377,9 +375,7 @@ class TestGenerateGroundTruth:
         fake_llm.chat = AsyncMock(return_value="   ")
 
         with pytest.raises(RuntimeError, match="empty ground_truth"):
-            await evaluation_service.generate_ground_truth(
-                fake_llm, "什么是 RAG？", "KB 描述"
-            )
+            await evaluation_service.generate_ground_truth(fake_llm, "什么是 RAG？", "KB 描述")
 
     @pytest.mark.asyncio
     async def test_none_response_raises_runtime_error(self):
@@ -387,9 +383,7 @@ class TestGenerateGroundTruth:
         fake_llm.chat = AsyncMock(return_value=None)
 
         with pytest.raises(RuntimeError, match="empty ground_truth"):
-            await evaluation_service.generate_ground_truth(
-                fake_llm, "什么是 RAG？", "KB 描述"
-            )
+            await evaluation_service.generate_ground_truth(fake_llm, "什么是 RAG？", "KB 描述")
 
 
 # ---------- trigger_evaluation ----------
@@ -594,9 +588,7 @@ class TestListEvaluationRuns:
         runs = [MagicMock(id=21)]
         db = _make_runs_db(runs, total=100)
 
-        result_runs, total = await evaluation_service.list_evaluation_runs(
-            db, page=2, page_size=20
-        )
+        result_runs, total = await evaluation_service.list_evaluation_runs(db, page=2, page_size=20)
 
         assert result_runs == runs
         assert total == 100
@@ -665,9 +657,7 @@ class TestDeleteEvaluationRun:
         db.delete = AsyncMock()
         db.commit = AsyncMock()
 
-        with patch(
-            "app.services.kb_service.get_kb_for_admin", new=AsyncMock()
-        ) as mock_admin:
+        with patch("app.services.kb_service.get_kb_for_admin", new=AsyncMock()) as mock_admin:
             await evaluation_service.delete_evaluation_run(run_id=42, user_id=1, db=db)
 
         # kb admin 权限校验

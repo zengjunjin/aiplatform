@@ -1,4 +1,4 @@
-﻿from collections import Counter
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger

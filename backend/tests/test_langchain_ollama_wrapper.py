@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.models.langchain_ollama_wrapper import ChatOllama, OllamaEmbeddings
@@ -34,10 +33,12 @@ class TestChatOllama:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(llm._client, "post", return_value=mock_response) as mock_post:
-            result = llm._generate([
-                HumanMessage(content="Hi"),
-                SystemMessage(content="You are helpful"),
-            ])
+            result = llm._generate(
+                [
+                    HumanMessage(content="Hi"),
+                    SystemMessage(content="You are helpful"),
+                ]
+            )
 
             # Verify API call
             mock_post.assert_called_once()
@@ -65,6 +66,7 @@ class TestChatOllama:
 
         with patch.object(llm._client, "post", return_value=mock_response) as mock_post:
             from langchain_core.messages import AIMessage as AMsg
+
             llm._generate([HumanMessage(content="q"), AMsg(content="a")])
             payload = mock_post.call_args[1]["json"]
             assert payload["messages"][1]["role"] == "assistant"

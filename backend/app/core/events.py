@@ -168,7 +168,7 @@ class EventBus:
                                 await asyncio.wait_for(
                                     handler(payload), timeout=cls.HANDLER_TIMEOUT
                                 )
-                            except asyncio.TimeoutError:
+                            except TimeoutError:
                                 logger.error(
                                     f"Event handler timeout for {event_type}: "
                                     f"{handler_name} (>{cls.HANDLER_TIMEOUT}s)"

@@ -15,10 +15,9 @@ for _stub in ("qdrant_client", "rank_bm25", "app.rag.bm25", "app.rag.retriever")
     if _stub not in sys.modules:
         sys.modules[_stub] = MagicMock()
 
-from app.db.evaluation import EvaluationStatus
-from app.tasks import evaluation_task
-from app.tasks.evaluation_task import (
-    _create_evaluation_llm,
+from app.db.evaluation import EvaluationStatus  # noqa: E402 （必须在上述 stub 之后）
+from app.tasks import evaluation_task  # noqa: E402
+from app.tasks.evaluation_task import (  # noqa: E402
     _generate_dataset_async,
     _prepare_dataset,
     _run_evaluations,
@@ -292,7 +291,9 @@ class TestDatasetGenerationFailureHandling:
             with (
                 patch.object(evaluation_task, "get_sync_session", return_value=session),
                 patch.object(
-                    evaluation_task, "_prepare_dataset", side_effect=RuntimeError("DB connection lost")
+                    evaluation_task,
+                    "_prepare_dataset",
+                    side_effect=RuntimeError("DB connection lost"),
                 ),
             ):
                 with pytest.raises(RuntimeError, match="DB connection lost"):
@@ -380,9 +381,7 @@ class TestPrepareDataset:
         result_mock.scalars.return_value.all.return_value = []
         session.execute.return_value = result_mock
 
-        with patch.object(
-            evaluation_task, "_generate_dataset_async", new=AsyncMock()
-        ) as mock_gen:
+        with patch.object(evaluation_task, "_generate_dataset_async", new=AsyncMock()) as mock_gen:
             result = await _prepare_dataset(session, run)
 
         assert result == []
@@ -410,9 +409,7 @@ class TestGenerateDatasetAsync:
 
         with (
             patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
             patch(
                 "app.services.evaluation_service.generate_question_from_chunk",
                 new=AsyncMock(return_value=question_data),
@@ -448,9 +445,7 @@ class TestGenerateDatasetAsync:
 
         with (
             patch.object(sys.modules["app.rag.retriever"], "retriever", mock_retriever),
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
             patch(
                 "app.services.evaluation_service.generate_question_from_chunk",
                 new=AsyncMock(side_effect=[None, question_data]),
@@ -472,9 +467,7 @@ class TestGenerateDatasetAsync:
         mock_llm = AsyncMock()
 
         with (
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
             patch(
                 "app.services.evaluation_service.generate_question_from_chunk",
                 new=AsyncMock(),
@@ -496,15 +489,16 @@ class TestRunEvaluations:
         """所有问题评估成功 → 返回所有结果"""
         dataset = _fake_dataset(3)
         single_result = {
-            "question": "q", "ground_truth": "gt", "answer": "a",
-            "contexts": ["c"], "faithfulness": 0.9,
+            "question": "q",
+            "ground_truth": "gt",
+            "answer": "a",
+            "contexts": ["c"],
+            "faithfulness": 0.9,
         }
         mock_llm = AsyncMock()
 
         with (
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
             patch.object(
                 evaluation_task, "_run_single_evaluation", new=AsyncMock(return_value=single_result)
             ),
@@ -523,15 +517,16 @@ class TestRunEvaluations:
             {"question": "q1", "ground_truth": "gt1", "contexts": ["c1"]},
         ]
         ok_result = {
-            "question": "q1", "ground_truth": "gt1", "answer": "a1",
-            "contexts": ["c1"], "faithfulness": 0.8,
+            "question": "q1",
+            "ground_truth": "gt1",
+            "answer": "a1",
+            "contexts": ["c1"],
+            "faithfulness": 0.8,
         }
         mock_llm = AsyncMock()
 
         with (
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
             patch.object(
                 evaluation_task,
                 "_run_single_evaluation",
@@ -556,12 +551,8 @@ class TestRunEvaluations:
         mock_llm = AsyncMock()
 
         with (
-            patch.object(
-                evaluation_task, "_create_evaluation_llm", return_value=mock_llm
-            ),
-            patch.object(
-                evaluation_task, "_run_single_evaluation", new=AsyncMock()
-            ) as mock_single,
+            patch.object(evaluation_task, "_create_evaluation_llm", return_value=mock_llm),
+            patch.object(evaluation_task, "_run_single_evaluation", new=AsyncMock()) as mock_single,
         ):
             results = await _run_evaluations(kb_id=1, dataset=[])
 

@@ -21,7 +21,6 @@ import pytest
 from tests.e2e.helpers.cdp_auth import login_cdp_session, make_cdp_client
 from tests.e2e.helpers.waiters import (
     wait_for,
-    wait_for_dom_ready,
     wait_for_element,
     wait_for_url_change,
 )
@@ -154,7 +153,7 @@ def test_theme_toggle(logged_in_cdp, admin_token):
     theme_before = cdp.evaluate("document.documentElement.getAttribute('data-theme')") or "light"
     # H14 修复：点击主题切换按钮（带重试机制，使用 CDP 真实鼠标点击）
     theme_changed = False
-    for attempt in range(3):
+    for _attempt in range(3):
         coords = cdp.evaluate("""
             (function() {
                 const btn = Array.from(document.querySelectorAll('button[aria-label]'))
@@ -196,9 +195,8 @@ def test_theme_toggle(logged_in_cdp, admin_token):
                 """)
         try:
             wait_for(
-                lambda: cdp.evaluate(
-                    "document.documentElement.getAttribute('data-theme')"
-                ) != theme_before,
+                lambda: cdp.evaluate("document.documentElement.getAttribute('data-theme')")
+                != theme_before,
                 timeout=5,
                 message="Theme did not change after toggle",
             )
@@ -344,7 +342,7 @@ def test_notification_popover(logged_in_cdp, admin_token):
         pytest.skip("Notification bell button not found (Layout may not have rendered)")
     # H14 修复：点击通知铃铛按钮（带重试机制，点击后检查 popover 是否打开）
     popover_open = False
-    for attempt in range(3):
+    for _attempt in range(3):
         # 查找通知铃铛按钮并获取中心坐标
         coords = cdp.evaluate("""
             (function() {

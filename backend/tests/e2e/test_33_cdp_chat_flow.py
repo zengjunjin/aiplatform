@@ -140,7 +140,7 @@ def test_new_session_modal(logged_in_cdp):
         pytest.skip("'新建对话' button not found on SessionsPage (page may not have rendered)")
     # H14 修复：点击"新建对话"按钮（带重试机制，防止首次点击因 React 状态未稳定而失败）
     modal_opened = False
-    for attempt in range(3):
+    for _attempt in range(3):
         # 先用 CDP 真实点击（更可靠），失败则回退到 JS .click()
         coords = cdp.evaluate("""
             (function() {

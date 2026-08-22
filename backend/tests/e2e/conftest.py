@@ -80,9 +80,7 @@ def admin_token(base_url):
     与 init_db.py 创建 admin 时使用的环境变量保持一致。
     """
     admin_password = (
-        os.getenv("E2E_ADMIN_PASSWORD")
-        or os.getenv("INITIAL_ADMIN_PASSWORD")
-        or "admin123"
+        os.getenv("E2E_ADMIN_PASSWORD") or os.getenv("INITIAL_ADMIN_PASSWORD") or "admin123"
     )
     r = requests.post(
         f"{base_url}/auth/login",

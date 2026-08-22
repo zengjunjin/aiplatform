@@ -9,22 +9,25 @@
 6. SSE 并发计数器：第 4 次连接返回 429（直接测 _sse_counter 内部逻辑）
 7. reranker 异常 → yield warn 事件 + 用 score 阈值过滤 chunks
 """
+
 from __future__ import annotations
 
-import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.chat_pipeline import (
-    ChatPipeline,
     AllProvidersFailedError,
+    ChatPipeline,
     _retrieve_and_rerank,
+    _save_assistant_msg,
+    _save_user_msg,
     _send_sse,
+    _send_sse_error,
     _sse_counter,
     _stream_llm_with_fallback,
 )
-
 
 # ---------- 辅助工具 ----------
 
@@ -38,7 +41,7 @@ def _fake_llm(provider_name: str, tokens: list[str], fail_after: int | None = No
     llm.provider_name = provider_name
     llm.model_name = f"{provider_name}-v1"
 
-    async def _stream(_messages):
+    async def _stream(_messages, **kwargs):
         for i, t in enumerate(tokens):
             if fail_after is not None and i >= fail_after:
                 raise RuntimeError(f"{provider_name} stream failed")
@@ -140,14 +143,10 @@ async def test_all_providers_failed_raises_dedicated_error():
     router = MagicMock()
     router.release = MagicMock()
 
-    with patch(
-        "app.models.factory.ModelRegistry.get_available", return_value=[primary, fb1]
-    ):
+    with patch("app.models.factory.ModelRegistry.get_available", return_value=[primary, fb1]):
         state = {"full_answer": "", "cancelled": False, "token_count": 0}
         with pytest.raises(AllProvidersFailedError) as exc_info:
-            await _collect_async(
-                _stream_llm_with_fallback([], primary, router, 1, state)
-            )
+            await _collect_async(_stream_llm_with_fallback([], primary, router, 1, state))
 
     # 专用异常元数据
     assert exc_info.value.primary == "bad-p"
@@ -191,6 +190,7 @@ async def test_stream_llm_cancel_flag_stops_generation():
 @pytest.mark.asyncio
 async def test_sse_counter_limit_returns_429_then_decr_on_exit():
     from fastapi import HTTPException as FE
+
     from app.core.redis_scripts import _INCR_EXPIRE_LUA
 
     redis_mock = MagicMock()
@@ -211,7 +211,7 @@ async def test_sse_counter_limit_returns_429_then_decr_on_exit():
         patch("app.services.chat_pipeline.settings.SSE_MAX_CONCURRENT", 3),
     ):
         # 连续 enter + exit 3 次：INCR 返回 1/2/3（均 <=3 不抛），DECR 不影响
-        for i in range(3):
+        for _i in range(3):
             c = _sse_counter(1)
             await c.__aenter__()
             await c.__aexit__(None, None, None)
@@ -236,18 +236,14 @@ async def test_pipeline_placeholder_failed_falls_back_to_insert():
     recorded = {}
 
     async def _fake_stream(sid, content, kb_id, title, model, cm):
-        recorded.update(
-            sid=sid, content=content, kb_id=kb_id, title=title, model=model
-        )
+        recorded.update(sid=sid, content=content, kb_id=kb_id, title=title, model=model)
         # placeholder 失败时 INSERT 返回 msg_id=7（模拟 chat_service.save_message 行为）
         yield _send_sse({"event": "model", "model_name": "m", "display_name": "m-v1"})
         yield _send_sse({"event": "delta", "content": "Hi", "message_id": 7})
         yield _send_sse({"event": "done", "message_id": 7, "references": []})
         yield "data: [DONE]\n\n"
-        try:
+        with contextlib.suppress(Exception):
             await cm.__aexit__(None, None, None)
-        except Exception:
-            pass
 
     class _NoopCM:
         async def __aenter__(self):
@@ -257,10 +253,244 @@ async def test_pipeline_placeholder_failed_falls_back_to_insert():
             return None
 
     with patch.object(ChatPipeline, "_run_stream_impl", staticmethod(_fake_stream)):
-        evts = await _collect_async(
-            ChatPipeline.stream(1, "hi", None, "新对话", None, _NoopCM())
-        )
+        evts = await _collect_async(ChatPipeline.stream(1, "hi", None, "新对话", None, _NoopCM()))
 
     assert recorded["sid"] == 1
     assert any('"event": "done"' in e and '"message_id": 7' in e for e in evts)
     assert evts[-1] == "data: [DONE]\n\n"
+
+
+# ---------- 8. SSE 序列化（迁移自 test_chat_orchestrator.py）----------
+
+
+def test_send_sse_serializes_dict_with_chinese():
+    """中文应保持原样（ensure_ascii=False）。"""
+    evt = _send_sse({"event": "warn", "message": "重排序服务暂不可用"})
+    assert evt.startswith("data: ")
+    assert evt.endswith("\n\n")
+    payload = evt[len("data: ") :].strip()
+    import json
+
+    data = json.loads(payload)
+    assert data["event"] == "warn"
+    assert data["message"] == "重排序服务暂不可用"
+
+
+def test_send_sse_error_returns_error_event():
+    evt = _send_sse_error("boom")
+    assert evt.startswith("data: ")
+    import json
+
+    payload = evt[len("data: ") :].strip()
+    data = json.loads(payload)
+    assert data["event"] == "error"
+    assert data["message"] == "boom"
+
+
+# ---------- 9. _save_user_msg（迁移自 test_chat_orchestrator.py）----------
+
+
+def _mock_async_session(mock_session_cls):
+    """构造 async_session() 的 mock：返回 AsyncMock db 作为 async context manager。"""
+    mock_db = AsyncMock()
+    mock_session_cls.return_value.__aenter__.return_value = mock_db
+    mock_session_cls.return_value.__aexit__.return_value = None
+    return mock_db
+
+
+@pytest.mark.asyncio
+async def test_save_user_msg_persists_and_appends_context():
+    """普通路径：保存 user message + append_to_context，标题不更新。"""
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch("app.services.chat_service.save_message", new=AsyncMock()) as mock_save,
+        patch("app.services.chat_service.append_to_context", new=AsyncMock()) as mock_append,
+    ):
+        mock_db = _mock_async_session(mock_session_cls)
+
+        await _save_user_msg(session_id=1, content="hello", session_title="已存在标题")
+
+        mock_save.assert_awaited_once_with(1, "user", "hello", mock_db)
+        mock_append.assert_awaited_once_with(1, "user", "hello")
+        # 已存在标题：不应执行标题更新查询
+        mock_db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_user_msg_updates_title_for_new_session():
+    """标题为 '新对话' 时应触发更新逻辑（执行 select ChatSession + commit）。"""
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch("app.services.chat_service.save_message", new=AsyncMock()),
+        patch("app.services.chat_service.append_to_context", new=AsyncMock()),
+    ):
+        mock_db = AsyncMock()
+        fake_sess = MagicMock()
+        fake_sess.title = "新对话"
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = fake_sess
+        mock_db.execute = AsyncMock(return_value=result)
+        mock_session_cls.return_value.__aenter__.return_value = mock_db
+        mock_session_cls.return_value.__aexit__.return_value = None
+
+        await _save_user_msg(session_id=1, content="新问题内容", session_title="新对话")
+
+        mock_db.execute.assert_awaited()
+        mock_db.commit.assert_awaited()
+        # 标题 = 前 30 字符（内容不足 30 时不加省略号）
+        assert fake_sess.title == "新问题内容"
+
+
+# ---------- 10. _save_assistant_msg（迁移自 test_chat_orchestrator.py + H6 占位路径）----------
+
+
+@pytest.mark.asyncio
+async def test_save_assistant_msg_normal_path():
+    """INSERT 路径（message_id=None）：正常保存返回 saved_msg.id。"""
+    fake_msg = MagicMock()
+    fake_msg.id = 42
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch(
+            "app.services.chat_service.save_message", new=AsyncMock(return_value=fake_msg)
+        ) as mock_save,
+    ):
+        _mock_async_session(mock_session_cls)
+
+        msg_id = await _save_assistant_msg(
+            session_id=1,
+            content="answer",
+            references=[1, 2],
+            latency_ms=200,
+            summary_text=None,
+            token_input=10,
+            token_output=20,
+        )
+
+    assert msg_id == 42
+    mock_save.assert_awaited_once()
+    args, kwargs = mock_save.call_args
+    assert args[0] == 1
+    assert args[1] == "assistant"
+    assert args[2] == "answer"
+    assert kwargs["references"] == [1, 2]
+    assert kwargs["latency_ms"] == 200
+    assert kwargs["token_input"] == 10
+    assert kwargs["token_output"] == 20
+
+
+@pytest.mark.asyncio
+async def test_save_assistant_msg_fallback_on_failure():
+    """首次保存失败时应尝试保存错误 fallback 消息。"""
+    fallback_msg = MagicMock()
+    fallback_msg.id = 99
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch(
+            "app.services.chat_service.save_message",
+            new=AsyncMock(side_effect=[RuntimeError("db error"), fallback_msg]),
+        ) as mock_save,
+    ):
+        _mock_async_session(mock_session_cls)
+
+        msg_id = await _save_assistant_msg(
+            session_id=1,
+            content="answer",
+            references=[],
+            latency_ms=200,
+            summary_text=None,
+            token_input=10,
+            token_output=20,
+        )
+
+    assert msg_id == 99
+    assert mock_save.await_count == 2
+    second_call_args, _ = mock_save.call_args_list[1]
+    assert "[系统错误]" in second_call_args[2]
+    assert "answer" in second_call_args[2]
+
+
+@pytest.mark.asyncio
+async def test_save_assistant_msg_returns_none_on_total_failure():
+    """两次保存都失败时应返回 None。"""
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch(
+            "app.services.chat_service.save_message",
+            new=AsyncMock(side_effect=[RuntimeError("1st"), RuntimeError("2nd")]),
+        ),
+    ):
+        _mock_async_session(mock_session_cls)
+
+        msg_id = await _save_assistant_msg(
+            session_id=1,
+            content="answer",
+            references=[],
+            latency_ms=200,
+            summary_text=None,
+            token_input=10,
+            token_output=20,
+        )
+
+    assert msg_id is None
+
+
+@pytest.mark.asyncio
+async def test_save_assistant_msg_updates_placeholder_when_message_id_given():
+    """H6 占位路径：message_id 非 None 且 UPDATE 成功时直接返回，不 INSERT。"""
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch(
+            "app.services.chat_service.update_assistant_message",
+            new=AsyncMock(return_value=True),
+        ) as mock_update,
+        patch("app.services.chat_service.save_message", new=AsyncMock()) as mock_save,
+    ):
+        _mock_async_session(mock_session_cls)
+
+        msg_id = await _save_assistant_msg(
+            session_id=1,
+            content="answer",
+            references=[],
+            latency_ms=200,
+            summary_text=None,
+            token_input=10,
+            token_output=20,
+            message_id=77,
+        )
+
+    assert msg_id == 77
+    mock_update.assert_awaited_once()
+    mock_save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_assistant_msg_placeholder_not_found_falls_back_to_insert():
+    """H6 占位路径：UPDATE 返回 False（占位不存在）时应降级 INSERT。"""
+    fake_msg = MagicMock()
+    fake_msg.id = 55
+    with (
+        patch("app.services.chat_pipeline.async_session") as mock_session_cls,
+        patch(
+            "app.services.chat_service.update_assistant_message",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "app.services.chat_service.save_message", new=AsyncMock(return_value=fake_msg)
+        ) as mock_save,
+    ):
+        _mock_async_session(mock_session_cls)
+
+        msg_id = await _save_assistant_msg(
+            session_id=1,
+            content="answer",
+            references=[],
+            latency_ms=200,
+            summary_text=None,
+            token_input=10,
+            token_output=20,
+            message_id=77,
+        )
+
+    assert msg_id == 55
+    mock_save.assert_awaited_once()

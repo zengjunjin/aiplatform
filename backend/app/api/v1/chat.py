@@ -7,6 +7,7 @@
 依赖方向：chat.py → chat_pipeline → services / rag / models，
 不再反向依赖 main.py（sse_registry 解耦）。
 """
+
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -21,7 +22,6 @@ from app.config import (
     RATE_LIMIT_STRICT,
     settings,
 )
-from app.services.chat_pipeline import ChatPipeline
 from app.core.middleware import limiter
 from app.database import get_db
 from app.db.user import User
@@ -29,6 +29,7 @@ from app.schemas.chat import MessageCreate, MessageOut, SessionCreate, SessionOu
 from app.schemas.common import ok, paginated_ok
 from app.services import chat_service
 from app.services.audit_service import log_audit
+from app.services.chat_pipeline import ChatPipeline
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

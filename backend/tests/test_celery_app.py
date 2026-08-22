@@ -33,11 +33,11 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-import pytest
-from celery.schedules import crontab
+import pytest  # noqa: E402 （必须在上述 stub 之后）
+from celery.schedules import crontab  # noqa: E402
 
-from app.config import settings
-from app.tasks.celery_app import (
+from app.config import settings  # noqa: E402
+from app.tasks.celery_app import (  # noqa: E402
     _do_eventbus_close,
     _do_eventbus_init,
     _route_task,
@@ -199,16 +199,12 @@ class TestInitEventbus:
         new_loop.is_closed.return_value = False
         new_loop.run_until_complete.side_effect = _close_coro
 
-        with patch(
-            "app.tasks.celery_app.asyncio.get_event_loop", return_value=closed_loop
-        ):
+        with patch("app.tasks.celery_app.asyncio.get_event_loop", return_value=closed_loop):
             with patch(
                 "app.tasks.celery_app.asyncio.new_event_loop", return_value=new_loop
             ) as mock_new:
                 with patch("app.tasks.celery_app.asyncio.set_event_loop") as mock_set:
-                    with patch(
-                        "app.tasks.celery_app._do_eventbus_init", new_callable=AsyncMock
-                    ):
+                    with patch("app.tasks.celery_app._do_eventbus_init", new_callable=AsyncMock):
                         init_eventbus()
                         mock_new.assert_called_once()
                         mock_set.assert_called_once_with(new_loop)
@@ -236,12 +232,8 @@ class TestInitEventbus:
 
         mock_loop.run_until_complete.side_effect = _raise_after_close
 
-        with patch(
-            "app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop
-        ):
-            with patch(
-                "app.tasks.celery_app._do_eventbus_init", new_callable=AsyncMock
-            ):
+        with patch("app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop):
+            with patch("app.tasks.celery_app._do_eventbus_init", new_callable=AsyncMock):
                 with patch("app.tasks.celery_app.logger.warning") as mock_warn:
                     init_eventbus()
                     mock_warn.assert_called_once()
@@ -257,9 +249,7 @@ class TestCloseEventbus:
         mock_loop.is_closed.return_value = False
         mock_loop.run_until_complete.side_effect = _close_coro
 
-        with patch(
-            "app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop
-        ):
+        with patch("app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop):
             with patch(
                 "app.tasks.celery_app._do_eventbus_close", new_callable=AsyncMock
             ) as mock_close:
@@ -272,9 +262,7 @@ class TestCloseEventbus:
         mock_loop = MagicMock()
         mock_loop.is_closed.return_value = True
 
-        with patch(
-            "app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop
-        ):
+        with patch("app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop):
             with patch(
                 "app.tasks.celery_app._do_eventbus_close", new_callable=AsyncMock
             ) as mock_close:
@@ -303,12 +291,8 @@ class TestCloseEventbus:
 
         mock_loop.run_until_complete.side_effect = _raise_after_close
 
-        with patch(
-            "app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop
-        ):
-            with patch(
-                "app.tasks.celery_app._do_eventbus_close", new_callable=AsyncMock
-            ):
+        with patch("app.tasks.celery_app.asyncio.get_event_loop", return_value=mock_loop):
+            with patch("app.tasks.celery_app._do_eventbus_close", new_callable=AsyncMock):
                 with patch("app.tasks.celery_app.logger.debug") as mock_debug:
                     close_eventbus()
                     mock_debug.assert_called_once()
@@ -326,8 +310,6 @@ class TestDoEventbusHelpers:
 
     @pytest.mark.asyncio
     async def test_do_eventbus_close_calls_eventbus_close(self):
-        with patch(
-            "app.core.events.EventBus.close", new_callable=AsyncMock
-        ) as mock_close:
+        with patch("app.core.events.EventBus.close", new_callable=AsyncMock) as mock_close:
             await _do_eventbus_close()
             mock_close.assert_called_once()

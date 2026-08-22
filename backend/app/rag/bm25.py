@@ -18,6 +18,7 @@ so they work inside Celery's sync worker without an event loop.
 """
 
 import asyncio
+import contextlib
 import json
 import threading
 from collections import OrderedDict
@@ -116,10 +117,8 @@ class BM25Store:
                 logger.debug(f"BM25 async redis ping failed, resetting: {e}")
                 old = self._async_redis
                 self._async_redis = None
-                try:
+                with contextlib.suppress(Exception):
                     await old.aclose()
-                except Exception:
-                    pass
         if self._async_redis is None:
             try:
                 self._async_redis = redis_async_lib.from_url(
@@ -404,7 +403,9 @@ class BM25Store:
         self._set_chunks_meta(kb_id, chunks)
         redis = self._get_sync_redis()
         if redis:
-            redis.set(self._key(kb_id), self._serialize_index(tokenized), ex=settings.BM25_INDEX_TTL)
+            redis.set(
+                self._key(kb_id), self._serialize_index(tokenized), ex=settings.BM25_INDEX_TTL
+            )
             redis.set(
                 self._chunks_key(kb_id), self._serialize_chunks(chunks), ex=settings.BM25_INDEX_TTL
             )
@@ -482,7 +483,9 @@ class BM25Store:
                 self._set_chunks_meta(kb_id, chunks)
                 if redis:
                     redis.set(
-                        self._key(kb_id), self._serialize_index(tokenized), ex=settings.BM25_INDEX_TTL
+                        self._key(kb_id),
+                        self._serialize_index(tokenized),
+                        ex=settings.BM25_INDEX_TTL,
                     )
                     redis.set(
                         self._chunks_key(kb_id),

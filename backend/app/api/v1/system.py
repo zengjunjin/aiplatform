@@ -121,7 +121,9 @@ async def list_models(
 
     try:
         available = _Registry.get_available()
-        default = available[0].provider_name if available else (providers[0] if providers else "ollama")
+        default = (
+            available[0].provider_name if available else (providers[0] if providers else "ollama")
+        )
     except Exception:
         default = providers[0] if providers else "ollama"
     return ok(data={"models": models, "default_model": default})
