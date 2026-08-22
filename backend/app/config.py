@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "rag"
-    POSTGRES_PASSWORD: str = "rag_dev_pwd"
+    # B6 去硬编码：不再内置默认密码；未配置时为空串，
+    # 由 model_post_init 弱值黑名单（含 ""）在启动时 fail-closed 拦截。
+    POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = "rag_platform"
 
     REDIS_HOST: str = "localhost"
@@ -131,6 +133,9 @@ class Settings(BaseSettings):
     # Blade 2 Step 5: 分页默认值可配（消除 chat.py 路由参数中的硬编码魔法数字）
     CHAT_SESSION_PAGE_SIZE: int = 20
     CHAT_MESSAGE_PAGE_SIZE: int = 50
+
+    # v0.6.1 安全审计 P2：LLM 输出 token 硬上限（防注入后无限输出 / 资源耗尽）
+    LLM_MAX_TOKENS: int = 2048
 
     # Task 13: Redis 聊天上下文缓存配置（TTL + 保留条数）
     CHAT_HISTORY_TTL_SECONDS: int = 86400
@@ -314,7 +319,10 @@ class Settings(BaseSettings):
         "",
     )
     # 已知弱 POSTGRES_PASSWORD：包括代码默认值、示例值、常见占位符
+    # B6："" 为未配置占位（与 _WEAK_JWT_SECRETS 对齐）；"rag_dev_pwd" 为
+    # 历史代码默认值，保留以防旧值通过环境变量回流（fail-closed 防御）。
     _WEAK_PG_PASSWORDS: ClassVar[tuple[str, ...]] = (
+        "",
         "rag_dev_pwd",
         "rag_password",
         "change_this_password",
