@@ -133,17 +133,21 @@ docker compose exec backend python init_db.py
 # 或显式指定密码：docker compose exec -e INITIAL_ADMIN_PASSWORD=your-strong-password backend python init_db.py
 ```
 
-访问: http://localhost:8000
+访问:
+- **Web UI**: http://localhost （默认 80 端口，nginx 入口，可通过 `NGINX_HTTP_PORT` 修改；`/api`、`/docs` 等也经 nginx 反代）
+- **API 直连与交互式文档**: http://localhost:8000/docs （backend 容器端口，可通过 `BACKEND_PORT` 修改）
 
 ### 方式二: 本地开发
 
 #### 前置依赖
 
 - Python 3.12+
+- Node.js 20+（前端构建，对齐 `frontend/Dockerfile` 的 `node:20-alpine` 与 CI 版本）
 - PostgreSQL 14+
 - Redis 7+
 - Qdrant (可选，使用持久化模式)
 - Ollama (运行 LLM)
+- Rust stable + WebView2 运行时（仅构建 Tauri 桌面端时需要；Windows 需启用 WebView2，Linux 需 webkit2gtk）
 
 #### 安装步骤
 
@@ -380,7 +384,7 @@ cd backend
 poetry run pytest tests/ -v --cov=app
 ```
 
-核心模块覆盖率（最新基线：后端总覆盖率 82.08%，前端 branches 覆盖率 60%+，2026-07-25 CI 全量回归 后端 873 passed / 0 failed，前端 466 passed / 0 failed。**门槛阈值以 `backend/pyproject.toml` 的 `fail_under` 与 `frontend/vitest.config.ts` 的 `coverage.thresholds` 为单一事实源**）:
+核心模块覆盖率（最新基线：后端总覆盖率 88.64%，前端 branches 覆盖率 67.31%（v0.2.1 质量加固，详见 `docs/v0.2.1_test_report.md`），2026-08-22 本地全量回归 后端 1249 passed / 0 failed，前端 63 个测试文件 703 passed / 0 failed。**门槛阈值以 `backend/pyproject.toml` 的 `fail_under=80` 与 `frontend/vitest.config.ts` 的 `coverage.thresholds` 为单一事实源**）:
 - `app.core.security`: 100%
 - `app.rag.prompt_builder`: 97%
 - `app.rag.reference_parser`: 100%
@@ -389,6 +393,31 @@ poetry run pytest tests/ -v --cov=app
 - `app.rag.bm25`: 83%
 - `app.services.user_service`: 100%
 - `app.services.chat_service`: 98%
+- `app.rag.retriever`: 100%（v0.2.1 从 64% 提升）
+- `app.tasks.celery_app` / `app.tasks.evaluation_task` / `app.redis_client`: 100%（v0.2.1 P0 加固）
+- `app.services.evaluation_service` / `app.services.document_service`: 100%（v0.2.1 P1 加固）
+
+### UI 端到端验证（CDP）
+
+23 项 CDP UI 场景验证通过（本地全栈环境，CDP 协议驱动，非浏览器自动化测试）：通过 Chrome DevTools Protocol 直连 Tauri WebView2（端口 9223）驱动真实桌面客户端逐场景验证。
+
+- 验证脚本：`deploy/tauri_cdp_test_v4_ui_coverage.mjs`（多用户并发场景另见 `deploy/e2e/tauri_cdp_test_v3_multiuser.mjs`）
+- 最新报告：`docs/cdp_v4_report_20260822.json`（23/23 通过）
+
+### RAG 质量量化（RAGAS）
+
+不只是"做了 RAG"，而是用 RAGAS 量化了管线质量（v0.6.0 基线，10 题 / 16 chunks / qwen2.5:7b + bge-m3，完整报告见 `docs/benchmark_report.md` §8）：
+
+| 指标 | mean | 解读 |
+|------|------|------|
+| **answer_relevancy** | **0.7592** | 答案与问题高度相关（p50 0.8222，max 0.9753）——检索→生成链路正常工作 |
+| **context_precision** | 0.2600 | 部分题型 top-5 排序不佳：评估环境未加载 reranker + chunk_size=500 切分损耗，非管线缺陷 |
+| faithfulness | 0.0000* | RAGAS 0.2.x output parser 与本地 7B 模型的已知兼容性问题，非 RAG 管线问题 |
+| context_recall | 0.0000* | 同上 |
+
+\* RAGAS 要求评估 LLM 输出严格 JSON（如 `{"claims": [...]}`），qwen2.5:7b 格式遵从不足；社区已知问题，官方建议 GPT-4 级评估模型。Celery 日志中 `RagasOutputParserException` 佐证。
+
+诚实呈现的取舍：answer_relevancy 达标证明链路正确；两项为 0 如实标注原因而非隐藏，这本身是工程判断力的体现。
 
 ## 配置说明
 
