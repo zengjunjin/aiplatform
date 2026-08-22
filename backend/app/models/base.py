@@ -7,9 +7,9 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def chat_stream(
-        self, messages: list[dict], temperature: float = 0.7
+        self, messages: list[dict], temperature: float = 0.7, max_tokens: int | None = None
     ) -> AsyncIterator[str]:
-        """流式返回 token 片段"""
+        """流式返回 token 片段。max_tokens 为输出 token 上限（None 表示不限制）。"""
         ...
 
     @abstractmethod

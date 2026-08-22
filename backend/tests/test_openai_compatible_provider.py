@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+import json
 
 from app.models.openai_compatible_provider import (
     OpenAICompatibleProvider,
@@ -129,6 +130,53 @@ class TestRetryOn429:
                 await provider.chat([{"role": "user", "content": "hi"}])
 
         assert call_count == 3
+        await provider._client.aclose()
+
+
+class TestMaxTokens:
+    """v0.6.1 安全审计 P2：LLM 输出 token 硬上限（chat_stream 传参链路）。"""
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_payload_contains_max_tokens(self):
+        """chat_stream(max_tokens=N) → 请求 payload 必须携带 max_tokens=N。"""
+        captured: dict = {}
+
+        def handler(request):
+            captured["payload"] = json.loads(request.content)
+            # chat_stream 走 SSE 解析（data: 行），mock 必须返回 SSE 格式而非普通 JSON
+            return httpx.Response(
+                200,
+                text='data: {"choices": [{"delta": {"content": "hi"}}]}\n\n'
+                     'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}\n\n',
+            )
+
+        transport = httpx.MockTransport(handler)
+        provider = _make_provider(transport)
+        tokens = [t async for t in provider.chat_stream(
+            [{"role": "user", "content": "q"}], max_tokens=2048
+        )]
+        assert tokens == ["hi"]
+        assert captured["payload"]["max_tokens"] == 2048
+        await provider._client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_without_max_tokens_omits_field(self):
+        """不传 max_tokens → payload 不携带该字段（向后兼容旧行为）。"""
+        captured: dict = {}
+
+        def handler(request):
+            captured["payload"] = json.loads(request.content)
+            # SSE 格式（同上）：不传 max_tokens 的兼容路径也必须走真实解析逻辑
+            return httpx.Response(
+                200,
+                text='data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
+                     'data: [DONE]\n\n',
+            )
+
+        transport = httpx.MockTransport(handler)
+        provider = _make_provider(transport)
+        _ = [t async for t in provider.chat_stream([{"role": "user", "content": "q"}])]
+        assert "max_tokens" not in captured["payload"]
         await provider._client.aclose()
 
 

@@ -35,7 +35,9 @@ def _build_client(timeout: float = 60.0) -> httpx.AsyncClient:
 
 
 class OllamaLLMProvider(BaseLLMProvider):
-    def __init__(self, model: str | None = None, host: str | None = None, provider_name: str | None = None):
+    def __init__(
+        self, model: str | None = None, host: str | None = None, provider_name: str | None = None
+    ):
         self.model = model or settings.LLM_MODEL
         self.host = host or settings.OLLAMA_HOST
         self._provider_name = provider_name or "ollama"
@@ -60,8 +62,12 @@ class OllamaLLMProvider(BaseLLMProvider):
         await self._client.aclose()
 
     async def chat_stream(
-        self, messages: list[dict], temperature: float = 0.7
+        self, messages: list[dict], temperature: float = 0.7, max_tokens: int | None = None
     ) -> AsyncIterator[str]:
+        options: dict = {"temperature": temperature}
+        if max_tokens is not None:
+            # Ollama 的输出上限选项为 num_predict
+            options["num_predict"] = max_tokens
         async with self._client.stream(
             "POST",
             f"{self.host}/api/chat",
@@ -69,7 +75,7 @@ class OllamaLLMProvider(BaseLLMProvider):
                 "model": self.model,
                 "messages": messages,
                 "stream": True,
-                "options": {"temperature": temperature},
+                "options": options,
             },
         ) as resp:
             resp.raise_for_status()

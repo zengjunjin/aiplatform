@@ -9,6 +9,7 @@
 依赖方向：api/v1/chat → chat_pipeline → services/chat_service / rag/* / models/factory，
 chat_pipeline 不再反向 import api，chat.py 不再 import main，彻底消除循环依赖。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,6 @@ import json
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -119,9 +119,7 @@ async def _save_assistant_msg(
                 )
             if updated:
                 return message_id
-            logger.warning(
-                f"Placeholder message_id={message_id} not found, falling back to INSERT"
-            )
+            logger.warning(f"Placeholder message_id={message_id} not found, falling back to INSERT")
         except Exception as update_err:
             logger.error(
                 f"Failed to update placeholder message_id={message_id} for session {session_id}: {update_err}"
@@ -273,7 +271,9 @@ async def _stream_llm_with_fallback(
             }
         )
         first_delta = True
-        async for token in primary_llm.chat_stream(messages):
+        async for token in primary_llm.chat_stream(
+            messages, max_tokens=settings.LLM_MAX_TOKENS
+        ):
             _record_ttft(primary_llm.provider_name)
             state["full_answer"] += token
             state["token_count"] += 1
@@ -282,10 +282,9 @@ async def _stream_llm_with_fallback(
                 evt["message_id"] = message_id
                 first_delta = False
             yield _send_sse(evt)
-            if (
-                state["token_count"] % settings.CANCEL_CHECK_INTERVAL == 0
-                and await chat_service.is_cancelled(session_id)
-            ):
+            if state[
+                "token_count"
+            ] % settings.CANCEL_CHECK_INTERVAL == 0 and await chat_service.is_cancelled(session_id):
                 state["cancelled"] = True
                 break
     except Exception as e:
@@ -316,7 +315,9 @@ async def _stream_llm_with_fallback(
                     }
                 )
                 first_delta = True
-                async for token in fallback_llm.chat_stream(messages):
+                async for token in fallback_llm.chat_stream(
+                    messages, max_tokens=settings.LLM_MAX_TOKENS
+                ):
                     _record_ttft(fallback_llm.provider_name)
                     state["full_answer"] += token
                     state["token_count"] += 1
@@ -325,9 +326,10 @@ async def _stream_llm_with_fallback(
                         evt["message_id"] = message_id
                         first_delta = False
                     yield _send_sse(evt)
-                    if (
-                        state["token_count"] % settings.CANCEL_CHECK_INTERVAL == 0
-                        and await chat_service.is_cancelled(session_id)
+                    if state[
+                        "token_count"
+                    ] % settings.CANCEL_CHECK_INTERVAL == 0 and await chat_service.is_cancelled(
+                        session_id
                     ):
                         state["cancelled"] = True
                         break

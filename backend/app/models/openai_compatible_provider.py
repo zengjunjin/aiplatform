@@ -86,10 +86,20 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         await self._client.aclose()
 
     async def chat_stream(
-        self, messages: list[dict], temperature: float = 0.7
+        self, messages: list[dict], temperature: float = 0.7, max_tokens: int | None = None
     ) -> AsyncIterator[str]:
-        """流式聊天（兼容旧接口）"""
-        async for token in self.chat(messages, temperature=temperature, stream=True):
+        """流式聊天（兼容旧接口）。
+
+        注意：chat() 是 async def（经 tenacity 包装），stream=True 时 await
+        返回 _stream_response 异步生成器——必须先 await 再迭代。
+        （v0.6.1 修复：旧实现直接 `async for` 协程对象，TypeError，
+        该路径此前无测试覆盖，属于存量 bug。）
+        """
+        kwargs: dict = {}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        stream = await self.chat(messages, temperature=temperature, stream=True, **kwargs)
+        async for token in stream:
             yield token
 
     @retry(
