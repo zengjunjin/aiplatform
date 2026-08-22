@@ -30,7 +30,9 @@ const REPORT_DIR = join(__dirname, 'test_reports');
 if (!existsSync(REPORT_DIR)) mkdirSync(REPORT_DIR, { recursive: true });
 
 const CDP_HTTP = 'http://127.0.0.1:9223';
-const FRONTEND = 'http://localhost:5173';
+// 目标前端 origin：dev 模式为 vite 5173；打包应用（tauri build 产物）为 tauri.localhost。
+// 通过 CDP_FRONTEND 环境变量注入，例：$env:CDP_FRONTEND="http://tauri.localhost"
+const FRONTEND = process.env.CDP_FRONTEND || 'http://localhost:5173';
 const BACKEND = 'http://localhost:8000/api/v1';
 
 const ADMIN_USER = 'admin';

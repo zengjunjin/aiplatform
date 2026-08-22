@@ -1,0 +1,341 @@
+{
+  "timestamp": "2026-08-22T13:22:02.910Z",
+  "version": "v4.0",
+  "target": {
+    "title": "RAG 知识库平台",
+    "url": "http://tauri.localhost/#/login"
+  },
+  "endpoints": {
+    "frontend": "http://tauri.localhost",
+    "backend": "http://localhost:8000/api/v1",
+    "cdp": "http://127.0.0.1:9223"
+  },
+  "summary": {
+    "pass": 23,
+    "fail": 0,
+    "total": 23,
+    "passRate": 100
+  },
+  "modules": [
+    {
+      "name": "登录流程UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "知识库创建UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "文档上传UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "聊天SSE_UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "反馈打分UI",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "name": "导航完整性",
+      "pass": 6,
+      "fail": 0
+    },
+    {
+      "name": "清理",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "results": [
+    {
+      "module": "登录流程UI",
+      "name": "1.1 打开登录页, 验证表单可见",
+      "status": "PASS",
+      "note": "登录表单 (用户名/密码/按钮) 均可见",
+      "duration": 7645,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.2 输入用户名密码并点击登录 → 跳转 dashboard",
+      "status": "PASS",
+      "note": "登录成功, 跳转到 /dashboard",
+      "duration": 2819,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.3 错误密码 → 显示错误提示 (不跳转)",
+      "status": "PASS",
+      "note": "错误密码显示提示, 仍停留在登录页",
+      "duration": 7979,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.1 导航到知识库列表页",
+      "status": "PASS",
+      "note": "知识库列表页加载完成",
+      "duration": 2119,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.2 点击\"新建知识库\"按钮, 弹出表单",
+      "status": "PASS",
+      "note": "点击按钮: \"新建知识库\", Modal 弹出",
+      "duration": 615,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.3 填写表单 (名称 + 描述) 并提交",
+      "status": "PASS",
+      "note": "表单提交成功, Modal 关闭, kbName=v4UI测试KB-1787404855088",
+      "duration": 2449,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.4 验证新 KB 出现在列表中",
+      "status": "PASS",
+      "note": "列表中已出现新 KB: v4UI测试KB-1787404855088",
+      "duration": 1,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.1 进入 KB 详情页",
+      "status": "PASS",
+      "note": "进入 KB 详情页, kbId=1",
+      "duration": 2323,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.2 点击\"上传文档\"按钮, 弹出上传 Modal",
+      "status": "PASS",
+      "note": "点击按钮: \"上传文档\", 上传 Modal 出现",
+      "duration": 590,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.3 上传文档并验证列表更新",
+      "status": "PASS",
+      "note": "文档上传成功, docId=1, 列表已刷新",
+      "duration": 3182,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.4 验证解析进度显示",
+      "status": "PASS",
+      "note": "解析状态: timeout, UI显示进度: true",
+      "duration": 30517,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.1 进入聊天页面并创建会话",
+      "status": "PASS",
+      "note": "会话已创建, sessionId=1",
+      "duration": 4386,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.2 输入问题并发送, 验证流式渲染 (打字机效果)",
+      "status": "PASS",
+      "note": "流式渲染: textLen 287→287→309, 增长=true",
+      "duration": 6665,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.3 等待响应完成并验证消息历史保存",
+      "status": "PASS",
+      "note": "消息历史: count=2, roles=user,assistant",
+      "duration": 2328,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.1 在 assistant 回答上点击\"赞\"按钮",
+      "status": "PASS",
+      "note": "已点击赞按钮: aria-label=\"点赞\"",
+      "duration": 1596,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.2 验证打分状态持久化 (API 查询)",
+      "status": "PASS",
+      "note": "反馈已持久化, msgId=6, rating=1",
+      "duration": 229,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.1 导航到 Dashboard (/dashboard) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/dashboard, bodyLen=198",
+      "duration": 2116,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.2 导航到 知识库 (/knowledge-bases) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/knowledge-bases, bodyLen=189",
+      "duration": 2114,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.3 导航到 聊天 (/chat) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/chat, bodyLen=150",
+      "duration": 2083,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.4 导航到 评估 (/evaluation) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/evaluation, bodyLen=134",
+      "duration": 2078,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.5 导航到 系统监控 (/system) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/system, bodyLen=88",
+      "duration": 2085,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.6 验证侧边栏菜单项数量 (admin 应见 8 项含子菜单)",
+      "status": "PASS",
+      "note": "侧边栏菜单项数量: 8",
+      "duration": 1,
+      "errorDetail": null
+    },
+    {
+      "module": "清理",
+      "name": "清理: 删除测试会话 / 文档 / KB",
+      "status": "PASS",
+      "note": "session: 200, doc: 200, kb: 200",
+      "duration": 135,
+      "errorDetail": null
+    }
+  ],
+  "allErrors": [],
+  "allWarnings": [
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830214
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830217
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830218
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830219
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830220
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404830221
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840676
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840679
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840679
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840680
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840681
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787404840681
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1787404855111
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1787404856114
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787404873628
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787404893593
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787404913630
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1787404914231
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1787404915231
+    }
+  ],
+  "allNetErrors": []
+}
