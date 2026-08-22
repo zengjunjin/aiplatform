@@ -107,17 +107,12 @@ async def kb_with_doc(client, admin_headers):
     assert upload_r.status_code == 200, f"Upload failed: {upload_r.text}"
     doc_id = upload_r.json()["data"]["document_id"]
 
-    # 同步执行解析（parse_document_task 内部创建独立 event loop）
-    # 保存/恢复当前 event loop，避免影响 pytest-asyncio 的 loop
-    try:
-        saved_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        saved_loop = None
-    try:
-        parse_document_task.apply(args=[doc_id])
-    finally:
-        if saved_loop is not None:
-            asyncio.set_event_loop(saved_loop)
+    # 同步执行解析（parse_document_task 内部创建独立 event loop）。
+    # 在独立线程中执行：_embed_and_store 使用 new_event_loop().run_until_complete()，
+    # 若在 pytest-asyncio 的 running loop 线程内直接 apply 会抛
+    # "Cannot run the event loop while another loop is running"；
+    # to_thread 的工作线程无 running loop，任务可正常创建并运行自己的 loop。
+    await asyncio.to_thread(parse_document_task.apply, args=[doc_id])
 
     progress_r = await client.get(f"/api/v1/documents/{doc_id}/progress", headers=admin_headers)
     assert progress_r.status_code == 200
@@ -210,6 +205,7 @@ async def test_contexts_from_real_retrieval(client, kb_with_doc):
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.timeout(300)  # 真实评估链路（LLM 生成 + 检索）实测 ~107s，全局 60s 不够
 async def test_evaluation_run_records_params(client, kb_with_doc):
     """测试 3: EvaluationRun 记录 retriever_top_k/rerank_top_k/trigger_source。
 
@@ -228,7 +224,7 @@ async def test_evaluation_run_records_params(client, kb_with_doc):
     ):
         trigger_r = await client.post(
             "/api/v1/evaluation/runs",
-            params={"kb_id": kb_id, "num_questions": 3},
+            params={"kb_id": kb_id, "num_questions": 5},  # API 校验 ge=5
             headers=headers,
         )
     assert trigger_r.status_code == 200, f"Trigger eval failed: {trigger_r.text}"

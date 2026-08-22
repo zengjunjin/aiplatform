@@ -90,7 +90,8 @@ class TestLLMMetrics:
         """_stream_llm_with_fallback 应在首 token 时记录 TTFT，结束时记录 tokens/s"""
 
         # 构造 mock primary_llm：chat_stream yield 3 个 token
-        async def fake_chat_stream(messages):
+        # v0.6.1：chat_pipeline 调用 chat_stream 时传 max_tokens，mock 签名需兼容
+        async def fake_chat_stream(messages, max_tokens=None):
             for t in ["hello", " world", "!"]:
                 yield t
 
@@ -130,7 +131,7 @@ class TestLLMMetrics:
     async def test_stream_llm_no_tokens_no_metrics(self):
         """LLM 未产出任何 token 时不记录 tokens/s（避免除零或无意义数据）"""
 
-        async def empty_stream(messages):
+        async def empty_stream(messages, max_tokens=None):
             return
             yield  # 使其成为 async generator
 
