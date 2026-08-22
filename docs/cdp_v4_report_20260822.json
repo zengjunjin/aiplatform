@@ -1,0 +1,1031 @@
+{
+  "timestamp": "2026-07-29T11:08:00.505Z",
+  "version": "v4.0",
+  "target": {
+    "title": "RAG 知识库平台",
+    "url": "http://localhost:5173/#/system"
+  },
+  "endpoints": {
+    "frontend": "http://localhost:5173",
+    "backend": "http://localhost:8000/api/v1",
+    "cdp": "http://127.0.0.1:9223"
+  },
+  "summary": {
+    "pass": 23,
+    "fail": 0,
+    "total": 23,
+    "passRate": 100
+  },
+  "modules": [
+    {
+      "name": "登录流程UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "知识库创建UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "文档上传UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "聊天SSE_UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "反馈打分UI",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "name": "导航完整性",
+      "pass": 6,
+      "fail": 0
+    },
+    {
+      "name": "清理",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "results": [
+    {
+      "module": "登录流程UI",
+      "name": "1.1 打开登录页, 验证表单可见",
+      "status": "PASS",
+      "note": "登录表单 (用户名/密码/按钮) 均可见",
+      "duration": 7681,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.2 输入用户名密码并点击登录 → 跳转 dashboard",
+      "status": "PASS",
+      "note": "登录成功, 跳转到 /dashboard",
+      "duration": 2862,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.3 错误密码 → 显示错误提示 (不跳转)",
+      "status": "PASS",
+      "note": "错误密码显示提示, 仍停留在登录页",
+      "duration": 8023,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.1 导航到知识库列表页",
+      "status": "PASS",
+      "note": "知识库列表页加载完成",
+      "duration": 2216,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.2 点击\"新建知识库\"按钮, 弹出表单",
+      "status": "PASS",
+      "note": "点击按钮: \"新建知识库\", Modal 弹出",
+      "duration": 832,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.3 填写表单 (名称 + 描述) 并提交",
+      "status": "PASS",
+      "note": "表单提交成功, Modal 关闭, kbName=v4UI测试KB-1785323211348",
+      "duration": 2485,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.4 验证新 KB 出现在列表中",
+      "status": "PASS",
+      "note": "列表中已出现新 KB: v4UI测试KB-1785323211348",
+      "duration": 2,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.1 进入 KB 详情页",
+      "status": "PASS",
+      "note": "进入 KB 详情页, kbId=274",
+      "duration": 2375,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.2 点击\"上传文档\"按钮, 弹出上传 Modal",
+      "status": "PASS",
+      "note": "点击按钮: \"上传文档\", 上传 Modal 出现",
+      "duration": 620,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.3 上传文档并验证列表更新",
+      "status": "PASS",
+      "note": "文档上传成功, docId=150, 列表已刷新",
+      "duration": 3183,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.4 验证解析进度显示",
+      "status": "PASS",
+      "note": "解析状态: timeout, UI显示进度: true",
+      "duration": 30522,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.1 进入聊天页面并创建会话",
+      "status": "PASS",
+      "note": "会话已创建, sessionId=128",
+      "duration": 4431,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.2 输入问题并发送, 验证流式渲染 (打字机效果)",
+      "status": "PASS",
+      "note": "流式渲染: textLen 847→838→838, 增长=false",
+      "duration": 6643,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.3 等待响应完成并验证消息历史保存",
+      "status": "PASS",
+      "note": "消息历史: count=2, roles=user,assistant",
+      "duration": 2328,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.1 在 assistant 回答上点击\"赞\"按钮",
+      "status": "PASS",
+      "note": "已点击赞按钮: aria-label=\"点赞\"",
+      "duration": 1608,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.2 验证打分状态持久化 (API 查询)",
+      "status": "PASS",
+      "note": "反馈已持久化, msgId=236, rating=1",
+      "duration": 232,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.1 导航到 Dashboard (/dashboard) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/dashboard, bodyLen=193",
+      "duration": 2154,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.2 导航到 知识库 (/knowledge-bases) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/knowledge-bases, bodyLen=3468",
+      "duration": 2731,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.3 导航到 聊天 (/chat) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/chat, bodyLen=728",
+      "duration": 2215,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.4 导航到 评估 (/evaluation) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/evaluation, bodyLen=2696",
+      "duration": 2123,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.5 导航到 系统监控 (/system) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/system, bodyLen=116",
+      "duration": 2101,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.6 验证侧边栏菜单项数量 (admin 应见 8 项含子菜单)",
+      "status": "PASS",
+      "note": "侧边栏菜单项数量: 8",
+      "duration": 2,
+      "errorDetail": null
+    },
+    {
+      "module": "清理",
+      "name": "清理: 删除测试会话 / 文档 / KB",
+      "status": "PASS",
+      "note": "session: 200, doc: 200, kb: 200",
+      "duration": 138,
+      "errorDetail": null
+    }
+  ],
+  "allErrors": [],
+  "allWarnings": [
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323179792
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323179792
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1785323179801
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323179852
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323179853
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323179853
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323179853
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323179853
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323179854
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1785323179863
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323179893
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323179893
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323179893
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323179893
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323179893
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323179894
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1785323179937
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1785323179938
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1785323179942
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323180856
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323180856
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323180856
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323180857
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323180857
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323180857
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323180872
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323180872
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323180872
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323180872
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323180873
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323180873
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323181729
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323181729
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323184637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323184637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323184637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323184637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323184638
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323184638
+    },
+    {
+      "type": "filtered",
+      "text": "[WebSocket] Error: Event",
+      "ts": 1785323184646
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323185641
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323185641
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323185641
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323185642
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323185642
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323185642
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323186394
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323186395
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323186458
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323186459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323186459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323186459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323186459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323186460
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323187459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323187459
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323187460
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323187460
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323187460
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323187460
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323188375
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323188376
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323194678
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323194678
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323194679
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323194679
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323194680
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323194680
+    },
+    {
+      "type": "filtered",
+      "text": "[WebSocket] Error: Event",
+      "ts": 1785323194680
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323195683
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323196925
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323196925
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323196994
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323196994
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323196994
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323196994
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323196995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323196995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323197994
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323197995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323197995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323197995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323197995
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323197995
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323198922
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323198922
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323204879
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323204879
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "ts": 1785323206904
+    },
+    {
+      "type": "warning",
+      "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "ts": 1785323206905
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323209846
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323209846
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323209846
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323209847
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323209847
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323209847
+    },
+    {
+      "type": "filtered",
+      "text": "[WebSocket] Error: Event",
+      "ts": 1785323209856
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323210850
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323210850
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323210851
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323210851
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323210851
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323210851
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323211390
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323212394
+    },
+    {
+      "type": "filtered",
+      "text": "Warning: [antd: Breadcrumb] `Breadcrumb.Item and Breadcrumb.Separator` is deprecated. Please use `items` instead.",
+      "ts": 1785323217133
+    },
+    {
+      "type": "filtered",
+      "text": "Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead.",
+      "ts": 1785323217143
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323217164
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /documents after 1000ms",
+      "ts": 1785323217164
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323218165
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /documents after 2000ms",
+      "ts": 1785323218165
+    },
+    {
+      "type": "filtered",
+      "text": "[ErrorBoundary] Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchDocuments (http://localhost:5173/src/store/kb.ts:46:20) {\"type\":\"undefined\"}",
+      "ts": 1785323220166
+    },
+    {
+      "type": "canceled",
+      "text": "Uncaught (in promise) Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchDocuments (http://localhost:5173/src/store/kb.ts:46:20)",
+      "ts": 1785323220166
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1785323229925
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1785323249888
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323253634
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323253634
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323254637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323254637
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323255917
+    },
+    {
+      "type": "filtered",
+      "text": "[ErrorBoundary] Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchSessions (http://localhost:5173/src/store/chat.ts:82:24) {\"type\":\"undefined\"}",
+      "ts": 1785323256643
+    },
+    {
+      "type": "canceled",
+      "text": "Uncaught (in promise) Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchSessions (http://localhost:5173/src/store/chat.ts:82:24)",
+      "ts": 1785323256643
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323256916
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/messages/236/feedback after 1000ms",
+      "ts": 1785323260498
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/messages/236/feedback after 2000ms",
+      "ts": 1785323261501
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323268867
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323268867
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323268867
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323268868
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/feedback/stats after 1000ms",
+      "ts": 1785323268868
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1785323268868
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323269873
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323269873
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323269873
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323269873
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/feedback/stats after 2000ms",
+      "ts": 1785323269874
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1785323269874
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1785323269928
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323271526
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323272526
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /chat/sessions after 1000ms",
+      "ts": 1785323273825
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323273825
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /chat/sessions after 2000ms",
+      "ts": 1785323274829
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323274829
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /evaluation/runs after 1000ms",
+      "ts": 1785323275982
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /knowledge-bases after 1000ms",
+      "ts": 1785323275982
+    },
+    {
+      "type": "filtered",
+      "text": "[ErrorBoundary] Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchSessions (http://localhost:5173/src/store/chat.ts:82:24) {\"type\":\"undefined\"}",
+      "ts": 1785323276831
+    },
+    {
+      "type": "canceled",
+      "text": "Uncaught (in promise) Error: canceled\n    at http://localhost:5173/src/api/client.ts:103:27\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=5ec68420:2926:14)\n    at async getWithOptionalSignal (http://localhost:5173/src/api/helpers.ts:10:15)\n    at async fetchSessions (http://localhost:5173/src/store/chat.ts:82:24)",
+      "ts": 1785323276831
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /evaluation/runs after 2000ms",
+      "ts": 1785323276982
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /knowledge-bases after 2000ms",
+      "ts": 1785323276982
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1785323278134
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1785323279137
+    }
+  ],
+  "allNetErrors": []
+}

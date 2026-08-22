@@ -120,3 +120,17 @@ backend/test_results*.xml
 # Frontend coverage
 frontend/coverage/
 frontend/coverage-*.json
+
+# ---- v0.6.1 仓库大扫除（T13）----
+# Agent 临时工作区
+.workbuddy/
+# deploy/ 调试残留：一次性测试脚本/报告/截图/日志
+deploy/test_*
+deploy/*_logs*.txt
+deploy/backend_errors.txt
+deploy/tauri_cdp_report*.json
+deploy/test_screenshots*/
+# backend 一次性诊断脚本
+backend/diag_*.py
+# 构建产物（曾误入库）
+backend/coverage-report.txt
