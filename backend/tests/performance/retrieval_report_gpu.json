@@ -1,0 +1,173 @@
+{
+  "benchmark": "retrieval",
+  "dataset": {
+    "name": "small",
+    "description": "10 个问题，模拟 100 文档规模",
+    "doc_count": 100,
+    "question_count": 10
+  },
+  "kb_id": 266,
+  "total_questions": 10,
+  "successful": 10,
+  "latency_stats": {
+    "min": 0.1064,
+    "max": 1.4629,
+    "mean": 0.3146,
+    "p50": 0.1901,
+    "p95": 0.9148,
+    "p99": 1.3533
+  },
+  "results": [
+    {
+      "index": 0,
+      "question": "什么是机器学习中的过拟合？",
+      "difficulty": "simple",
+      "question_type": "factual",
+      "latency_seconds": 1.4629,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 1,
+      "question": "Python 中列表和元组的区别是什么？",
+      "difficulty": "simple",
+      "question_type": "comparative",
+      "latency_seconds": 0.1849,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 2,
+      "question": "Transformer 模型的核心思想是什么？",
+      "difficulty": "medium",
+      "question_type": "conceptual",
+      "latency_seconds": 0.1954,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 3,
+      "question": "数据库索引是如何提高查询性能的？",
+      "difficulty": "medium",
+      "question_type": "conceptual",
+      "latency_seconds": 0.1758,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 4,
+      "question": "Redis 持久化的两种方式各有什么优缺点？",
+      "difficulty": "medium",
+      "question_type": "comparative",
+      "latency_seconds": 0.1797,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 5,
+      "question": "微服务架构相比单体架构的优势和挑战是什么？",
+      "difficulty": "complex",
+      "question_type": "comparative",
+      "latency_seconds": 0.2209,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 6,
+      "question": "在 RAG 系统中，RRF 融合算法的工作原理是什么？",
+      "difficulty": "complex",
+      "question_type": "reasoning",
+      "latency_seconds": 0.1064,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 7,
+      "question": "什么是 Docker 容器化技术？",
+      "difficulty": "simple",
+      "question_type": "factual",
+      "latency_seconds": 0.2448,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 8,
+      "question": "HTTP/2 相比 HTTP/1.1 有哪些改进？",
+      "difficulty": "medium",
+      "question_type": "comparative",
+      "latency_seconds": 0.159,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    },
+    {
+      "index": 9,
+      "question": "为什么大语言模型会出现幻觉现象？",
+      "difficulty": "complex",
+      "question_type": "reasoning",
+      "latency_seconds": 0.2162,
+      "chunks_returned": 10,
+      "top_chunk_scores": [
+        0.0164,
+        0.0161,
+        0.0159,
+        0.0156,
+        0.0154
+      ]
+    }
+  ],
+  "errors": []
+}
