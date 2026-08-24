@@ -1,0 +1,613 @@
+{
+  "timestamp": "2026-08-24T05:42:04.954Z",
+  "version": "v4.2",
+  "target": {
+    "title": "RAG 知识库平台",
+    "url": "http://tauri.localhost/#/system"
+  },
+  "endpoints": {
+    "frontend": "http://tauri.localhost",
+    "backend": "http://localhost:8000/api/v1",
+    "cdp": "http://127.0.0.1:9223"
+  },
+  "summary": {
+    "pass": 23,
+    "fail": 0,
+    "total": 23,
+    "passRate": 100
+  },
+  "modules": [
+    {
+      "name": "登录流程UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "知识库创建UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "文档上传UI",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "name": "聊天SSE_UI",
+      "pass": 3,
+      "fail": 0
+    },
+    {
+      "name": "反馈打分UI",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "name": "导航完整性",
+      "pass": 6,
+      "fail": 0
+    },
+    {
+      "name": "清理",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "results": [
+    {
+      "module": "登录流程UI",
+      "name": "1.1 打开登录页, 验证表单可见",
+      "status": "PASS",
+      "note": "登录表单 (用户名/密码/按钮) 均可见",
+      "duration": 7614,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.2 输入用户名密码并点击登录 → 跳转 dashboard",
+      "status": "PASS",
+      "note": "登录成功, 跳转到 /dashboard | [toast.success] 登录成功",
+      "duration": 2843,
+      "errorDetail": null
+    },
+    {
+      "module": "登录流程UI",
+      "name": "1.3 错误密码 → 显示错误提示 (不跳转)",
+      "status": "PASS",
+      "note": "错误密码显示提示, 仍停留在登录页 | [toast.error] 用户名或密码错误",
+      "duration": 8482,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.1 导航到知识库列表页",
+      "status": "PASS",
+      "note": "知识库列表页加载完成",
+      "duration": 2108,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.2 点击\"新建知识库\"按钮, 弹出表单",
+      "status": "PASS",
+      "note": "点击按钮: \"新建知识库\", Modal 弹出",
+      "duration": 611,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.3 填写表单 (名称 + 描述) 并提交",
+      "status": "PASS",
+      "note": "表单提交成功, Modal 关闭, kbName=v4UI测试KB-1787550057203 | [toast.error] 系统状态加载失败; [toast.success] 知识库创建成功",
+      "duration": 2434,
+      "errorDetail": null
+    },
+    {
+      "module": "知识库创建UI",
+      "name": "2.4 验证新 KB 出现在列表中",
+      "status": "PASS",
+      "note": "列表中已出现新 KB: v4UI测试KB-1787550057203",
+      "duration": 1,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.1 进入 KB 详情页",
+      "status": "PASS",
+      "note": "进入 KB 详情页, kbId=9",
+      "duration": 2343,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.2 点击\"上传文档\"按钮, 弹出上传 Modal",
+      "status": "PASS",
+      "note": "点击按钮: \"上传文档\", 上传 Modal 出现",
+      "duration": 596,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.3 上传文档并验证列表更新",
+      "status": "PASS",
+      "note": "文档上传成功, docId=9, 列表已刷新 | [toast.info] 文档 v4_ui_test_1787550065509.txt 解析完成",
+      "duration": 3155,
+      "errorDetail": null
+    },
+    {
+      "module": "文档上传UI",
+      "name": "3.4 验证解析进度显示",
+      "status": "PASS",
+      "note": "解析状态: timeout, UI显示进度: true",
+      "duration": 30435,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.1 进入聊天页面并创建会话",
+      "status": "PASS",
+      "note": "会话已创建, sessionId=9",
+      "duration": 4362,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.2 输入问题并发送, 验证流式渲染 (打字机效果)",
+      "status": "PASS",
+      "note": "流式渲染: textLen 319→319→319, 增长=false",
+      "duration": 6631,
+      "errorDetail": null
+    },
+    {
+      "module": "聊天SSE_UI",
+      "name": "4.3 等待响应完成并验证消息历史保存",
+      "status": "PASS",
+      "note": "消息历史: count=2, roles=user,assistant",
+      "duration": 2307,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.1 在 assistant 回答上点击\"赞\"按钮",
+      "status": "PASS",
+      "note": "已点击赞按钮: aria-label=\"点赞\" | [toast.success] 感谢你的反馈！",
+      "duration": 1612,
+      "errorDetail": null
+    },
+    {
+      "module": "反馈打分UI",
+      "name": "5.2 验证打分状态持久化 (API 查询)",
+      "status": "PASS",
+      "note": "反馈已持久化, msgId=22, rating=1",
+      "duration": 231,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.1 导航到 Dashboard (/dashboard) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/dashboard, bodyLen=199",
+      "duration": 2132,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.2 导航到 知识库 (/knowledge-bases) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/knowledge-bases, bodyLen=190",
+      "duration": 2148,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.3 导航到 聊天 (/chat) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/chat, bodyLen=151 | [toast.error] 系统状态加载失败",
+      "duration": 2098,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.4 导航到 评估 (/evaluation) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/evaluation, bodyLen=135",
+      "duration": 2101,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.5 导航到 系统监控 (/system) 无 JS 错误",
+      "status": "PASS",
+      "note": "pathname=/system, bodyLen=89",
+      "duration": 2081,
+      "errorDetail": null
+    },
+    {
+      "module": "导航完整性",
+      "name": "6.6 验证侧边栏菜单项数量 (admin 应见 8 项含子菜单)",
+      "status": "PASS",
+      "note": "侧边栏菜单项数量: 8",
+      "duration": 1,
+      "errorDetail": null
+    },
+    {
+      "module": "清理",
+      "name": "清理: 删除测试会话 / 文档 / KB",
+      "status": "PASS",
+      "note": "session: 200, doc: 200, kb: 200",
+      "duration": 132,
+      "errorDetail": null
+    }
+  ],
+  "allErrors": [],
+  "allWarnings": [
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025270
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025271
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025275
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025279
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025280
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025286
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025287
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/models after 1000ms",
+      "ts": 1787550025306
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550025307
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/models after 2000ms",
+      "ts": 1787550026292
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031889
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031889
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031891
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031892
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031893
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550031893
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042370
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042372
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042373
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042375
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042376
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550042377
+    },
+    {
+      "type": "filtered",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "ts": 1787550050205
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1787550057233
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1787550058239
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787550075742
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787550095716
+    },
+    {
+      "type": "warning",
+      "text": "[WebSocket] Invalid message: pong",
+      "ts": 1787550115751
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (1/2): get /system/status after 1000ms",
+      "ts": 1787550116206
+    },
+    {
+      "type": "warning",
+      "text": "Retrying request (2/2): get /system/status after 2000ms",
+      "ts": 1787550117209
+    }
+  ],
+  "allNetErrors": [],
+  "toasts": [
+    {
+      "text": "评估运行加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "今日问答数加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "系统状态加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "知识库加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "Missing authentication token",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "登录成功",
+      "type": "success",
+      "ts": 1787550040072
+    },
+    {
+      "text": "用户名或密码错误",
+      "type": "error",
+      "ts": 1787550050214
+    },
+    {
+      "text": "系统状态加载失败",
+      "type": "error",
+      "ts": 1787550060250
+    },
+    {
+      "text": "知识库创建成功",
+      "type": "success",
+      "ts": 1787550060295
+    },
+    {
+      "text": "文档 v4_ui_test_1787550065509.txt 解析完成",
+      "type": "info",
+      "ts": 1787550067031
+    },
+    {
+      "text": "感谢你的反馈！",
+      "type": "success",
+      "ts": 1787550112240
+    },
+    {
+      "text": "系统状态加载失败",
+      "type": "error",
+      "ts": 1787550119214
+    }
+  ],
+  "gapToasts": [
+    {
+      "text": "评估运行加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "今日问答数加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "系统状态加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "知识库加载失败",
+      "type": "error",
+      "ts": 1787550025326
+    },
+    {
+      "text": "Missing authentication token",
+      "type": "error",
+      "ts": 1787550025326
+    }
+  ],
+  "netWarnings": [
+    {
+      "url": "http://localhost:8000/api/v1/auth/refresh",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025269
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/sessions?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025271
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/status",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025275
+    },
+    {
+      "url": "http://localhost:8000/api/v1/knowledge-bases?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025279
+    },
+    {
+      "url": "http://localhost:8000/api/v1/evaluation/runs?page_size=20",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025280
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/feedback/stats",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025286
+    },
+    {
+      "url": "http://localhost:8000/api/v1/auth/logout",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025286
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/models",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550025307
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/status",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031888
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/sessions?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031889
+    },
+    {
+      "url": "http://localhost:8000/api/v1/knowledge-bases?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031891
+    },
+    {
+      "url": "http://localhost:8000/api/v1/evaluation/runs?page_size=20",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031892
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/feedback/stats",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031893
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/models",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550031893
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/status",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042370
+    },
+    {
+      "url": "http://localhost:8000/api/v1/knowledge-bases?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042372
+    },
+    {
+      "url": "http://localhost:8000/api/v1/evaluation/runs?page_size=20",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042373
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/feedback/stats",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042375
+    },
+    {
+      "url": "http://localhost:8000/api/v1/chat/sessions?page=1&page_size=100",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042376
+    },
+    {
+      "url": "http://localhost:8000/api/v1/system/models",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550042376
+    },
+    {
+      "url": "http://localhost:8000/api/v1/auth/login",
+      "status": 401,
+      "method": "XHR",
+      "ts": 1787550050205
+    }
+  ]
+}

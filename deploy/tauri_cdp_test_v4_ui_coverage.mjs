@@ -1,5 +1,5 @@
 /**
- * Tauri CDP UI 覆盖测试 v4.0
+ * Tauri CDP UI 覆盖测试 v4.2 (ToastObserver 修复版: rAF挂起/waitFor假阳性/归因漂移)
  *
  * 通过 Chrome DevTools Protocol (CDP) 模拟真人操作测试 Tauri 桌面应用 UI。
  * 覆盖 v3 未覆盖的 6 大 UI 场景:
@@ -53,10 +53,14 @@ const errorTracker = new (class {
     this.errors = [];
     this.warnings = [];
     this.netErrors = [];
+    this.netWarnings = [];   // 4xx 网络记录（不判 FAIL，供人工审查）
+    this.toasts = [];        // ToastObserver 捕获的 toast（全量，含豁免）
+    this.gapToasts = [];     // 步骤间隙捕获的 toast（reload/导航期间产生，不归因任何步骤）
+    this.toastStepStart = 0; // 当前步骤的 toast 基线
     this.stepStartIdx = 0;
   }
-  reset() { this.errors = []; this.warnings = []; this.netErrors = []; this.stepStartIdx = 0; }
-  markStepStart() { this.stepStartIdx = this.errors.length + this.netErrors.length; }
+  reset() { this.errors = []; this.warnings = []; this.netErrors = []; this.netWarnings = []; this.toasts = []; this.gapToasts = []; this.toastStepStart = 0; this.stepStartIdx = 0; }
+  markStepStart() { this.stepStartIdx = this.errors.length + this.netErrors.length; this.toastStepStart = this.toasts.length; }
   hasNewErrors() { return this.errors.length + this.netErrors.length > this.stepStartIdx; }
   getNewErrors() {
     return {
@@ -64,6 +68,7 @@ const errorTracker = new (class {
       netErrors: this.netErrors.slice(this.stepStartIdx),
     };
   }
+  getNewToasts() { return this.toasts.slice(this.toastStepStart); }
 })();
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -138,9 +143,12 @@ function setupListeners() {
       }
     } else if (msg.method === 'Network.responseReceived') {
       const r = msg.params.response;
-      // 登录错误密码测试会触发 401, 不算网络错误; 仅 >=500 记录
+      // 登录错误密码测试会触发 401, 不算网络错误; 仅 >=500 判 FAIL
       if (r.status >= 500) {
         errorTracker.netErrors.push({ url: r.url, status: r.status, method: msg.params.type, ts: Date.now() });
+      } else if (r.status >= 400 && r.status < 500) {
+        // 4xx 全记录（含预期 401），不判 FAIL，汇总打印供人工审查
+        errorTracker.netWarnings.push({ url: r.url, status: r.status, method: msg.params.type, ts: Date.now() });
       }
     } else if (msg.method === 'Log.entryAdded') {
       const entry = msg.params.entry;
@@ -155,6 +163,129 @@ function setupListeners() {
       }
     }
   });
+}
+
+// ============================================================
+// ToastObserver: antd toast 持久捕获（封堵 3 秒自动消失的监控盲区）
+// ============================================================
+
+/**
+ * 向页面注册 ToastObserver。
+ *
+ * 关键设计:
+ * 1. 用 Page.addScriptToEvaluateOnNewDocument 而非普通 evalJS 注入——
+ *    injectAuth/clearAuth 会触发 Page.reload, 普通注入的 observer 随文档销毁丢失;
+ *    此 API 注册的脚本在每次新文档加载时自动重装。
+ * 2. MutationObserver 挂 document.body(subtree) 而非 .ant-message 容器——
+ *    antd 容器是懒创建的(首次 message 调用才生成), DOMContentLoaded 时
+ *    attach 容器会挂空(v4.1 首跑教训: toasts 恒为空)。
+ * 3. toast 在渲染瞬间写入 sessionStorage(同 origin reload 后保留), 3 秒后
+ *    DOM 消失无所谓, 日志已持久化。
+ */
+async function installToastObserver() {
+  const observerScript = `
+  (() => {
+    if (window.__cdpToastObserverInstalled) return; // 防重复安装
+    window.__cdpToastObserverInstalled = true;
+    const LOG_KEY = '__cdp_toast_log';
+    const append = (entry) => {
+      try {
+        const log = JSON.parse(sessionStorage.getItem(LOG_KEY) || '[]');
+        log.push(entry);
+        sessionStorage.setItem(LOG_KEY, JSON.stringify(log));
+      } catch (e) {
+        // sessionStorage 不可用时的内存兜底(reload 后丢失, 好于全丢)
+        try { (window.__cdpToastMem = window.__cdpToastMem || []).push(entry); } catch (e2) {}
+      }
+    };
+    // toast 类型判定(双通道):
+    // 通道1: antd v5 内容 div 的语义 class(ant-message-error 等), 最直接
+    // 通道2: 图标 class(注意 getAttribute 而非 className, SVG 的 className 是对象)
+    const classify = (notice) => {
+      const sem = notice.querySelector('[class*="ant-message-error"], [class*="ant-message-success"], [class*="ant-message-warning"], [class*="ant-message-info"], [class*="ant-message-loading"], [class*="ant-notification-notice-error"], [class*="ant-notification-notice-success"], [class*="ant-notification-notice-warning"], [class*="ant-notification-notice-info"]');
+      if (sem) {
+        const c = sem.getAttribute('class') || '';
+        if (/error/.test(c)) return 'error';
+        if (/success/.test(c)) return 'success';
+        if (/warning/.test(c)) return 'warning';
+        if (/loading/.test(c)) return 'info';
+        if (/info/.test(c)) return 'info';
+      }
+      const icons = notice.querySelectorAll('[class*="anticon-"]');
+      for (const ic of icons) {
+        const cls = ic.getAttribute('class') || '';
+        if (/close-circle/.test(cls)) return 'error';
+        if (/check-circle/.test(cls)) return 'success';
+        if (/exclamation-circle|warning/.test(cls)) return 'warning';
+        if (/info-circle/.test(cls)) return 'info';
+      }
+      return 'info'; // 兜底(无语义标注)
+    };
+    const capture = (notice) => {
+      const text = (notice.innerText || '').trim().replace(/\\s+/g, ' ');
+      if (text) {
+        append({ text: text.substring(0, 300), type: classify(notice), ts: Date.now() });
+        return;
+      }
+      // 文本尚未渲染(React 分离提交): 短延时重试一次。
+      // 不用 rAF——后台窗口 rAF 回调挂起, 窗口回前台时 toast(3s)已消失, 必然漏捕(v4.1 诊断教训)
+      setTimeout(() => {
+        try {
+          if (!notice.isConnected) return;
+          const t2 = (notice.innerText || '').trim().replace(/\\s+/g, ' ');
+          if (t2) append({ text: t2.substring(0, 300), type: classify(notice), ts: Date.now() });
+        } catch (e) {}
+      }, 50);
+    };
+    // 监听 document.body 而非 .ant-message 容器:
+    // antd 容器懒创建, 容器级 attach 会挂空; body subtree 能捕获任意时机插入的 notice
+    const noticeSel = '.ant-message-notice, .ant-notification-notice';
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.matches && node.matches(noticeSel)) capture(node);
+          else if (node.querySelectorAll) node.querySelectorAll(noticeSel).forEach(capture);
+        }
+      }
+    });
+    const start = () => {
+      document.querySelectorAll(noticeSel).forEach(capture); // 已存在的先捕一轮
+      mo.observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start);
+  })();`;
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: observerScript });
+  // 立即对当前文档执行一次(reload 前的页面)
+  await evalJS(observerScript, false);
+}
+
+/**
+ * 收割 sessionStorage 中的 toast 日志, 增量并入 errorTracker。
+ * 返回本次新增的 toast 数组。
+ */
+async function collectToasts() {
+  try {
+    // 双通道读取: sessionStorage 正常时内存兜底恒为空, 二者互斥不会重复
+    const raw = await evalJS(`JSON.stringify([
+      ...JSON.parse(sessionStorage.getItem('__cdp_toast_log') || '[]'),
+      ...((typeof window.__cdpToastMem !== 'undefined' && window.__cdpToastMem) || []),
+    ])`);
+    const log = JSON.parse(raw || '[]');
+    // 集合过滤求增量(与计数无关, 免受去重导致的计数漂移影响)
+    const fresh = log.filter(t =>
+      !errorTracker.toasts.some(x => x.ts === t.ts && x.type === t.type && x.text === t.text));
+    for (const t of fresh) errorTracker.toasts.push(t);
+    return fresh;
+  } catch (e) {
+    return []; // 收割失败不阻断测试
+  }
+}
+
+/** 清空遗留 toast 日志(防上次运行残留污染本次报告) */
+async function clearToastLog() {
+  try { await evalJS(`sessionStorage.removeItem('__cdp_toast_log'); window.__cdpToastMem = []; true`); } catch {}
 }
 
 async function evalJS(expression, awaitPromise = true, returnByValue = true) {
@@ -334,7 +465,44 @@ async function getPathname() {
 // 测试步骤包装器 (复用 v3)
 // ============================================================
 
-async function step(name, fn) {
+/**
+ * 全局已知漂移 toast 豁免清单(v4.2, 2026-08-24 两轮全量人工裁决)。
+ *
+ * 来源: clearAuth/injectAuth 触发 Page.reload 后, Dashboard 后台轮询(6 路)以
+ * 无效/缺失 token 请求 → 401 → axios 拦截器重试 → 延迟弹 error toast。
+ * 漂移落点不确定(首轮漂到 2.3, 次轮漂到 6.3), 逐步骤豁免不可行, 故全局豁免。
+ *
+ * 安全性: ① 属测试设计副作用, 非产品缺陷(真实用户无"清 token 后停留 Dashboard"场景);
+ * ② toast 仍全量记录进报告 toasts/gapToasts 字段, 仅不判 FAIL;
+ * ③ 若这些请求真出故障, console error / 5xx 通道仍会兜底判 FAIL。
+ */
+const KNOWN_DRIFT_TOAST_TEXTS = [
+  '系统状态加载失败',
+  '评估运行加载失败',
+  '今日问答数加载失败',
+  '知识库加载失败',
+  'Missing authentication token',
+];
+
+/**
+ * 执行单个测试步骤。
+ * @param {string} name - 步骤名
+ * @param {Function} fn - 步骤函数
+ * @param {{expectErrorToast?: boolean, ignoreToastTexts?: string[]}} opts -
+ *   expectErrorToast: 本步骤预期出现 error toast(如 1.3 错误密码测试),
+ *     豁免判 FAIL 但仍记录到报告。
+ *   ignoreToastTexts: 步骤级精准豁免文本(与全局清单合并, 子串匹配)。
+ *   其余场景 error toast 一律 FAIL(宁误报不漏报, 人工裁决后补豁免)。
+ */
+async function step(name, fn, opts = {}) {
+  // 间隙收割(v4.2): 上一步结束~本步开始之间产生的 toast(如 clearAuth reload 期间
+  // Dashboard 的 401 提示)先收进 gapToasts——基线在收割之后建立, 天然不归因本步骤,
+  // 避免归因漂移把间隙 toast 误判到本步骤
+  const gap = await collectToasts();
+  if (gap.length > 0) {
+    errorTracker.gapToasts.push(...gap);
+    console.log(`    [gap-toast] 步骤间隙捕获 ${gap.length} 条(不归因本步骤): ${gap.map(t => `[${t.type}] ${t.text.substring(0, 40)}`).join('; ')}`);
+  }
   errorTracker.markStepStart();
   const start = Date.now();
   let status = 'PASS';
@@ -345,6 +513,11 @@ async function step(name, fn) {
     if (result && typeof result === 'object' && result.note) {
       note = result.note;
     }
+    // ToastObserver 收割: 步骤内新增 toast 归因到本步骤
+    const newToasts = await collectToasts();
+    const ignorePats = [...KNOWN_DRIFT_TOAST_TEXTS, ...(opts.ignoreToastTexts || [])];
+    const ignored = (t) => ignorePats.some(pat => t.text.includes(pat));
+    const errToasts = newToasts.filter(t => t.type === 'error' && !ignored(t));
     if (errorTracker.hasNewErrors()) {
       const { errors, netErrors } = errorTracker.getNewErrors();
       status = 'FAIL';
@@ -352,6 +525,17 @@ async function step(name, fn) {
       const netSummary = netErrors.map(e => `[${e.status}] ${e.url}`).join('; ');
       errorDetail = { errors, netErrors };
       note = `新错误: ${errSummary}${netSummary ? ' | 网络: ' + netSummary : ''}`;
+    } else if (errToasts.length > 0 && !opts.expectErrorToast) {
+      // 无 console 错误但有 error toast: 原有通道的盲区, 由 ToastObserver 封堵
+      status = 'FAIL';
+      const toastSummary = errToasts.map(t => `[toast.error] ${t.text.substring(0, 150)}`).join('; ');
+      errorDetail = { errorToasts: errToasts };
+      note = `错误 toast: ${toastSummary}`;
+    }
+    if (newToasts.length > 0) {
+      // note 追加 toast 摘要(豁免场景也可见)
+      const toastNote = newToasts.map(t => `[toast.${t.type}] ${t.text.substring(0, 80)}`).join('; ');
+      note = note ? `${note} | ${toastNote}` : toastNote;
     }
   } catch (e) {
     status = 'FAIL';
@@ -553,8 +737,9 @@ async function testLoginUI() {
   });
 
   await step('1.3 错误密码 → 显示错误提示 (不跳转)', async () => {
-    // 先登出回到 login
+    // 先登出回到 login (reload 期间 Dashboard 的 401 toast 由 step() 间隙收割进 gapToasts)
     await clearAuth();
+
     // HashRouter: 用 hash 导航到 login
     await navigateHash('#/login');
     await waitForElement('input[id="login_username"], input[name="username"]', { timeout: 10000 });
@@ -564,31 +749,33 @@ async function testLoginUI() {
     await setInputElement('input[id="login_password"], input[name="password"]', 'WrongPassword@2026');
     await sleep(300);
 
-    // 记录提交前的 body 文本
-    const textBefore = await getBodyText();
-
     // 点击登录
-    await evalJS(`
+    const clickInfo = await evalJS(`
       (() => {
         let btn = document.querySelector('button[type="submit"]') || document.querySelector('button.ant-btn-primary');
         if (btn) btn.click();
-        return true;
+        return { clicked: !!btn, btnText: btn ? (btn.innerText || '').trim() : null, disabled: btn ? btn.disabled : null };
       })()
     `);
+    if (!clickInfo.clicked) throw new Error(`未找到登录按钮: ${JSON.stringify(clickInfo)}`);
 
-    // 等待错误提示出现 (antd message 或 alert, 通常包含"密码"/"错误"/"失败"/"401"/"invalid")
+    // 等待错误 toast 出现 (v4.2 修复: 只匹配 .ant-message-notice 节点文本,
+    // 不匹配 body 全文——登录表单静态文本含"密码"label, body 匹配首轮即假阳性,
+    // 会在 toast 渲染前提前结束等待导致收割过早)
     let errorShown = false;
     try {
       await waitFor(async () => {
-        const text = await getBodyText();
-        // 匹配中英文错误提示
-        return /密码|错误|失败|invalid|incorrect|unauthorized|401|账号或密码|用户名或密码/i.test(text);
+        const toastText = await evalJS(`
+          Array.from(document.querySelectorAll('.ant-message-notice, .ant-notification-notice'))
+            .map(n => (n.innerText || '').trim()).filter(Boolean).join(' | ')
+        `);
+        return /密码|错误|失败|invalid|incorrect|unauthorized|401/i.test(toastText);
       }, { timeout: 8000 });
       errorShown = true;
     } catch (e) {
-      // 退而求其次: 验证仍停留在 login 页
-      const pathname = await getPathname();
-      if (pathname.includes('login')) errorShown = true;
+      // 退而求其次: 验证仍停留在 login 页 (toast 已由 ToastObserver 持久化, 不丢数据)
+      const pathnameFallback = await getPathname();
+      if (pathnameFallback.includes('login')) errorShown = true;
     }
 
     const pathname = await getPathname();
@@ -596,7 +783,7 @@ async function testLoginUI() {
     if (!errorShown) throw new Error('错误密码后未显示错误提示, 且未停留在 login 页');
     if (!pathname.includes('login')) throw new Error(`错误密码后不应跳转, 但 pathname=${pathname}`);
     return { note: '错误密码显示提示, 仍停留在登录页' };
-  });
+  }, { expectErrorToast: true }); // 本步骤设计即为触发 401 error toast, 豁免判 FAIL(ToastObserver 仍捕获记录)
 }
 
 // ============================================================
@@ -1217,7 +1404,7 @@ async function cleanup({ kbId, docId, sessionId } = {}) {
 // ============================================================
 
 async function main() {
-  console.log('=== Tauri CDP UI 覆盖测试 v4.0 ===');
+  console.log('=== Tauri CDP UI 覆盖测试 v4.2 ===');
   console.log(`时间: ${new Date().toISOString()}`);
   console.log(`前端: ${FRONTEND}`);
   console.log(`后端: ${BACKEND}`);
@@ -1240,6 +1427,11 @@ async function main() {
 
   errorTracker.reset();
 
+  // ToastObserver: 清空上次运行遗留日志, 注册每次新文档自动重装的 toast 监听
+  await clearToastLog();
+  await installToastObserver();
+  console.log('ToastObserver 已注册 (toast 持久捕获, 封堵 3 秒自动消失盲区)');
+
   // 2. 准备 admin token
   let admin;
   try {
@@ -1258,6 +1450,10 @@ async function main() {
     console.error(`CDP 注入登录态失败: ${e.message}`);
     process.exit(2);
   }
+
+  // ToastObserver 自证: injectAuth 触发过 Page.reload, 新文档应已自动重装 observer
+  const obsInstalled = await evalJS('window.__cdpToastObserverInstalled === true');
+  console.log(`  [${obsInstalled ? '✓' : '✗'}] ToastObserver reload 后自动重装${obsInstalled ? '生效' : '未生效(需排查)'}`);
 
   // 4. 运行测试模块
   let kbName = null;
@@ -1328,10 +1524,43 @@ async function main() {
     errorTracker.netErrors.forEach((e, i) => console.log(`[${i + 1}] ${e.status} ${e.url}`));
   }
 
+  // ToastObserver 汇总: 全量 toast 分类统计 + error 明细 + 间隙 toast 单列
+  const tailGap = await collectToasts(); // 收割步骤间隙(最后一步结束到此刻)的尾部 toast → 归入 gapToasts
+  if (tailGap.length > 0) errorTracker.gapToasts.push(...tailGap);
+  const toastByType = {};
+  errorTracker.toasts.forEach(t => { toastByType[t.type] = (toastByType[t.type] || 0) + 1; });
+  console.log('\n--- Toast 捕获汇总 (ToastObserver) ---');
+  if (errorTracker.toasts.length === 0) {
+    console.log('无 toast 捕获 (含 1.3 预期错误 toast 则 observer 未工作, 需检查)');
+  } else {
+    console.log(`  分类: ${Object.entries(toastByType).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+    const errToastList = errorTracker.toasts.filter(t => t.type === 'error');
+    if (errToastList.length === 0) {
+      console.log('  无 error toast');
+    } else {
+      console.log('  error toast 明细:');
+      errToastList.forEach((t, i) => console.log(`  [${i + 1}] ${t.text.substring(0, 150)}`));
+    }
+  }
+  // 步骤间隙 toast (reload/导航期间产生, 不归因任何步骤, 不判 FAIL, 供人工审查)
+  console.log('\n--- 步骤间隙 toast (gapToasts, 不归因任何步骤) ---');
+  if (errorTracker.gapToasts.length === 0) {
+    console.log('无间隙 toast');
+  } else {
+    errorTracker.gapToasts.forEach((t, i) => console.log(`[${i + 1}] [${t.type}] ${t.text.substring(0, 150)}`));
+  }
+
+  console.log('\n--- 4xx 网络记录 (不判 FAIL, 供人工审查) ---');
+  if (errorTracker.netWarnings.length === 0) {
+    console.log('无 4xx 请求');
+  } else {
+    errorTracker.netWarnings.forEach((e, i) => console.log(`[${i + 1}] ${e.status} ${e.method} ${e.url}`));
+  }
+
   // 7. 生成报告
   const report = {
     timestamp: new Date().toISOString(),
-    version: 'v4.0',
+    version: 'v4.2',
     target: { title: target.title, url: target.url },
     endpoints: { frontend: FRONTEND, backend: BACKEND, cdp: CDP_HTTP },
     summary: {
@@ -1352,6 +1581,11 @@ async function main() {
     allErrors: errorTracker.errors,
     allWarnings: errorTracker.warnings,
     allNetErrors: errorTracker.netErrors,
+    // ToastObserver (v4.1): toast 全量捕获(含豁免), 4xx 网络记录
+    toasts: errorTracker.toasts,
+    // v4.2: 步骤间隙 toast (reload/导航期间产生, 不归因任何步骤)
+    gapToasts: errorTracker.gapToasts,
+    netWarnings: errorTracker.netWarnings,
   };
   const reportPath = join(REPORT_DIR, `cdp_v4_report_${Date.now()}.json`);
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
