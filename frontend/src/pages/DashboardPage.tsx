@@ -10,6 +10,7 @@ import type { FeedbackStats } from '../api/chat';
 import { getErrorMessage } from '../utils/errorReporter';
 import { globalT } from '../i18n';
 import { useApiToast } from '../hooks/useApiToast';
+import { useAuthStore } from '../store/auth';
 import {
   DashboardTopKpis,
   DocTrendChart,
@@ -32,6 +33,11 @@ function isSystemHealthy(status: ExtendedSystemStatus | null | undefined): boole
 export default function DashboardPage() {
   const { message } = AntdApp.useApp();
   const { error: toastError } = useApiToast();
+  const user = useAuthStore((s) => s.user);
+  // 系统状态/评估历史/反馈统计为 admin-only 端点，user 角色调用了必然 403
+  // 并弹 "Admin access required" 错误 toast（多账号 CDP 测试 T9 实证）。
+  // 非 admin 跳过这 3 路请求，对应卡片展示空态。
+  const isAdmin = user?.role === 'admin';
 
   const [loading, setLoading] = useState(true);
   const [todaySessions, setTodaySessions] = useState(0);
@@ -66,17 +72,19 @@ export default function DashboardPage() {
           toastError('今日问答数加载失败');
         }),
 
-      // 2. 系统健康状态
-      systemApi
-        .status(controller.signal)
-        .then((data) => {
-          if (cancelled) return;
-          setSystemStatus(data as ExtendedSystemStatus);
-        })
-        .catch((e) => {
-          if (e instanceof Error && e.name === 'CanceledError') return;
-          toastError('系统状态加载失败');
-        }),
+      // 2. 系统健康状态（admin-only，user 跳过）
+      isAdmin
+        ? systemApi
+            .status(controller.signal)
+            .then((data) => {
+              if (cancelled) return;
+              setSystemStatus(data as ExtendedSystemStatus);
+            })
+            .catch((e) => {
+              if (e instanceof Error && e.name === 'CanceledError') return;
+              toastError('系统状态加载失败');
+            })
+        : Promise.resolve(),
 
       // 3. KB 列表（用于文档统计）
       kbApi
@@ -90,29 +98,33 @@ export default function DashboardPage() {
           toastError('知识库加载失败');
         }),
 
-      // 4. 评估历史
-      evaluationApi
-        .listRuns({ page_size: 20 }, controller.signal)
-        .then((res) => {
-          if (cancelled) return;
-          setEvalRuns(res?.items || []);
-        })
-        .catch((e) => {
-          if (e instanceof Error && e.name === 'CanceledError') return;
-          toastError('评估运行加载失败');
-        }),
+      // 4. 评估历史（admin-only，user 跳过）
+      isAdmin
+        ? evaluationApi
+            .listRuns({ page_size: 20 }, controller.signal)
+            .then((res) => {
+              if (cancelled) return;
+              setEvalRuns(res?.items || []);
+            })
+            .catch((e) => {
+              if (e instanceof Error && e.name === 'CanceledError') return;
+              toastError('评估运行加载失败');
+            })
+        : Promise.resolve(),
 
-      // 5. 反馈统计
-      feedbackApi
-        .getStats(undefined, controller.signal)
-        .then((data) => {
-          if (cancelled) return;
-          setFeedbackStats(data);
-        })
-        .catch((e) => {
-          if (e instanceof Error && e.name === 'CanceledError') return;
-          message.error(getErrorMessage(e) || globalT('common.requestFailed'));
-        }),
+      // 5. 反馈统计（admin-only，user 跳过）
+      isAdmin
+        ? feedbackApi
+            .getStats(undefined, controller.signal)
+            .then((data) => {
+              if (cancelled) return;
+              setFeedbackStats(data);
+            })
+            .catch((e) => {
+              if (e instanceof Error && e.name === 'CanceledError') return;
+              message.error(getErrorMessage(e) || globalT('common.requestFailed'));
+            })
+        : Promise.resolve(),
 
       // 6. 可用模型列表
       systemApi
@@ -149,7 +161,7 @@ export default function DashboardPage() {
       controller.abort();
       if (minLoadingTimer) clearTimeout(minLoadingTimer);
     };
-  }, [message, toastError]);
+  }, [message, toastError, isAdmin]);
 
   const { healthy, totalDocs, totalChunks } = useMemo(() => ({
     healthy: isSystemHealthy(systemStatus),

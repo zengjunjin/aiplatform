@@ -24,14 +24,22 @@ class ChatOllama(BaseChatModel):
 
     H4: 复用长生命周期的 httpx.Client，避免每次 _generate 都建立新连接，
     减少 TCP 握手开销，提升 RAGAS 多次 LLM 调用的整体性能。
+
+    修复（2026-08-24）：新增 json_mode（默认开启）。RAGAS 所有 metric 的输出
+    都期望结构化 JSON（pydantic 解析），小模型（qwen2.5:1.5b）纯文本输出时
+    常包裹 markdown 代码块或夹带说明文字，导致 ragas 解析失败、指标返回 None
+    （faithfulness/context_recall 大面积 None 的根因）。Ollama format="json"
+    在采样层面约束输出为合法 JSON，显著提升解析成功率。
     """
 
     model: str = "qwen2.5:1.5b"
     host: str = "http://ollama:11434"
     temperature: float = 0.3
     timeout: float = 600.0
+    json_mode: bool = True
 
     def __init__(self, model: str = "qwen2.5:1.5b", host: str = "http://ollama:11434", **kwargs):
+        kwargs.setdefault("json_mode", True)
         super().__init__(model=model, host=host, **kwargs)
         # H4: 长生命周期 client，复用连接池
         self._client = httpx.Client(
@@ -62,15 +70,15 @@ class ChatOllama(BaseChatModel):
                 role = "system"
             ollama_messages.append({"role": role, "content": msg.content})
 
-        resp = self._client.post(
-            f"{self.host}/api/chat",
-            json={
-                "model": self.model,
-                "messages": ollama_messages,
-                "stream": False,
-                "options": {"temperature": self.temperature},
-            },
-        )
+        payload = {
+            "model": self.model,
+            "messages": ollama_messages,
+            "stream": False,
+            "options": {"temperature": self.temperature},
+        }
+        if self.json_mode:
+            payload["format"] = "json"
+        resp = self._client.post(f"{self.host}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
 

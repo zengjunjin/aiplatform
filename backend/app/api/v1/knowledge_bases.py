@@ -147,6 +147,8 @@ async def add_collaborator(
     返回新增协作者信息。
     """
     data = await kb_service.add_collaborator(kb_id, user.id, req.user_id, req.permission, db)
+    # 缓存失效：被添加的协作者需立即可见该 KB，清除其列表缓存
+    await cache_delete_pattern(f"kb:list:{req.user_id}:*")
     return ok(data=data)
 
 
@@ -165,6 +167,8 @@ async def remove_collaborator(
     返回空数据。
     """
     await kb_service.remove_collaborator(kb_id, user.id, user_id, db)
+    # 缓存失效：被移除的协作者列表需立即失去该 KB，清除其列表缓存
+    await cache_delete_pattern(f"kb:list:{user_id}:*")
     return ok(message="Removed")
 
 

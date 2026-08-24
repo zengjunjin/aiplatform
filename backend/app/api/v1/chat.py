@@ -147,6 +147,10 @@ async def send_message(
 ):
     # 使用注入的 db 验证 session 归属（短持有，路由返回后即释放）
     session = await chat_service.get_session(session_id, user.id, db)
+    # T10 修复：校验后立即结束事务归还连接。StreamingResponse 期间 FastAPI
+    # 不关闭 Depends(get_db)，若不释放，连接将被 hold 到整个 SSE 流结束（10s+），
+    # 高并发下耗尽连接池（QueuePool 20+30），导致其他端点 500。
+    await db.commit()
 
     # SSE 并发计数器：__aenter__ 做 INCR + 429 检查；__aexit__ 由 ChatPipeline.stream finally 负责 DECR
     counter_cm: AsyncIterator[None] = ChatPipeline.make_sse_counter(user.id)

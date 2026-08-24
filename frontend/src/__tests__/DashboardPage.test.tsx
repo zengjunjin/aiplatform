@@ -15,6 +15,16 @@ vi.mock('../i18n', () => ({
   globalT: (key: string) => key,
 }));
 
+// Mock auth store：默认 admin（6 路全加载语义）；user 角色用例内动态切换
+const mockAuthUser = { value: { id: 1, username: 'admin', role: 'admin' as string } };
+vi.mock('../store/auth', () => ({
+  useAuthStore: Object.assign(
+    (selector: (s: { user: typeof mockAuthUser.value | null }) => unknown) =>
+      selector({ user: mockAuthUser.value }),
+    { getState: () => ({ user: mockAuthUser.value }) }
+  ),
+}));
+
 // Mock API
 const mockListSessions = vi.fn();
 const mockSystemStatus = vi.fn();
@@ -154,6 +164,30 @@ describe('DashboardPage', () => {
       expect(mockFeedbackGetStats).toHaveBeenCalled();
       expect(mockSystemListModels).toHaveBeenCalled();
     });
+  });
+
+  it('user role: should skip admin-only APIs (system status / eval runs / feedback stats)', async () => {
+    mockAuthUser.value = { id: 2, username: 'bob', role: 'user' };
+    try {
+      render(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>
+      );
+
+      // 非 admin 的 3 路正常调用
+      await waitFor(() => {
+        expect(mockListSessions).toHaveBeenCalled();
+        expect(mockKbList).toHaveBeenCalled();
+        expect(mockSystemListModels).toHaveBeenCalled();
+      });
+      // admin-only 3 路不调用（403 "Admin access required" toast 修复验证）
+      expect(mockSystemStatus).not.toHaveBeenCalled();
+      expect(mockListRuns).not.toHaveBeenCalled();
+      expect(mockFeedbackGetStats).not.toHaveBeenCalled();
+    } finally {
+      mockAuthUser.value = { id: 1, username: 'admin', role: 'admin' };
+    }
   });
 
   it('should render echarts when data is available', async () => {

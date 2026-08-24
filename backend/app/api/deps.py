@@ -104,6 +104,12 @@ async def get_current_user(
     if not user.is_active:
         raise AuthError("User is disabled")
 
+    # T10 修复：认证查询后立即结束事务归还连接（expire_on_commit=False，
+    # user 属性仍可访问）。否则连接被 hold 到请求结束——对 SSE 流式端点
+    # （chat send_message）意味着整个 LLM 生成期间占用池连接，
+    # 高并发下耗尽 QueuePool 导致其他端点 500。
+    await db.commit()
+
     # 仅缓存活跃用户，避免禁用用户被短期复用
     if redis:
         try:
