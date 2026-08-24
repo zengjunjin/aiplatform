@@ -1,5 +1,5 @@
 /**
- * Tauri CDP UI 覆盖测试 v4.2 (ToastObserver 修复版: rAF挂起/waitFor假阳性/归因漂移)
+ * Tauri CDP UI 覆盖测试 v4.3 (v4.2 + 模块7: 多账号 UI 轮换隔离验证)
  *
  * 通过 Chrome DevTools Protocol (CDP) 模拟真人操作测试 Tauri 桌面应用 UI。
  * 覆盖 v3 未覆盖的 6 大 UI 场景:
@@ -482,6 +482,12 @@ const KNOWN_DRIFT_TOAST_TEXTS = [
   '今日问答数加载失败',
   '知识库加载失败',
   'Missing authentication token',
+  // v4.3 (2026-08-24) 豁免: axios canceled toast。
+  // 来源: 页面切换时 abort 未完成请求(React/axios 标准行为), 前端把 canceled
+  // 显示为 error toast。dev server 形态响应慢时频发; 打包形态偶发。
+  // 安全性: 同上——toast 全量记录进报告, 5xx/console error 通道仍兜底;
+  // "canceled"非功能故障(请求被主动取消而非失败)。
+  'canceled',
 ];
 
 /**
@@ -1358,6 +1364,182 @@ async function testNavigationCompleteness() {
 }
 
 // ============================================================
+// 模块 7: UI 账号轮换（v4.3 新增，SPEC multi-account-rigorous §3.5 G4）
+// ============================================================
+
+/**
+ * 泛化 API 登录（模块 7 轮换 alice/bob/carol 用）
+ */
+async function loginUserApi(username, password) {
+  const resp = await fetch(`${BACKEND}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (resp.status !== 200) {
+    throw new Error(`${username} 登录失败: ${resp.status}`);
+  }
+  const data = await resp.json();
+  return {
+    accessToken: data.data?.access_token,
+    refreshToken: data.data?.refresh_token,
+    userId: data.data?.user?.id,
+    username: data.data?.user?.username || username,
+    role: data.data?.user?.role || 'user',
+  };
+}
+
+async function testAccountRotationUI(admin) {
+  currentModule = 'UI账号轮换';
+  console.log('\n=== 模块7: UI 账号轮换（多账号 UI 隔离） ===');
+
+  // 前置: 三账号 token + bob 对照 KB
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'test_accounts.json'), 'utf8'));
+  const ts = Date.now();
+  const aliceKbName = `alice-private-${ts}`;
+  const bobKbName = `bob-private-${ts}`;
+
+  const apiB = async (method, p, { token, json } = {}) => {
+    const r = await fetch(`${BACKEND}${p}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: json ? JSON.stringify(json) : undefined,
+    });
+    let d = null;
+    try { d = await r.json(); } catch { /* ignore */ }
+    return { status: r.status, data: d?.data ?? d };
+  };
+
+  let alice; let bob; let carol; let aliceKbId; let bobKbId;
+
+  await step('7.0 前置: 三账号登录 + 双方私有 KB 就绪', async () => {
+    [alice, bob, carol] = await Promise.all([
+      loginUserApi('alice', seed.password),
+      loginUserApi('bob', seed.password),
+      loginUserApi('carol', seed.password),
+    ]);
+    const ka = await apiB('POST', '/knowledge-bases', { token: alice.accessToken, json: { name: aliceKbName } });
+    const kb = await apiB('POST', '/knowledge-bases', { token: bob.accessToken, json: { name: bobKbName } });
+    if (ka.status !== 200 || kb.status !== 200) throw new Error(`KB 创建失败 a=${ka.status} b=${kb.status}`);
+    aliceKbId = ka.data.id; bobKbId = kb.data.id;
+    return { note: `alice#${alice.userId} bob#${bob.userId} carol#${carol.userId}, kbA=${aliceKbId} kbB=${bobKbId}` };
+  });
+
+  // 7.1 alice 视角: 只见自己的 KB
+  await step('7.1 alice 登录: KB 列表只见自己的（不见 bob 的）', async () => {
+    errorTracker.markStepStart();
+    await injectAuth(alice, '/knowledge-bases');
+    await waitFor(async () => {
+      const t = await getBodyText();
+      return t.includes(aliceKbName);
+    }, { timeout: 12000, interval: 800 });
+    const body = await getBodyText();
+    if (body.includes(bobKbName)) throw new Error(`alice 视角泄漏了 bob 的 KB: ${bobKbName}`);
+    await screenshot(`17-alice-kb-list.png`);
+    return { note: 'alice 仅见 alice-private' };
+  });
+
+  // 7.2 bob 视角: 不见 alice 的 + 无用户管理菜单
+  await step('7.2 bob 登录: 不见 alice 的 KB + 无「用户管理」菜单', async () => {
+    errorTracker.markStepStart();
+    await injectAuth(bob, '/knowledge-bases');
+    await waitFor(async () => {
+      const t = await getBodyText();
+      return t.includes(bobKbName);
+    }, { timeout: 12000, interval: 800 });
+    const body = await getBodyText();
+    if (body.includes(aliceKbName)) throw new Error(`bob 视角泄漏了 alice 的 KB: ${aliceKbName}`);
+    if (body.includes('用户管理') || body.includes('反馈管理')) {
+      throw new Error('bob(user) 出现 admin-only 菜单（用户管理/反馈管理）');
+    }
+    await screenshot(`18-bob-kb-list.png`);
+    return { note: 'bob 仅见 bob-private，菜单无 admin 项' };
+  });
+
+  // 7.3 bob 被加为 read 协作者 → 刷新后可见 alice KB
+  await step('7.3 bob 被加 read 协作者: 刷新后可见 alice 的 KB（只读）', async () => {
+    errorTracker.markStepStart();
+    const add = await apiB('POST', `/knowledge-bases/${aliceKbId}/collaborators`, {
+      token: alice.accessToken, json: { user_id: bob.userId, permission: 'read' },
+    });
+    if (add.status !== 200) throw new Error(`添加协作者失败: ${add.status}`);
+    // bob 视角 reload 重新拉取列表
+    await send('Page.reload');
+    await sleep(3000);
+    await evalJS(`window.location.hash = '#/knowledge-bases';`);
+    await sleep(1500);
+    await waitFor(async () => {
+      const t = await getBodyText();
+      return t.includes(aliceKbName);
+    }, { timeout: 12000, interval: 800 });
+    const body = await getBodyText();
+    if (!body.includes(aliceKbName)) throw new Error('bob(read) 刷新后仍不可见 alice KB');
+    await screenshot(`19-bob-collab-visible.png`);
+    return { note: '权限变更后刷新, read 协作者可见 KB' };
+  });
+
+  // 7.4 carol 被禁用 → 刷新被踢
+  await step('7.4 carol 被禁用: 刷新后被踢回登录页', async () => {
+    errorTracker.markStepStart();
+    await injectAuth(carol, '/dashboard');
+    const dis = await apiB('PUT', `/users/${carol.userId}/status`, {
+      token: admin.accessToken, json: { is_active: false },
+    });
+    if (dis.status !== 200) throw new Error(`禁用失败: ${dis.status}`);
+    await send('Page.reload');
+    await sleep(3000);
+    const pathname = await getPathname();
+    const kicked = String(pathname).includes('login');
+    if (!kicked) {
+      // 未跳 login: 检查是否有 401 toast（ observer 持久日志）
+      const toastText = await evalJS('JSON.stringify(window.__cdpToastLog || [])');
+      const has401 = String(toastText).includes('401') || String(toastText).includes('登录');
+      if (!has401) throw new Error(`禁用后未被踢回登录页: pathname=${pathname}`);
+    }
+    await screenshot(`20-carol-disabled-kicked.png`);
+    // 恢复 carol（后续/收尾需要）
+    await apiB('PUT', `/users/${carol.userId}/status`, {
+      token: admin.accessToken, json: { is_active: true },
+    });
+    return { note: `kicked=${kicked}` };
+  });
+
+  // 7.5 admin 视角: 用户管理菜单 + 用户列表含 bob/carol
+  await step('7.5 admin 登录: 「用户管理」菜单可见 + 用户列表完整', async () => {
+    errorTracker.markStepStart();
+    await injectAuth(admin, '/users');
+    await waitFor(async () => {
+      const t = await getBodyText();
+      return t.includes('用户管理') && (t.includes('alice') || t.includes('bob'));
+    }, { timeout: 12000, interval: 800 });
+    const body = await getBodyText();
+    if (!body.includes('用户管理')) throw new Error('admin 未见「用户管理」菜单');
+    if (!body.includes('carol')) throw new Error('用户列表未见 carol');
+    await screenshot(`21-admin-users.png`);
+    const hasErr = errorTracker.hasNewErrors();
+    if (hasErr) {
+      const errs = errorTracker.getNewErrors();
+      throw new Error(`模块 7 出现非预期 JS/网络错误: ${JSON.stringify(errs).slice(0, 150)}`);
+    }
+    return { note: 'admin 视角完整, 模块 7 零非预期错误' };
+  });
+
+  // 7.6 清理
+  await step('7.6 清理: 移除协作者 + 删除双方 KB', async () => {
+    const notes = [];
+    const rm = await apiB('DELETE', `/knowledge-bases/${aliceKbId}/collaborators/${bob.userId}`, { token: alice.accessToken });
+    notes.push(`rm-collab=${rm.status}`);
+    const da = await apiB('DELETE', `/knowledge-bases/${aliceKbId}`, { token: alice.accessToken });
+    notes.push(`del-alice-kb=${da.status}`);
+    const db = await apiB('DELETE', `/knowledge-bases/${bobKbId}`, { token: bob.accessToken });
+    notes.push(`del-bob-kb=${db.status}`);
+    return { note: notes.join(', ') };
+  });
+}
+
+// ============================================================
 // 清理
 // ============================================================
 
@@ -1404,7 +1586,7 @@ async function cleanup({ kbId, docId, sessionId } = {}) {
 // ============================================================
 
 async function main() {
-  console.log('=== Tauri CDP UI 覆盖测试 v4.2 ===');
+  console.log('=== Tauri CDP UI 覆盖测试 v4.3 ===');
   console.log(`时间: ${new Date().toISOString()}`);
   console.log(`前端: ${FRONTEND}`);
   console.log(`后端: ${BACKEND}`);
@@ -1479,6 +1661,9 @@ async function main() {
 
     // 模块 6: 页面导航完整性
     await testNavigationCompleteness();
+
+    // 模块 7: UI 账号轮换（v4.3, SPEC multi-account-rigorous §3.5 G4）
+    await testAccountRotationUI(admin);
   } catch (e) {
     console.error('测试中断:', e.message);
     testResults.push({ module: '中断', name: '测试中断', status: 'FAIL', note: e.message, duration: 0, errorDetail: { stack: e.stack } });
@@ -1560,7 +1745,7 @@ async function main() {
   // 7. 生成报告
   const report = {
     timestamp: new Date().toISOString(),
-    version: 'v4.2',
+    version: 'v4.3',
     target: { title: target.title, url: target.url },
     endpoints: { frontend: FRONTEND, backend: BACKEND, cdp: CDP_HTTP },
     summary: {

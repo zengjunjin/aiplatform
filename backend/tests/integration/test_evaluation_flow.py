@@ -92,7 +92,11 @@ async def kb_with_doc(client, admin_headers):
     assert kb_r.status_code == 200, f"Create KB failed: {kb_r.text}"
     kb_id = kb_r.json()["data"]["id"]
 
-    test_doc_path = os.path.join(os.path.dirname(__file__), "test_doc.txt")
+    # 专用多 chunk 文档（~3000 字 / CHUNK_SIZE=512 → 7+ chunks > 检索 top_k）。
+    # 原 test_doc.txt 仅 410 字只切 1 chunk，此时 "contexts != 全部 chunks"
+    # 断言在数学上不可判别（检索必然返回唯一 chunk），导致测试非确定性失败。
+    # 该文件仅本测试使用，不影响 e2e/rag 系列对单 chunk 特性的依赖。
+    test_doc_path = os.path.join(os.path.dirname(__file__), "test_doc_evaluation.txt")
     with patch(
         "app.tasks.document_task.parse_document_task.delay",
         return_value=MagicMock(id="test-task-id"),
@@ -100,7 +104,7 @@ async def kb_with_doc(client, admin_headers):
         with open(test_doc_path, "rb") as f:
             upload_r = await client.post(
                 "/api/v1/documents/upload",
-                files={"file": ("test_doc.txt", f, "text/plain")},
+                files={"file": ("test_doc_evaluation.txt", f, "text/plain")},
                 data={"kb_id": str(kb_id)},
                 headers=admin_headers,
             )

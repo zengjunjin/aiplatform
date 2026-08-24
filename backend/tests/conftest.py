@@ -6,6 +6,15 @@ pytest-asyncio 0.23+ 与 Python 3.12 下，自定义 event_loop 已弃用且会�
 asyncio_mode = auto（见 pyproject.toml）会自动管理事件循环。
 """
 
+# 加载 backend/.env（若存在）：本地开发时 e2e/rag 测试通过 os.getenv 读取
+# INITIAL_ADMIN_PASSWORD 等配置（CI 通过真实环境变量注入，优先级更高：
+# override=False 不覆盖已存在的环境变量）。
+from pathlib import Path as _Path
+
+from dotenv import load_dotenv as _load_dotenv
+
+_load_dotenv(_Path(__file__).resolve().parent.parent / ".env", override=False)
+
 # pyarrow 兼容性 patch：datasets 2.14.x 依赖 pa.PyExtensionType，
 # 但 pyarrow 15+ 移除了该属性（改用 pa.ExtensionType）。
 # 在 import datasets/ragas 之前 patch，避免 AttributeError 导致测试收集失败。

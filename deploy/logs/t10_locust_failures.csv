@@ -1,0 +1,172 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/api/v1/chat/sessions/3/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:02Z,2026-08-24T14:02:02Z
+POST,/api/v1/knowledge-bases,HTTPError('500 Server Error: Internal Server Error for url: /api/v1/knowledge-bases'),5,2026-08-24T14:01:56Z,2026-08-24T14:02:11Z
+POST,/api/v1/chat/sessions/45/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:16Z,2026-08-24T14:02:23Z
+POST,/api/v1/chat/sessions/95/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/46/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:58Z,2026-08-24T14:01:58Z
+PUT,/api/v1/users/93/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/93/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/141/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/141/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+PUT,/api/v1/users/43/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/43/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+PUT,/api/v1/users/28/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/28/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+PUT,/api/v1/users/34/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/34/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+PUT,/api/v1/users/143/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/143/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/75/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:02Z,2026-08-24T14:03:02Z
+PUT,/api/v1/users/49/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/49/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+POST,/api/v1/chat/sessions/60/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:01Z,2026-08-24T14:03:01Z
+PUT,/api/v1/users/10/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/10/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/5/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/5/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/73/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/73/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+PUT,/api/v1/users/47/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/47/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+POST,/api/v1/chat/sessions/50/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:07Z,2026-08-24T14:02:19Z
+PUT,/api/v1/users/117/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/117/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/32/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:50Z,2026-08-24T14:01:50Z
+PUT,/api/v1/users/19/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/19/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+POST,/api/v1/chat/sessions/13/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:12Z,2026-08-24T14:02:12Z
+POST,/api/v1/chat/sessions/5/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:31Z,2026-08-24T14:01:31Z
+PUT,/api/v1/users/30/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/30/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+PUT,/api/v1/users/59/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/59/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+POST,/api/v1/chat/sessions/42/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:29Z,2026-08-24T14:02:34Z
+POST,/api/v1/chat/sessions/18/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:08Z,2026-08-24T14:01:08Z
+PUT,/api/v1/users/38/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/38/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+PUT,/api/v1/users/137/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/137/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+POST,/api/v1/chat/sessions/43/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:00:57Z,2026-08-24T14:01:39Z
+POST,/api/v1/chat/sessions/25/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),3,2026-08-24T14:00:49Z,2026-08-24T14:04:45Z
+POST,/api/v1/chat/sessions/99/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+PUT,/api/v1/users/63/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/63/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/4/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:34Z,2026-08-24T14:01:34Z
+POST,/api/v1/chat/sessions/29/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:44Z,2026-08-24T14:01:44Z
+PUT,/api/v1/users/132/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/132/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/20/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/20/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+POST,/api/v1/chat/sessions/16/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:02:00Z,2026-08-24T14:04:30Z
+PUT,/api/v1/users/148/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/148/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/71/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/71/status'),1,2026-08-24T14:03:23Z,2026-08-24T14:03:23Z
+PUT,/api/v1/users/42/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/42/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+PUT,/api/v1/users/83/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/83/status'),1,2026-08-24T14:03:23Z,2026-08-24T14:03:23Z
+POST,/api/v1/chat/sessions/47/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:54Z,2026-08-24T14:01:54Z
+POST,/api/v1/auth/login,RemoteDisconnected('Remote end closed connection without response'),36,2026-08-24T14:01:40Z,2026-08-24T14:01:56Z
+POST,/api/v1/chat/sessions/9/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:21Z,2026-08-24T14:01:21Z
+PUT,/api/v1/users/156/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/156/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+POST,/api/v1/chat/sessions/102/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:34Z,2026-08-24T14:03:34Z
+POST,/api/v1/chat/sessions/27/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:13Z,2026-08-24T14:01:13Z
+POST,/api/v1/chat/sessions/14/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),3,2026-08-24T14:00:48Z,2026-08-24T14:03:12Z
+POST,/api/v1/chat/sessions/92/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+POST,/api/v1/chat/sessions/30/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:05Z,2026-08-24T14:02:17Z
+PUT,/api/v1/users/103/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/103/status'),1,2026-08-24T14:03:23Z,2026-08-24T14:03:23Z
+PUT,/api/v1/users/142/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/142/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+POST,/api/v1/auth/login,HTTPError('500 Server Error: Internal Server Error for url: /api/v1/auth/login'),41,2026-08-24T14:01:48Z,2026-08-24T14:02:10Z
+PUT,/api/v1/users/7/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/7/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+POST,/api/v1/chat/sessions/15/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:37Z,2026-08-24T14:02:41Z
+POST,/api/v1/chat/sessions,RemoteDisconnected('Remote end closed connection without response'),2,2026-08-24T14:01:59Z,2026-08-24T14:02:07Z
+POST,/api/v1/chat/sessions/39/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:11Z,2026-08-24T14:02:30Z
+PUT,/api/v1/users/127/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/127/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/58/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/58/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/42/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:01:58Z,2026-08-24T14:01:58Z
+PUT,/api/v1/users/157/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/157/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+PUT,/api/v1/users/140/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/140/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+PUT,/api/v1/users/36/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/36/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/24/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:00:59Z,2026-08-24T14:01:44Z
+POST,/api/v1/chat/sessions/27/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:01:46Z,2026-08-24T14:01:46Z
+PUT,/api/v1/users/108/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/108/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+POST,/api/v1/chat/sessions/20/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:02:07Z,2026-08-24T14:02:07Z
+POST,/api/v1/chat/sessions/76/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:37Z,2026-08-24T14:03:37Z
+PUT,/api/v1/users/133/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/133/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/92/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/92/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+POST,/api/v1/auth/login,HTTPError('401 Client Error: Unauthorized for url: /api/v1/auth/login'),5,2026-08-24T14:01:58Z,2026-08-24T14:02:12Z
+POST,/api/v1/chat/sessions/36/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:42Z,2026-08-24T14:01:42Z
+POST,/api/v1/chat/sessions/37/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:01:56Z,2026-08-24T14:01:56Z
+PUT,/api/v1/users/94/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/94/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+PUT,/api/v1/users/33/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/33/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z
+GET,/api/v1/knowledge-bases?page=1&page_size=20,HTTPError('500 Server Error: Internal Server Error for url: /api/v1/knowledge-bases?page=1&page_size=20'),1,2026-08-24T14:02:03Z,2026-08-24T14:02:03Z
+POST,/api/v1/chat/sessions/28/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:45Z,2026-08-24T14:01:45Z
+PUT,/api/v1/users/113/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/113/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+POST,/api/v1/chat/sessions/49/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:47Z,2026-08-24T14:03:48Z
+PUT,/api/v1/users/112/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/112/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/24/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:02:00Z,2026-08-24T14:02:00Z
+PUT,/api/v1/users/109/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/109/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+POST,/api/v1/chat/sessions/34/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:41Z,2026-08-24T14:01:41Z
+PUT,/api/v1/users/111/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/111/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+POST,/api/v1/chat/sessions/37/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:33Z,2026-08-24T14:01:33Z
+POST,/api/v1/chat/sessions/40/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:28Z,2026-08-24T14:04:10Z
+PUT,/api/v1/users/60/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/60/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+POST,/api/v1/chat/sessions/51/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:57Z,2026-08-24T14:02:57Z
+POST,/api/v1/chat/sessions/59/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:19Z,2026-08-24T14:03:19Z
+POST,/api/v1/chat/sessions/38/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:13Z,2026-08-24T14:01:13Z
+PUT,/api/v1/users/154/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/154/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+PUT,/api/v1/users/8/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/8/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+POST,/api/v1/chat/sessions/116/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:16Z,2026-08-24T14:03:16Z
+PUT,/api/v1/users/45/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/45/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+PUT,/api/v1/users/145/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/145/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/51/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/51/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+GET,/api/v1/chat/sessions?page=1&page_size=20,HTTPError('500 Server Error: Internal Server Error for url: /api/v1/chat/sessions?page=1&page_size=20'),11,2026-08-24T14:01:42Z,2026-08-24T14:02:10Z
+PUT,/api/v1/users/15/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/15/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+POST,/api/v1/chat/sessions/58/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:08Z,2026-08-24T14:03:08Z
+PUT,/api/v1/users/159/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/159/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/19/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:53Z,2026-08-24T14:01:53Z
+PUT,/api/v1/users/122/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/122/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+GET,/api/v1/system/status,HTTPError('401 Client Error: Unauthorized for url: /api/v1/system/status'),2107,2026-08-24T14:00:44Z,2026-08-24T14:05:23Z
+POST,/api/v1/chat/sessions/6/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:00:59Z,2026-08-24T14:02:12Z
+PUT,/api/v1/users/128/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/128/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+PUT,/api/v1/users/69/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/69/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+POST,/api/v1/chat/sessions/17/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:02:31Z,2026-08-24T14:05:21Z
+PUT,/api/v1/users/64/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/64/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+GET,/api/v1/system/status,RemoteDisconnected('Remote end closed connection without response'),16,2026-08-24T14:01:54Z,2026-08-24T14:02:41Z
+PUT,/api/v1/users/39/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/39/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/31/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/31/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+PUT,/api/v1/users/152/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/152/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+PUT,/api/v1/users/121/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/121/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/9/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/9/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+POST,/api/v1/chat/sessions/78/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:36Z,2026-08-24T14:03:36Z
+POST,/api/v1/chat/sessions/61/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:57Z,2026-08-24T14:02:57Z
+PUT,/api/v1/users/110/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/110/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/106/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+PUT,/api/v1/users/144/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/144/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/10/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:58Z,2026-08-24T14:01:58Z
+PUT,/api/v1/users/136/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/136/status'),1,2026-08-24T14:03:23Z,2026-08-24T14:03:23Z
+POST,/api/v1/chat/sessions/85/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:05Z,2026-08-24T14:03:05Z
+PUT,/api/v1/users/14/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/14/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+PUT,/api/v1/users/48/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/48/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+PUT,/api/v1/users/155/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/155/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+PUT,/api/v1/users/46/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/46/status'),1,2026-08-24T14:03:31Z,2026-08-24T14:03:31Z
+POST,/api/v1/chat/sessions/31/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:00:52Z,2026-08-24T14:02:12Z
+POST,/api/v1/chat/sessions/20/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:54Z,2026-08-24T14:04:50Z
+POST,/api/v1/chat/sessions/69/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:22Z,2026-08-24T14:03:22Z
+POST,/api/v1/chat/sessions/44/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:06Z,2026-08-24T14:01:06Z
+PUT,/api/v1/users/13/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/13/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/90/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/90/status'),1,2026-08-24T14:03:25Z,2026-08-24T14:03:25Z
+POST,/api/v1/chat/sessions/57/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:51Z,2026-08-24T14:02:51Z
+POST,/api/v1/chat/sessions/82/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:19Z,2026-08-24T14:03:19Z
+POST,/api/v1/chat/sessions/4/messages,CatchResponseError('HTTP 500'),1,2026-08-24T14:01:56Z,2026-08-24T14:01:56Z
+POST,/api/v1/chat/sessions/70/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:55Z,2026-08-24T14:02:55Z
+POST,/api/v1/chat/sessions/26/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:55Z,2026-08-24T14:04:11Z
+PUT,/api/v1/users/114/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/114/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+PUT,/api/v1/users/115/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/115/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+PUT,/api/v1/users/35/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/35/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/chat/sessions/105/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:09Z,2026-08-24T14:03:09Z
+PUT,/api/v1/users/75/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/75/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+POST,/api/v1/chat/sessions/35/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:22Z,2026-08-24T14:05:05Z
+POST,/api/v1/chat/sessions/107/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:14Z,2026-08-24T14:03:14Z
+PUT,/api/v1/users/146/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/146/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/105/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/105/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+POST,/api/v1/auth/register,HTTPError('500 Server Error: Internal Server Error for url: /api/v1/auth/register'),45,2026-08-24T14:01:40Z,2026-08-24T14:01:56Z
+POST,/api/v1/chat/sessions/117/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:18Z,2026-08-24T14:03:18Z
+POST,/api/v1/chat/sessions/23/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:00:49Z,2026-08-24T14:02:15Z
+PUT,/api/v1/users/16/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/16/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+POST,/api/v1/chat/sessions/33/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),2,2026-08-24T14:01:29Z,2026-08-24T14:05:08Z
+POST,/api/v1/chat/sessions/8/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:18Z,2026-08-24T14:01:18Z
+POST,/api/v1/chat/sessions/21/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:23Z,2026-08-24T14:01:23Z
+POST,/api/v1/chat/sessions/55/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:02:51Z,2026-08-24T14:02:51Z
+PUT,/api/v1/users/158/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/158/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+POST,/api/v1/chat/sessions/81/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:14Z,2026-08-24T14:03:14Z
+PUT,/api/v1/users/12/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/12/status'),1,2026-08-24T14:03:30Z,2026-08-24T14:03:30Z
+PUT,/api/v1/users/21/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/21/status'),1,2026-08-24T14:03:26Z,2026-08-24T14:03:26Z
+PUT,/api/v1/users/138/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/138/status'),1,2026-08-24T14:03:23Z,2026-08-24T14:03:23Z
+PUT,/api/v1/users/119/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/119/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+POST,/api/v1/chat/sessions/41/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),4,2026-08-24T14:00:53Z,2026-08-24T14:05:22Z
+POST,/api/v1/chat/sessions/89/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:03:06Z,2026-08-24T14:03:06Z
+PUT,/api/v1/users/96/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/96/status'),1,2026-08-24T14:03:29Z,2026-08-24T14:03:29Z
+PUT,/api/v1/users/139/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/139/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+PUT,/api/v1/users/151/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/151/status'),1,2026-08-24T14:03:32Z,2026-08-24T14:03:32Z
+PUT,/api/v1/users/37/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/37/status'),1,2026-08-24T14:03:27Z,2026-08-24T14:03:27Z
+POST,/api/v1/chat/sessions/12/messages,CatchResponseError('SSE stream did not end with data: [DONE]'),1,2026-08-24T14:01:42Z,2026-08-24T14:01:42Z
+PUT,/api/v1/users/44/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/44/status'),1,2026-08-24T14:03:24Z,2026-08-24T14:03:24Z
+PUT,/api/v1/users/11/status,HTTPError('403 Client Error: Forbidden for url: /api/v1/users/11/status'),1,2026-08-24T14:03:28Z,2026-08-24T14:03:28Z

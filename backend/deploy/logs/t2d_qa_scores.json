@@ -1,0 +1,92 @@
+{
+  "RAG 系统的核心组件有哪些？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.8773669867174408,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "什么是向量数据库？它在 RAG 中起什么作用？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9673911783402924,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "文档分块（chunking）的策略有哪些？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9225207647895356,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "如何评估 RAG 系统的回答质量？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9269578497535383,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "Prompt 模板版本化的好处是什么？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9807944238380837,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "上下文窗口管理的策略是什么？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9219421815118212,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "Embedding 缓存如何提升性能？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.7425152518780695,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "什么是混合检索（hybrid retrieval）？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.8892165821446557,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "重排序（reranking）的作用是什么？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9682915299183076,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "聊天历史的摘要压缩机制是什么？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9897054123331287,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "知识库平台的权限模型是怎样的？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9781695538223274,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "SSE 流式响应如何处理取消？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.6929332687122226,
+    "context_precision": 0.0,
+    "context_recall": null
+  },
+  "文档解析支持哪些格式？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9861890964053847,
+    "context_precision": 0.0,
+    "context_recall": null
+  },
+  "如何监控 RAG 系统的延迟？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9392576349505669,
+    "context_precision": 0.9999999999,
+    "context_recall": null
+  },
+  "模型路由（model routing）策略有哪些？": {
+    "faithfulness": null,
+    "answer_relevancy": 0.9043841344112246,
+    "context_precision": 0.0,
+    "context_recall": null
+  }
+}

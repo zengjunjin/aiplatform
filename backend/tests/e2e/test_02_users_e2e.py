@@ -29,7 +29,9 @@ def temp_disable_user(base_url, admin_headers):
     若测试失败或顺序变化，后续依赖 test_user_headers 的测试全部 401 连锁失败。
     """
     username = f"temp_disable_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@test.local"
+    # 补跑修复：@test.local 是 RFC 保留域名，会被 pydantic email-validator 拒绝（400），
+    # 属测试数据缺陷非服务端问题；@example.com 为合法示例域名（locustfile 同款用法）
+    email = f"{username}@example.com"
     password = "Test@123456"
 
     # 注册临时用户

@@ -64,9 +64,92 @@ def base_url():
     return BASE_URL
 
 
+class _AdminSession:
+    """自愈的 admin 认证状态（token 过期或被吊销时自动重新登录）。
+
+    背景（token 隔离修复）：admin_token 是 session 级共享，而 CDP e2e
+    套件运行数小时，access_token 60min 过期（docker-compose
+    ACCESS_TOKEN_EXPIRE_MINUTES=60）。过期后 CDP 页面的前端 401 拦截器
+    （client.ts）自动 logout() → POST /auth/logout 吊销注入的 admin
+    token 对；或前端自动 refresh 成功 → rotation 拉黑旧 refresh_token。
+    共享 token 永久失效后，后续所有依赖 admin_headers/admin_token 的
+    测试 401 雪崩（"Token has been revoked"）。
+
+    自愈策略：
+    - token/headers 用 dict 原地更新（clear+update），所有持有引用的
+      session/module 级 fixture（logged_in_cdp、test_kb 等）无需感知。
+    - autouse fixture 每测试前调 ensure_valid()：距上次检查 >max_age 秒
+      才 GET /auth/me 验证（控制开销），401 则重新登录（不走 refresh，
+      refresh_token 可能已被前端 rotation 拉黑）。
+    - 重新登录带 429 退避（/auth/login 限流 5/minute）。
+    """
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.token: dict = {}
+        self.headers: dict = {}
+        self._last_check = 0.0
+        self._login()
+
+    def _login(self) -> None:
+        admin_password = (
+            os.getenv("E2E_ADMIN_PASSWORD")
+            or os.getenv("INITIAL_ADMIN_PASSWORD")
+            or "admin123"
+        )
+        r = None
+        for _ in range(12):  # 429 退避：5/minute 窗口，每 5s 重试
+            r = requests.post(
+                f"{self.base_url}/auth/login",
+                json={"username": "admin", "password": admin_password},
+                timeout=10,
+            )
+            if r.status_code != 429:
+                break
+            time.sleep(5)
+        assert r is not None and r.status_code == 200, (
+            f"Admin login failed: {r.status_code if r is not None else 'no response'} "
+            f"{r.text if r is not None else ''}"
+        )
+        data = extract_data(r)
+        # 原地更新：持有 dict 引用的 fixtures 立即可见新 token
+        self.token.clear()
+        self.token.update(
+            {
+                "access_token": data["access_token"],
+                "refresh_token": data["refresh_token"],
+                "token_type": data.get("token_type", "bearer"),
+                "expires_in": data.get("expires_in"),
+                "user": data["user"],
+            }
+        )
+        self.headers.clear()
+        self.headers.update({"Authorization": f"Bearer {data['access_token']}"})
+        self._last_check = time.time()
+
+    def ensure_valid(self, max_age: float = 300) -> None:
+        """惰性验证 token；401（过期/吊销）时重新登录。"""
+        if time.time() - self._last_check < max_age:
+            return
+        try:
+            r = requests.get(f"{self.base_url}/auth/me", headers=self.headers, timeout=10)
+        except requests.RequestException:
+            self._last_check = time.time()
+            return  # 网络抖动不触发重登，留给下次检查
+        self._last_check = time.time()
+        if r.status_code == 401:
+            self._login()
+
+
 @pytest.fixture(scope="session")
-def admin_token(base_url):
-    """登录 admin 获取 token
+def admin_session(base_url):
+    """自愈 admin 会话（token 隔离核心）。"""
+    return _AdminSession(base_url)
+
+
+@pytest.fixture(scope="session")
+def admin_token(admin_session):
+    """登录 admin 获取 token（dict 由 admin_session 原地更新，自动自愈）。
 
     admin 密码优先级：
     1. E2E_ADMIN_PASSWORD 环境变量（CI secret 注入）
@@ -79,31 +162,13 @@ def admin_token(base_url):
     因 fixture 初始化失败而 error。增加 INITIAL_ADMIN_PASSWORD 回退，
     与 init_db.py 创建 admin 时使用的环境变量保持一致。
     """
-    admin_password = (
-        os.getenv("E2E_ADMIN_PASSWORD") or os.getenv("INITIAL_ADMIN_PASSWORD") or "admin123"
-    )
-    r = requests.post(
-        f"{base_url}/auth/login",
-        json={
-            "username": "admin",
-            "password": admin_password,
-        },
-        timeout=10,
-    )
-    assert r.status_code == 200, f"Admin login failed: {r.text}"
-    data = extract_data(r)
-    return {
-        "access_token": data["access_token"],
-        "refresh_token": data["refresh_token"],
-        "token_type": data.get("token_type", "bearer"),
-        "expires_in": data.get("expires_in"),
-        "user": data["user"],
-    }
+    return admin_session.token
 
 
 @pytest.fixture(scope="session")
-def admin_headers(admin_token):
-    return {"Authorization": f"Bearer {admin_token['access_token']}"}
+def admin_headers(admin_session):
+    """Authorization headers（dict 由 admin_session 原地更新，自动自愈）。"""
+    return admin_session.headers
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -348,10 +413,15 @@ def _generate_report(results):
 
 
 @pytest.fixture(autouse=True)
-def _record_result(request, report_collector):
-    """自动记录每个测试结果"""
+def _record_result(request, report_collector, admin_session):
+    """自动记录每个测试结果
+
+    同时触发 admin token 自愈（token 隔离修复）：access_token 60min 过期
+    或被 CDP 前端自动登出吊销后，下一个测试前自动重新登录，避免 401 雪崩。
+    """
     from tests.e2e.helpers.reporter import TestRecord
 
+    admin_session.ensure_valid()
     start = time.time()
     record = TestRecord(
         name=request.node.nodeid,

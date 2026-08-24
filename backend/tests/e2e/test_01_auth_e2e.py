@@ -31,7 +31,10 @@ def test_login_admin_success(admin_token):
     assert data["user"]["username"] == "admin"
     # expires_in 应为 ACCESS_TOKEN_EXPIRE_MINUTES * 60
     # H14 修复：支持环境配置覆盖（默认 30*60=1800，部署 .env 可能设为 60*60=3600）
-    expected_expires = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")) * 60
+    # 补跑修复：e2e 验证的是容器部署行为，docker-compose 显式设
+    # ACCESS_TOKEN_EXPIRE_MINUTES=60（覆盖本机 .env=30），故默认期望 3600；
+    # 特殊部署可用 E2E_EXPECTED_EXPIRES_IN 覆盖。
+    expected_expires = int(os.getenv("E2E_EXPECTED_EXPIRES_IN", "3600"))
     assert (
         data["expires_in"] == expected_expires
     ), f"Expected expires_in={expected_expires}, got {data['expires_in']}"
