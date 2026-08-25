@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { kbApi } from '../api';
 import authApi from '../api/auth';
 import type { CollaboratorInfo } from '../types';
-import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError, isFormValidationError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 
 interface Props {
@@ -50,7 +50,9 @@ export default function KBCollaboratorModal({ open, kbId, onClose }: Props) {
       const data = await kbApi.getCollaborators(kbId);
       setCollaborators(data);
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('errors.loadCollaboratorsFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('errors.loadCollaboratorsFailed'));
+      }
     } finally {
       setCollabLoading(false);
     }
@@ -103,7 +105,9 @@ export default function KBCollaboratorModal({ open, kbId, onClose }: Props) {
       fetchCollaborators();
     } catch (e: unknown) {
       if (isFormValidationError(e)) return;
-      message.error(getErrorMessage(e) || t('kb.operationFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('kb.operationFailed'));
+      }
     }
   };
 

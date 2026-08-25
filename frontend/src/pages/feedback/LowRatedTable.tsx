@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { feedbackApi } from '../../api/chat';
 import type { FeedbackDetail } from '../../api/chat';
-import { getErrorMessage } from '../../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../../utils/errorReporter';
 import { FEEDBACK_TYPE_LABELS } from '../../constants/feedback';
 
 const { Paragraph } = Typography;
@@ -67,7 +67,9 @@ export default function LowRatedTable({
       onFeedbacksChange(result.items);
     } catch (e: unknown) {
       if (signal?.aborted) return;
-      message.error(getErrorMessage(e) || t('feedback.loadFeedbacksFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('feedback.loadFeedbacksFailed'));
+      }
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

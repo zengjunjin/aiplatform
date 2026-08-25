@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { documentApi } from '../api';
 import type { DocumentPreviewData } from '../api/documents';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 
 const { Text } = Typography;
 
@@ -50,7 +50,9 @@ export default function DocumentPreviewModal({
         setPage(result.page);
       } catch (e: unknown) {
         if (controller.signal.aborted) return;
-        message.error(getErrorMessage(e) || t('documentPreview.loadFailed'));
+        if (!isAuthExpiredError(e)) {
+          message.error(getErrorMessage(e) || t('documentPreview.loadFailed'));
+        }
         setData(null);
       } finally {
         if (!controller.signal.aborted) setLoading(false);

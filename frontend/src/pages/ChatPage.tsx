@@ -12,7 +12,7 @@ import NewSessionModal from '../components/NewSessionModal';
 import { systemApi } from '../api';
 import type { MessageWithRefs, Reference } from '../types';
 import type { ModelInfo } from '../api/system';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 import { ChatHeader, ChatMessagesArea, ChatModelSelector } from './ChatPage.parts';
 
 /** 空消息数组的稳定引用，避免 selector 每次返回新数组导致重渲染 */
@@ -138,7 +138,10 @@ export default function ChatPage() {
   // Task 48: 监听 fetchMessages 错误上报, 通过 message.error 提示用户
   useEffect(() => {
     if (messagesError !== null && messagesError !== undefined) {
-      message.error(getErrorMessage(messagesError) || t('chat.fetchMessagesFailed'));
+      // 会话失效错误静默（auth store 弹统一 "登录已过期" 提示）
+      if (!isAuthExpiredError(messagesError)) {
+        message.error(getErrorMessage(messagesError) || t('chat.fetchMessagesFailed'));
+      }
       clearMessagesError();
     }
   }, [messagesError, message, clearMessagesError, t]);
@@ -187,7 +190,9 @@ export default function ChatPage() {
     try {
       await sendMessage(sessionIdNum, content, selectedModel || undefined);
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('chat.sendFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('chat.sendFailed'));
+      }
     }
   }, [streaming, sendMessage, sessionIdNum, selectedModel, message, t]);
 
@@ -201,7 +206,9 @@ export default function ChatPage() {
       pendingSessionId.current = session.id;
       setNewSessionModal(false);
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('chat.createFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('chat.createFailed'));
+      }
       setNewSessionModal(false);
     }
   }, [createSession, message, t]);
@@ -214,7 +221,9 @@ export default function ChatPage() {
       }
       message.success(t('chat.deleteSuccess'));
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('chat.deleteFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('chat.deleteFailed'));
+      }
     }
   }, [deleteSession, sessionIdNum, navigate, message, t]);
 

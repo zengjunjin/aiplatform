@@ -29,7 +29,7 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import DocumentUploadModal from '../components/DocumentUploadModal';
 import KBCollaboratorModal from '../components/KBCollaboratorModal';
 import KBBreadcrumbHeader from '../components/KBBreadcrumbHeader';
-import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError, isFormValidationError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 import { useDocumentProgressPolling, DocumentStatusCell, EditKBModal } from './KnowledgeBaseDetailPage.parts';
 
@@ -119,7 +119,9 @@ export default function KnowledgeBaseDetailPage() {
       setEditModal(false);
     } catch (e: unknown) {
       if (isFormValidationError(e)) return;
-      message.error(getErrorMessage(e) || t('kb.updateFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('kb.updateFailed'));
+      }
       setEditModal(false);
     }
   };

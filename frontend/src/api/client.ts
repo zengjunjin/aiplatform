@@ -63,6 +63,16 @@ function getErrorMessage(error: AxiosError): string {
   return responseData?.message || error.message || globalT('common.requestFailed');
 }
 
+/**
+ * 会话失效（401 且 refresh 已失败/不适用）时构造带 isAuthExpired 标记的错误。
+ * 页面/钩子层的错误 toast 据此标记静默抑制，避免跳转登录页前后
+ * 多路并发加载各自弹 "XX加载失败" 的连锁噪音；统一的
+ * "登录已过期" 提示由 auth store 的 refresh 失败路径弹出（仅一次）。
+ */
+function authExpiredError(error: AxiosError): Error {
+  return Object.assign(new Error(getErrorMessage(error)), { isAuthExpired: true });
+}
+
 client.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) {
@@ -109,17 +119,17 @@ client.interceptors.response.use(
           }
           return client(config);
         }
-        // refresh 失败：refreshAccessToken 内部已 logout
-        const msg = getErrorMessage(error);
-        return Promise.reject(new Error(msg));
+        // refresh 失败：refreshAccessToken 内部已 logout。
+        // 标记 isAuthExpired：页面 catch 据此抑制 "XX加载失败" 连锁 toast
+        // （会话失效时多路并发加载各自弹错，跳转登录页后堆积成噪音）
+        return Promise.reject(authExpiredError(error));
       }
 
       // 已重试过 / logout / refresh 请求的 401：清理本地态后 reject
       if (!isLogoutRequest && !isRefreshRequest) {
         await useAuthStore.getState().logout();
       }
-      const msg = getErrorMessage(error);
-      return Promise.reject(new Error(msg));
+      return Promise.reject(authExpiredError(error));
     }
     
     config._retryCount = config._retryCount || 0;

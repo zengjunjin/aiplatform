@@ -23,7 +23,7 @@ import { GridComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import dayjs from 'dayjs';
 import { useKBStore } from '../store/kb';
-import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError, isFormValidationError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 import { KBCard } from './KnowledgeBasesPage.parts';
 
@@ -110,7 +110,9 @@ export default function KnowledgeBasesPage() {
       form.resetFields();
     } catch (e: unknown) {
       if (isFormValidationError(e)) return; // 表单验证错误
-      message.error(getErrorMessage(e) || t('kb.createFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('kb.createFailed'));
+      }
       setModalOpen(false);
     }
   };

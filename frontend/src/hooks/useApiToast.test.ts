@@ -45,6 +45,8 @@ vi.mock('antd', async () => {
 // Mock getErrorMessage 以隔离 errorReporter 的 logger 副作用，行为与真实实现一致
 vi.mock('../utils/errorReporter', () => ({
   getErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  isAuthExpiredError: (e: unknown) =>
+    typeof e === 'object' && e !== null && (e as { isAuthExpired?: unknown }).isAuthExpired === true,
 }));
 
 describe('useApiToast', () => {
@@ -95,6 +97,22 @@ describe('useApiToast', () => {
       });
 
       expect(mockMessage.error).toHaveBeenCalledWith('boom');
+      expect(ret).toBeUndefined();
+    });
+
+    it('should suppress message.error when error is auth-expired (isAuthExpired=true)', async () => {
+      const { result } = renderHook(() => useApiToast());
+      // 会话失效错误：client.ts 401→refresh 失败路径会打 isAuthExpired 标记
+      const authExpired = Object.assign(new Error('Session expired'), { isAuthExpired: true });
+      const fn = vi.fn().mockRejectedValue(authExpired);
+
+      let ret: unknown;
+      await act(async () => {
+        ret = await result.current.runWithToast(fn, { successKey: 'ok', errorKey: 'err' });
+      });
+
+      // 抑制：不弹 error toast，统一提示由 auth store 负责
+      expect(mockMessage.error).not.toHaveBeenCalled();
       expect(ret).toBeUndefined();
     });
 

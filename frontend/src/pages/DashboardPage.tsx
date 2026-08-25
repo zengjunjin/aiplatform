@@ -7,7 +7,7 @@ import type { KnowledgeBase, ChatSession } from '../types';
 import type { ExtendedSystemStatus } from '../api/system';
 import type { EvaluationRunItem } from '../api/evaluation';
 import type { FeedbackStats } from '../api/chat';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 import { globalT } from '../i18n';
 import { useApiToast } from '../hooks/useApiToast';
 import { useAuthStore } from '../store/auth';
@@ -69,7 +69,7 @@ export default function DashboardPage() {
         .catch((e) => {
           // 组件卸载 abort 后的 CanceledError 静默处理
           if (e instanceof Error && e.name === 'CanceledError') return;
-          toastError('今日问答数加载失败');
+          toastError('今日问答数加载失败', e);
         }),
 
       // 2. 系统健康状态（admin-only，user 跳过）
@@ -82,7 +82,7 @@ export default function DashboardPage() {
             })
             .catch((e) => {
               if (e instanceof Error && e.name === 'CanceledError') return;
-              toastError('系统状态加载失败');
+              toastError('系统状态加载失败', e);
             })
         : Promise.resolve(),
 
@@ -95,7 +95,7 @@ export default function DashboardPage() {
         })
         .catch((e) => {
           if (e instanceof Error && e.name === 'CanceledError') return;
-          toastError('知识库加载失败');
+          toastError('知识库加载失败', e);
         }),
 
       // 4. 评估历史（admin-only，user 跳过）
@@ -108,7 +108,7 @@ export default function DashboardPage() {
             })
             .catch((e) => {
               if (e instanceof Error && e.name === 'CanceledError') return;
-              toastError('评估运行加载失败');
+              toastError('评估运行加载失败', e);
             })
         : Promise.resolve(),
 
@@ -122,7 +122,9 @@ export default function DashboardPage() {
             })
             .catch((e) => {
               if (e instanceof Error && e.name === 'CanceledError') return;
-              message.error(getErrorMessage(e) || globalT('common.requestFailed'));
+              if (!isAuthExpiredError(e)) {
+                message.error(getErrorMessage(e) || globalT('common.requestFailed'));
+              }
             })
         : Promise.resolve(),
 
@@ -135,7 +137,9 @@ export default function DashboardPage() {
         })
         .catch((e) => {
           if (e instanceof Error && e.name === 'CanceledError') return;
-          message.error(getErrorMessage(e) || globalT('common.requestFailed'));
+          if (!isAuthExpiredError(e)) {
+            message.error(getErrorMessage(e) || globalT('common.requestFailed'));
+          }
         }),
     ];
 

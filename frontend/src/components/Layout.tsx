@@ -3,7 +3,7 @@ import { Layout, Menu, Modal, Form, Input, App as AntdApp, Typography } from 'an
 import { Outlet, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/auth';
-import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError, isFormValidationError } from '../utils/errorReporter';
 import { debounce } from '../utils/format';
 import {
   BookOpen,
@@ -153,7 +153,9 @@ export default function MainLayout() {
       navigate('/login');
     } catch (e: unknown) {
       if (isFormValidationError(e)) return;
-      message.error(getErrorMessage(e) || t('auth.changePasswordFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('auth.changePasswordFailed'));
+      }
     }
   }, [pwdForm, message, t, logout, navigate]);
 
@@ -259,11 +261,15 @@ export default function MainLayout() {
   // ErrorBoundary 已捕获的渲染错误不会冒泡到 window, 此处仅捕获事件回调 / 定时器 / Promise 等未捕获错误
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
+      // 会话失效错误静默（auth store 弹统一 "登录已过期" 提示）
+      if (isAuthExpiredError(event.error)) return;
       const msg = event.message || t('errorBoundary.globalErrorToast');
       message.error(msg, 5);
     };
     const handleRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
+      // 会话失效错误静默（auth store 弹统一 "登录已过期" 提示）
+      if (isAuthExpiredError(reason)) return;
       const msg = reason instanceof Error
         ? reason.message
         : (typeof reason === 'string' ? reason : t('errorBoundary.unhandledRejectionToast'));

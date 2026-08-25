@@ -15,7 +15,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { evaluationApi, kbApi } from '../api';
 import type { EvaluationRunItem, EvaluationResultItem } from '../api/evaluation';
 import type { EvaluationMetrics } from '../types';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 
 import EvaluationTrendChart from './evaluation/EvaluationTrendChart';
@@ -79,7 +79,7 @@ export default function EvaluationPage() {
       // 组件卸载 abort 后的 CanceledError 静默处理
       if (e instanceof Error && e.name === 'CanceledError') return;
       // 静默刷新失败不弹错误 toast，避免每 30s 噪音
-      if (!silent) {
+      if (!silent && !isAuthExpiredError(e)) {
         message.error(getErrorMessage(e) || t('evaluation.loadHistoryFailed'));
       }
     } finally {
@@ -94,7 +94,9 @@ export default function EvaluationPage() {
     } catch (e: unknown) {
       // 组件卸载 abort 后的 CanceledError 静默处理
       if (e instanceof Error && e.name === 'CanceledError') return;
-      message.error(getErrorMessage(e) || t('common.requestFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('common.requestFailed'));
+      }
     }
   }, [message, t]);
 
@@ -159,7 +161,9 @@ export default function EvaluationPage() {
       fetchRuns();
       return true;
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('evaluation.triggerFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('evaluation.triggerFailed'));
+      }
       return false;
     }
   }, [message, t, fetchRuns]);
@@ -175,7 +179,9 @@ export default function EvaluationPage() {
     } catch (e: unknown) {
       // 组件卸载 abort 后的 CanceledError 静默处理
       if (e instanceof Error && e.name === 'CanceledError') return;
-      message.error(getErrorMessage(e) || t('evaluation.loadHistoryFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('evaluation.loadHistoryFailed'));
+      }
       setResults([]);
     } finally {
       setResultsLoading(false);

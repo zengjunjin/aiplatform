@@ -225,6 +225,7 @@
     "registerNow": "Register Now",
     "loginSuccess": "Login successful",
     "loginFailed": "Login failed",
+    "sessionExpired": "Session expired, please log in again",
     "createAccount": "Create Account",
     "registerSubtitle": "Get started with RAG Intelligent Knowledge Base",
     "email": "Email",

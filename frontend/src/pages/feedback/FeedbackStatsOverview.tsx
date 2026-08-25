@@ -4,7 +4,7 @@ import { ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { feedbackApi } from '../../api/chat';
 import type { FeedbackStats } from '../../api/chat';
-import { getErrorMessage } from '../../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../../utils/errorReporter';
 
 interface FeedbackStatsOverviewProps {
   selectedKbId: number | undefined;
@@ -32,7 +32,9 @@ export default function FeedbackStatsOverview({ selectedKbId, onStatsChange }: F
       onStatsChange(s);
     } catch (e: unknown) {
       if (signal?.aborted) return;
-      message.error(getErrorMessage(e) || t('feedback.loadStatsFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('feedback.loadStatsFailed'));
+      }
     } finally {
       if (!signal?.aborted) setStatsLoading(false);
     }

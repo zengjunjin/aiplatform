@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useKBStore } from '../store/kb';
 import { formatRelativeTime } from '../utils/format';
-import { getErrorMessage, isFormValidationError } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError, isFormValidationError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 
 const { Title } = Typography;
@@ -68,7 +68,9 @@ export default function SessionsPage() {
       }, 0);
     } catch (e: unknown) {
       if (isFormValidationError(e)) return;
-      message.error(getErrorMessage(e) || t('session.createFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('session.createFailed'));
+      }
     }
   };
 

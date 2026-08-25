@@ -28,6 +28,21 @@ export function isFormValidationError(e: unknown): boolean {
   return typeof e === 'object' && e !== null && 'errorFields' in e;
 }
 
+/**
+ * 判断错误是否为会话失效（client.ts 拦截器在 401 且 refresh 失败后
+ * 构造的 isAuthExpired 标记错误）。
+ * 页面/钩子层据此抑制连锁的 "XX加载失败" toast：
+ * 会话失效时多路并发加载各自弹错，跳转登录页后堆积成噪音；
+ * 统一的 "登录已过期" 提示由 auth store 弹出（仅一次）。
+ */
+export function isAuthExpiredError(e: unknown): boolean {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    (e as { isAuthExpired?: unknown }).isAuthExpired === true
+  );
+}
+
 export interface Breadcrumb {
   timestamp: number;
   type: 'route' | 'api' | 'error' | 'user';

@@ -1,11 +1,15 @@
 import { useCallback } from 'react';
 import { App as AntdApp } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 
 /**
  * 统一 API 调用 toast 反馈 hook (Task 5.8)
  * 替换各页面中重复的 try/catch + message.success/error 模板代码
+ *
+ * 会话失效抑制：错误带 isAuthExpired 标记（client.ts 401→refresh 失败路径）
+ * 时不弹 "XX加载失败" toast——会话失效瞬间多路并发加载各自弹错，
+ * 跳转登录页后堆积成噪音；统一的 "登录已过期" 提示由 auth store 弹出。
  */
 export function useApiToast() {
   const { t } = useTranslation();
@@ -24,7 +28,9 @@ export function useApiToast() {
       opts.onSuccess?.(result);
       return result;
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t(opts.errorKey));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t(opts.errorKey));
+      }
       return undefined;
     }
   }, [t, message]);
@@ -48,16 +54,20 @@ export function useApiToast() {
       opts.onSuccess?.(result);
       return result;
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t(opts.errorKey));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t(opts.errorKey));
+      }
       throw e;
     }
   }, [t, message]);
 
   /**
    * Task 6.1: 直接弹出 error toast, 用于非 runWithToast 场景下的错误提示
-   * (如并行 Promise.allSettled 中单个任务失败的轻量提示)
+   * (如并行 Promise.allSettled 中单个任务失败的轻量提示)。
+   * e 可选：传入时若为会话失效错误则静默抑制。
    */
-  const error = useCallback((msg: string) => {
+  const error = useCallback((msg: string, e?: unknown) => {
+    if (e !== undefined && isAuthExpiredError(e)) return;
     message.error(msg);
   }, [message]);
 

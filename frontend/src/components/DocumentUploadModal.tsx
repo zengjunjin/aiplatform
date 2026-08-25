@@ -3,7 +3,7 @@ import { Modal, Upload, Progress, App as AntdApp } from 'antd';
 import { Upload as UploadIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { documentApi } from '../api';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 
 interface Props {
   open: boolean;
@@ -51,7 +51,10 @@ export default function DocumentUploadModal({ open, kbId, onClose, onUploaded }:
       // 主动 abort: 静默退出, 不弹错误 toast
       if (controller.signal.aborted) return;
       const errObj = e instanceof Error ? e : new Error(getErrorMessage(e));
-      message.error(errObj.message || t('kb.uploadFailed'));
+      // 会话失效错误静默（auth store 弹统一 "登录已过期" 提示）
+      if (!isAuthExpiredError(e)) {
+        message.error(errObj.message || t('kb.uploadFailed'));
+      }
       onError?.(errObj);
       onClose();
     } finally {

@@ -66,6 +66,7 @@ vi.mock('antd', async () => {
 // Mock errorReporter
 vi.mock('../utils/errorReporter', () => ({
   getErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  isAuthExpiredError: () => false,
 }));
 
 // Mock format utils

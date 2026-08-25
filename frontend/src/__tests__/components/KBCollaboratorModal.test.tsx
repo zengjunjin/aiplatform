@@ -26,6 +26,7 @@ vi.mock('antd', async () => {
 // Mock errorReporter utils
 vi.mock('../../utils/errorReporter', () => ({
   getErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  isAuthExpiredError: () => false,
   isFormValidationError: (e: unknown) => {
     return typeof e === 'object' && e !== null && 'errorFields' in e;
   },

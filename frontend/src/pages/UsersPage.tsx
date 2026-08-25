@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { usersApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import type { User } from '../types';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 import { useApiToast } from '../hooks/useApiToast';
 
 export default function UsersPage() {
@@ -38,7 +38,9 @@ export default function UsersPage() {
       setTotal(data.total || 0);
     } catch (e: unknown) {
       if (signal?.aborted) return;
-      message.error(getErrorMessage(e) || t('user.loadFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('user.loadFailed'));
+      }
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -72,7 +74,9 @@ export default function UsersPage() {
       message.success(active ? t('user.userEnabled') : t('user.userDisabled'));
       fetchUsers(page, pageSize);
     } catch (e: unknown) {
-      message.error(getErrorMessage(e) || t('user.operationFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('user.operationFailed'));
+      }
     }
   };
 

@@ -221,6 +221,7 @@
     "registerNow": "立即注册",
     "loginSuccess": "登录成功",
     "loginFailed": "登录失败",
+    "sessionExpired": "登录已过期，请重新登录",
     "createAccount": "创建账户",
     "registerSubtitle": "开始使用 RAG 智能知识库",
     "email": "邮箱",

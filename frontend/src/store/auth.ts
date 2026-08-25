@@ -1,10 +1,30 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { message } from 'antd';
 import { authApi } from '../api';
+import { globalT } from '../i18n';
+import { isAuthExpiredError } from '../utils/errorReporter';
 import type { User } from '../types';
 
 /** Refresh token 本地估算有效期：7 天（与后端一致） */
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 3600 * 1000;
+
+/**
+ * "登录已过期" toast 去重：会话失效时多路并发请求各自触发 refresh 失败，
+ * 仅弹一次统一提示（页面级 "XX加载失败" 连锁 toast 已由 isAuthExpired 标记抑制）。
+ */
+let sessionExpiredToastShown = false;
+
+function notifySessionExpired(): void {
+  if (sessionExpiredToastShown) return;
+  sessionExpiredToastShown = true;
+  message.warning(globalT('auth.sessionExpired'));
+}
+
+/** 重新登录后重置会话过期提示（login 成功时调用），允许下次过期再次提示 */
+function resetSessionExpiredToast(): void {
+  sessionExpiredToastShown = false;
+}
 
 /**
  * 单飞锁（single-flight）：多个并发请求同时触发 401 时，只允许第一个执行 refresh，
@@ -79,6 +99,7 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username, password) => {
         const data = await authApi.login({ username, password });
+        resetSessionExpiredToast();
         set({
           token: data.access_token,
           refreshToken: data.refresh_token,
@@ -126,7 +147,12 @@ export const useAuthStore = create<AuthState>()(
               user: data.user || get().user,
             });
             return true;
-          } catch {
+          } catch (e) {
+            // 仅会话失效（refresh 401，client.ts 标记 isAuthExpired）弹一次统一提示；
+            // 网络故障（无 response，未经 401 分支）保持静默，避免后端短暂不可达时误导用户
+            if (isAuthExpiredError(e)) {
+              notifySessionExpired();
+            }
             await get().logout();
             return false;
           }

@@ -50,6 +50,7 @@ vi.mock('../api', () => ({
 
 vi.mock('../utils/errorReporter', () => ({
   getErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  isAuthExpiredError: () => false,
 }));
 
 const sampleData = {

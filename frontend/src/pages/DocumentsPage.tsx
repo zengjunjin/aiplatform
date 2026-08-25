@@ -29,7 +29,7 @@ import { useKbOptions } from '../hooks/useKbOptions';
 import { formatFileSize, formatDateTime, getStatusColor, getStatusTextKey } from '../utils/format';
 import type { Document } from '../types';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
-import { getErrorMessage } from '../utils/errorReporter';
+import { getErrorMessage, isAuthExpiredError } from '../utils/errorReporter';
 import { DocumentsStatsRow } from './DocumentsPage.parts';
 
 const { Title, Text } = Typography;
@@ -71,7 +71,9 @@ export default function DocumentsPage() {
       setTotal(data.total || 0);
     } catch (e: unknown) {
       if (version !== fetchVersionRef.current) return;
-      message.error(getErrorMessage(e) || t('document.loadFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('document.loadFailed'));
+      }
       setDocuments([]);
       setTotal(0);
     } finally {
@@ -126,7 +128,9 @@ export default function DocumentsPage() {
       // 回滚
       setDocuments(snapshot);
       setTotal(snapshotTotal);
-      message.error(getErrorMessage(e) || t('document.deleteFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('document.deleteFailed'));
+      }
     } finally {
       setDeletingIds((prev) => {
         const next = new Set(prev);
@@ -151,7 +155,9 @@ export default function DocumentsPage() {
     } catch (e: unknown) {
       // 回滚
       setDocuments(snapshot);
-      message.error(getErrorMessage(e) || t('document.operationFailed'));
+      if (!isAuthExpiredError(e)) {
+        message.error(getErrorMessage(e) || t('document.operationFailed'));
+      }
     } finally {
       setReparsingIds((prev) => {
         const next = new Set(prev);
