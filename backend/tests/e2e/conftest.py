@@ -64,6 +64,34 @@ def base_url():
     return BASE_URL
 
 
+class _LazyTokenDict(dict):
+    """读取 access_token 时强制自愈校验的 dict。
+
+    CDP e2e 全量跑中，module 级 fixture（logged_in_cdp）在初始化时把
+    admin_token 注入 UI localStorage。若注入瞬间 token 恰处于"已被吊销
+    但 300s 自愈节流窗口未到"的死区间，页面 401 → 前端自动登出 → 跳
+    #/login → 该模块全部用例找不到页面元素（test_21/23/24/25/31/34
+    整模块失败的模式，单独跑均通过）。
+
+    本类在 __getitem__('access_token') 时强制 ensure_valid(max_age=0)
+    （一次 GET /auth/me），确保注入 UI 的 token 一定是刚验证过的活 token。
+    """
+
+    def __init__(self, session):
+        super().__init__()
+        self._session = session
+
+    def __getitem__(self, key):
+        if key == "access_token":
+            self._session.ensure_valid(max_age=0)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key == "access_token":
+            self._session.ensure_valid(max_age=0)
+        return super().get(key, default)
+
+
 class _AdminSession:
     """自愈的 admin 认证状态（token 过期或被吊销时自动重新登录）。
 
@@ -86,7 +114,7 @@ class _AdminSession:
 
     def __init__(self, base_url: str):
         self.base_url = base_url
-        self.token: dict = {}
+        self.token: dict = _LazyTokenDict(self)
         self.headers: dict = {}
         self._last_check = 0.0
         self._login()
@@ -112,6 +140,10 @@ class _AdminSession:
             f"{r.text if r is not None else ''}"
         )
         data = extract_data(r)
+        self._apply_token(data)
+
+    def _apply_token(self, data: dict) -> None:
+        """原地更新 token/headers：持有 dict 引用的 fixtures 立即可见新值。"""
         # 原地更新：持有 dict 引用的 fixtures 立即可见新 token
         self.token.clear()
         self.token.update(
@@ -126,6 +158,40 @@ class _AdminSession:
         self.headers.clear()
         self.headers.update({"Authorization": f"Bearer {data['access_token']}"})
         self._last_check = time.time()
+
+    def ensure_fresh_pair(self) -> None:
+        """注入 UI 前保证 access/refresh token 对新鲜且未被拉黑。
+
+        前端 partialize 不持久化 access_token（auth.ts），页面任何 set()
+        后 localStorage 中 token 被抹掉；模块内整页 reload → rehydrate
+        token=null → onRehydrateStorage L203 走 refreshAccessToken(refresh)
+        → 后端 rotation 拉黑旧 refresh_token。若下一个 module fixture 注入
+        共享 dict 中已被拉黑的 refresh_token，该模块内 reload 时 refresh
+        401 → 前端 logout → 跳 #/login → 整模块用例找不到页面元素
+        （test_21/23/24/25/31/34 整模块失败模式，单独跑均通过）。
+
+        此处主动消耗一次 refresh：成功则原地更新为新对；401（已被前端
+        rotation 拉黑）则重新登录。调用点仅 login_cdp_session（≈每
+        module 一次，auth 限流安全）。
+        """
+        for _ in range(12):  # 429 退避
+            try:
+                r = requests.post(
+                    f"{self.base_url}/auth/refresh",
+                    json={"refresh_token": self.token["refresh_token"]},
+                    timeout=10,
+                )
+            except requests.RequestException:
+                self._last_check = time.time()
+                return  # 网络抖动保留现对，留给注入后的懒验证
+            if r.status_code == 200:
+                self._apply_token(extract_data(r))
+                return
+            if r.status_code == 429:
+                time.sleep(5)
+                continue
+            break  # 401/400：refresh 已被前端 rotation 拉黑 → 重登
+        self._login()
 
     def ensure_valid(self, max_age: float = 300) -> None:
         """惰性验证 token；401（过期/吊销）时重新登录。"""

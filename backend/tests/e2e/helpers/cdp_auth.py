@@ -90,6 +90,14 @@ def login_cdp_session(cdp: CdpClient, token_data: dict, route: str = "#/dashboar
         token_data: 包含 access_token/refresh_token/user 的 dict
         route: 导航路由（如 #/dashboard, #/knowledge-bases）
     """
+    # token 保鲜（conftest._LazyTokenDict 注入的共享 admin token 对）：
+    # 前端 rotation 会拉黑注入的 refresh_token；注入前主动消耗一次 refresh
+    # 拿新鲜对，避免模块内 reload 时 refresh 401 → 前端 logout → 整模块挂。
+    # 独立用户 token（普通 dict）无此属性，跳过。
+    session = getattr(token_data, "_session", None)
+    if session is not None and hasattr(session, "ensure_fresh_pair"):
+        session.ensure_fresh_pair()
+
     auth_data = {
         "state": {
             "token": token_data["access_token"],

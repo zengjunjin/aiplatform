@@ -1,0 +1,633 @@
+﻿python.exe : C:\Users\15116\Desktop\aiplatform\backend\app\models\reranker_provider.py:29: FutureWarning: In the future
+ `np.object` will be defined as the corresponding NumPy scalar.
+At line:15 char:3380
++ ... pgrep\bin'; & "C:\Users\15116\AppData\Local\Programs\Python\Python312 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\15116\...g NumPy scalar.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  if not hasattr(np, "object"):
+C:\Users\15116\Desktop\aiplatform\backend\app\models\reranker_provider.py:37: FutureWarning: In the future `np.str` wil
+l be defined as the corresponding NumPy scalar.
+  if not hasattr(np, "str"):
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-9.1.0, pluggy-1.6.0 -- C:\Users\15116\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\15116\Desktop\aiplatform\backend
+configfile: pyproject.toml
+plugins: locust-2.44.4, anyio-4.13.0, langsmith-0.11.1, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 225 items
+
+tests/e2e/test_11_cdp_login.py::test_cdp_connection PASSED               [  0%]
+tests/e2e/test_11_cdp_login.py::test_tauri_loaded PASSED                 [  0%]
+tests/e2e/test_11_cdp_login.py::test_login_flow PASSED                   [  1%]
+tests/e2e/test_11_cdp_login.py::test_no_access_token_in_localstorage PASSED [  1%]
+tests/e2e/test_11_cdp_login.py::test_navigate_to_knowledge_bases PASSED  [  2%]
+tests/e2e/test_11_cdp_login.py::test_logout PASSED                       [  2%]
+tests/e2e/test_12_cdp_kb.py::test_open_create_kb_modal PASSED            [  3%]
+tests/e2e/test_12_cdp_kb.py::test_modal_close_no_residual PASSED         [  3%]
+tests/e2e/test_12_cdp_kb.py::test_create_kb_via_ui PASSED                [  4%]
+tests/e2e/test_13_cdp_chat.py::test_send_message_and_receive_sse PASSED  [  4%]
+tests/e2e/test_13_cdp_chat.py::test_message_render_markdown PASSED       [  4%]
+tests/e2e/test_14_cdp_csp.py::test_csp_blocks_external_fetch PASSED      [  5%]
+tests/e2e/test_14_cdp_csp.py::test_csp_blocks_javascript_uri PASSED      [  5%]
+tests/e2e/test_14_cdp_csp.py::test_no_xss_via_innerhtml PASSED           [  6%]
+tests/e2e/test_14_cdp_csp.py::test_localstorage_no_access_token PASSED   [  6%]
+tests/e2e/test_15_cdp_state_sync.py::test_kb_list_persists_across_navigation PASSED [  7%]
+tests/e2e/test_15_cdp_state_sync.py::test_user_info_persists PASSED      [  7%]
+tests/e2e/test_15_cdp_state_sync.py::test_create_kb_reflects_in_chat SKIPPEDDP)) [  8%]
+tests/e2e/test_20_cdp_register.py::test_register_page_loads PASSED       [  8%]
+tests/e2e/test_20_cdp_register.py::test_register_success PASSED          [  8%]
+tests/e2e/test_20_cdp_register.py::test_register_duplicate_username PASSED [  9%]
+tests/e2e/test_20_cdp_register.py::test_register_password_mismatch PASSED [  9%]
+tests/e2e/test_20_cdp_register.py::test_register_weak_password PASSED    [ 10%]
+tests/e2e/test_21_cdp_kb_detail.py::test_kb_detail_page_loads FAILED     [ 10%]
+tests/e2e/test_21_cdp_kb_detail.py::test_upload_document_via_ui FAILED   [ 11%]
+tests/e2e/test_21_cdp_kb_detail.py::test_document_status_becomes_done PASSED [ 11%]
+tests/e2e/test_21_cdp_kb_detail.py::test_document_preview PASSED         [ 12%]
+tests/e2e/test_21_cdp_kb_detail.py::test_delete_document FAILED          [ 12%]
+tests/e2e/test_21_cdp_kb_detail.py::test_edit_kb_info FAILED             [ 12%]
+tests/e2e/test_21_cdp_kb_detail.py::test_collaborator_modal_open FAILED  [ 13%]
+tests/e2e/test_21_cdp_kb_detail.py::test_add_collaborator FAILED         [ 13%]
+tests/e2e/test_21_cdp_kb_detail.py::test_remove_collaborator PASSED      [ 14%]
+tests/e2e/test_22_cdp_documents.py::test_documents_page_loads PASSED     [ 14%]
+tests/e2e/test_22_cdp_documents.py::test_filter_by_kb FAILED             [ 15%]
+tests/e2e/test_22_cdp_documents.py::test_filter_by_status PASSED         [ 15%]
+tests/e2e/test_22_cdp_documents.py::test_reparse_document PASSED         [ 16%]
+tests/e2e/test_22_cdp_documents.py::test_document_preview_modal PASSED   [ 16%]
+tests/e2e/test_23_cdp_evaluation.py::test_evaluation_page_loads FAILED   [ 16%]
+tests/e2e/test_23_cdp_evaluation.py::test_trigger_eval_modal_opens FAILED [ 17%]
+tests/e2e/test_23_cdp_evaluation.py::test_trigger_eval_submit FAILED     [ 17%]
+tests/e2e/test_23_cdp_evaluation.py::test_eval_history_table_renders FAILED [ 18%]
+tests/e2e/test_23_cdp_evaluation.py::test_eval_detail_modal FAILED       [ 18%]
+tests/e2e/test_23_cdp_evaluation.py::test_eval_trend_chart FAILED        [ 19%]
+tests/e2e/test_24_cdp_feedback.py::test_feedback_page_loads FAILED       [ 19%]
+tests/e2e/test_24_cdp_feedback.py::test_feedback_filter_bar FAILED       [ 20%]
+tests/e2e/test_24_cdp_feedback.py::test_filter_by_rating FAILED          [ 20%]
+tests/e2e/test_24_cdp_feedback.py::test_filter_by_type FAILED            [ 20%]
+tests/e2e/test_24_cdp_feedback.py::test_feedback_stats_overview FAILED   [ 21%]
+tests/e2e/test_24_cdp_feedback.py::test_feedback_type_chart FAILED       [ 21%]
+tests/e2e/test_24_cdp_feedback.py::test_feedback_trend_analysis FAILED   [ 22%]
+tests/e2e/test_24_cdp_feedback.py::test_low_rated_table FAILED           [ 22%]
+tests/e2e/test_25_cdp_sessions.py::test_sessions_page_loads FAILED       [ 23%]
+tests/e2e/test_25_cdp_sessions.py::test_session_list_columns FAILED      [ 23%]
+tests/e2e/test_25_cdp_sessions.py::test_filter_by_kb FAILED              [ 24%]
+tests/e2e/test_25_cdp_sessions.py::test_delete_session FAILED            [ 24%]
+tests/e2e/test_25_cdp_sessions.py::test_click_session_navigate_to_chat FAILED [ 24%]
+tests/e2e/test_26_cdp_users.py::test_users_page_loads PASSED             [ 25%]
+tests/e2e/test_26_cdp_users.py::test_user_list_columns PASSED            [ 25%]
+tests/e2e/test_26_cdp_users.py::test_create_user_button PASSED           [ 26%]
+tests/e2e/test_26_cdp_users.py::test_edit_user_role PASSED               [ 26%]
+tests/e2e/test_26_cdp_users.py::test_disable_user PASSED                 [ 27%]
+tests/e2e/test_26_cdp_users.py::test_enable_user PASSED                  [ 27%]
+tests/e2e/test_26_cdp_users.py::test_search_user SKIPPED (UsersPage has
+no search input (search is via /users/search API))                       [ 28%]
+tests/e2e/test_27_cdp_chat_deep.py::test_chat_page_loads PASSED          [ 28%]
+tests/e2e/test_27_cdp_chat_deep.py::test_session_sider_renders PASSED    [ 28%]
+tests/e2e/test_27_cdp_chat_deep.py::test_switch_session PASSED           [ 29%]
+tests/e2e/test_27_cdp_chat_deep.py::test_send_message PASSED             [ 29%]
+tests/e2e/test_27_cdp_chat_deep.py::test_regenerate_response SKIPPED (No
+regenerate button found (no assistant reply yet))                        [ 30%]
+tests/e2e/test_27_cdp_chat_deep.py::test_references_drawer SKIPPED (No
+references tag found (RAG retrieval may not have references))            [ 30%]
+tests/e2e/test_27_cdp_chat_deep.py::test_stop_generation PASSED          [ 31%]
+tests/e2e/test_27_cdp_chat_deep.py::test_model_selector FAILED           [ 31%]
+tests/e2e/test_27_cdp_chat_deep.py::test_new_session_modal PASSED        [ 32%]
+tests/e2e/test_28_cdp_404.py::test_404_page_renders FAILED               [ 32%]
+tests/e2e/test_28_cdp_404.py::test_404_return_home PASSED                [ 32%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_renders PASSED         [ 33%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_dashboard PASSED [ 33%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_kb PASSED     [ 34%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_documents PASSED [ 34%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_chat PASSED   [ 35%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_sessions SKIPPEDSider)) [ 35%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_evaluation PASSED [ 36%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_feedback PASSED [ 36%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_users PASSED  [ 36%]
+tests/e2e/test_29_cdp_navigation.py::test_sidebar_navigate_system PASSED [ 37%]
+tests/e2e/test_29_cdp_navigation.py::test_theme_toggle FAILED            [ 37%]
+tests/e2e/test_29_cdp_navigation.py::test_user_avatar_menu FAILED        [ 38%]
+tests/e2e/test_29_cdp_navigation.py::test_notification_popover FAILED    [ 38%]
+tests/e2e/test_30_cdp_auth_flow.py::test_register_page_loads PASSED      [ 39%]
+tests/e2e/test_30_cdp_auth_flow.py::test_register_success PASSED         [ 39%]
+tests/e2e/test_30_cdp_auth_flow.py::test_register_duplicate PASSED       [ 40%]
+tests/e2e/test_30_cdp_auth_flow.py::test_register_password_mismatch PASSED [ 40%]
+tests/e2e/test_30_cdp_auth_flow.py::test_login_success PASSED            [ 40%]
+tests/e2e/test_30_cdp_auth_flow.py::test_login_wrong_password PASSED     [ 41%]
+tests/e2e/test_30_cdp_auth_flow.py::test_logout PASSED                   [ 41%]
+tests/e2e/test_30_cdp_auth_flow.py::test_refresh_token_flow PASSED       [ 42%]
+tests/e2e/test_30_cdp_auth_flow.py::test_token_expiry_behavior PASSED    [ 42%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_create_kb_via_ui PASSED      [ 43%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_enter_kb_detail FAILED       [ 43%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_upload_document FAILED       [ 44%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_wait_parse_done FAILED       [ 44%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_preview_document FAILED      [ 44%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_edit_kb_info PASSED          [ 45%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_delete_document FAILED       [ 45%]
+tests/e2e/test_31_cdp_kb_lifecycle.py::test_delete_kb PASSED             [ 46%]
+tests/e2e/test_32_cdp_kb_collaborator.py::test_add_collaborator_read PASSED [ 46%]
+tests/e2e/test_32_cdp_kb_collaborator.py::test_read_permission_boundary PASSED [ 47%]
+tests/e2e/test_32_cdp_kb_collaborator.py::test_upgrade_to_write PASSED   [ 47%]
+tests/e2e/test_32_cdp_kb_collaborator.py::test_upgrade_to_admin PASSED   [ 48%]
+tests/e2e/test_32_cdp_kb_collaborator.py::test_remove_collaborator PASSED [ 48%]
+tests/e2e/test_33_cdp_chat_flow.py::test_new_session_modal PASSED        [ 48%]
+tests/e2e/test_33_cdp_chat_flow.py::test_send_message PASSED             [ 49%]
+tests/e2e/test_33_cdp_chat_flow.py::test_references_drawer SKIPPED (No
+references tag found (RAG retrieval may not have references))            [ 49%]
+tests/e2e/test_33_cdp_chat_flow.py::test_regenerate SKIPPED (No
+regenerate button found (no assistant reply yet))                        [ 50%]
+tests/e2e/test_33_cdp_chat_flow.py::test_stop_generation PASSED          [ 50%]
+tests/e2e/test_33_cdp_chat_flow.py::test_switch_session PASSED           [ 51%]
+tests/e2e/test_33_cdp_chat_flow.py::test_model_selector PASSED           [ 51%]
+tests/e2e/test_34_cdp_user_management.py::test_users_list_renders PASSED [ 52%]
+tests/e2e/test_34_cdp_user_management.py::test_disable_user_ui FAILED    [ 52%]
+tests/e2e/test_34_cdp_user_management.py::test_disable_user_effect PASSED [ 52%]
+tests/e2e/test_34_cdp_user_management.py::test_enable_user_ui FAILED     [ 53%]
+tests/e2e/test_34_cdp_user_management.py::test_enable_user_effect FAILED [ 53%]
+tests/e2e/test_34_cdp_user_management.py::test_promote_to_admin_ui FAILED [ 54%]
+tests/e2e/test_34_cdp_user_management.py::test_promote_to_admin_effect FAILED [ 54%]
+tests/e2e/test_34_cdp_user_management.py::test_demote_to_user FAILED     [ 55%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_eval_page_loads PASSED    [ 55%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_trigger_eval_modal PASSED [ 56%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_trigger_eval_submit SKIPPED [ 56%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_eval_result_metrics PASSED [ 56%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_eval_detail_modal SKIPPED [ 57%]
+tests/e2e/test_35_cdp_evaluation_flow.py::test_eval_trend_chart PASSED   [ 57%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_feedback_page_loads PASSED  [ 58%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_feedback_stats_overview PASSED [ 58%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_filter_by_kb SKIPPED (KB
+filter Select dropdown did not open after 3 attempts)                    [ 59%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_filter_by_type SKIPPED      [ 59%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_low_rated_table PASSED      [ 60%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_feedback_trend_chart PASSED [ 60%]
+tests/e2e/test_36_cdp_feedback_flow.py::test_feedback_type_chart PASSED  [ 60%]
+tests/e2e/test_37_cdp_documents_flow.py::test_documents_page_loads PASSED [ 61%]
+tests/e2e/test_37_cdp_documents_flow.py::test_filter_by_kb PASSED        [ 61%]
+tests/e2e/test_37_cdp_documents_flow.py::test_document_status_tags PASSED [ 62%]
+tests/e2e/test_37_cdp_documents_flow.py::test_reparse_document PASSED    [ 62%]
+tests/e2e/test_37_cdp_documents_flow.py::test_preview_document PASSED    [ 63%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_sidebar_menu_items PASSED [ 63%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_sidebar_navigate PASSED [ 64%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_theme_toggle FAILED     [ 64%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_user_avatar_menu PASSED [ 64%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_notification_popover PASSED [ 65%]
+tests/e2e/test_38_cdp_navigation_layout.py::test_404_page PASSED         [ 65%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_normal_user_no_admin_menu PASSED [ 66%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_normal_user_access_users_redirected PASSED [ 66%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_normal_user_access_users_api_403 PASSED [ 67%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_kb_isolation PASSED   [ 67%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_kb_isolation_api PASSED [ 68%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_normal_user_cannot_delete_others_kb PASSED [ 68%]
+tests/e2e/test_39_cdp_permission_boundary.py::test_system_admin_only PASSED [ 68%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_kb_api PASSED  [ 69%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_feedback_stats_api PASSED [ 69%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_evaluation_runs_api PASSED [ 70%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_system_status_api PASSED [ 70%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_status_returns_all_components PASSED [ 71%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_models_list PASSED [ 71%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_status_forbidden PASSED [ 72%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_metrics_admin_ok PASSED  [ 72%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_loads PASSED   [ 72%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_dashboard_kpi_values PASSED [ 73%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_page_loads PASSED [ 73%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_component_tags PASSED [ 74%]
+tests/e2e/test_40_cdp_dashboard_system.py::test_system_refresh PASSED    [ 74%]
+tests/e2e/test_41_cdp_disabled_token_boundary.py::test_disabled_user_access_token_invalidation PASSED [ 75%]
+tests/e2e/test_41_cdp_disabled_token_boundary.py::test_disabled_user_cannot_access_protected_resource PASSED [ 75%]
+tests/e2e/test_42_cdp_demote_token_boundary.py::test_demote_invalidates_old_admin_token PASSED [ 76%]
+tests/e2e/test_42_cdp_demote_token_boundary.py::test_promote_does_not_grant_retroactive_admin_via_old_token PASSED [ 76%]
+tests/e2e/test_43_cdp_kb_cascade_cleanup.py::test_delete_kb_cleans_documents PASSED [ 76%]
+tests/e2e/test_43_cdp_kb_cascade_cleanup.py::test_delete_kb_removes_kb_from_list PASSED [ 77%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[' OR 1=1--] PASSED [ 77%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name['; DROP TABLE knowledge_bases;--] PASSED [ 78%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[' UNION SELECT * FROM users--] PASSED [ 78%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[admin'--] PASSED [ 79%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[' OR ''='] PASSED [ 79%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[1; DELETE FROM users WHERE 1=1;--] PASSED [ 80%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_in_kb_name[' OR SLEEP(5)--] PASSED [ 80%]
+tests/e2e/test_44_cdp_sql_injection.py::test_sql_injection_no_data_leak PASSED [ 80%]
+tests/e2e/test_44_cdp_sql_injection.py::test_special_chars_in_kb_name PASSED [ 81%]
+tests/e2e/test_44_cdp_sql_injection.py::test_oversized_kb_name PASSED    [ 81%]
+tests/e2e/test_44_cdp_sql_injection.py::test_empty_kb_name PASSED        [ 82%]
+tests/e2e/test_44_cdp_sql_injection.py::test_missing_kb_name_field PASSED [ 82%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[../../etc/passwd] PASSED [ 83%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[../../../etc/shadow] PASSED [ 83%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[..\\..\\windows\\system32\\drivers\\etc\\hosts] PASSED [ 84%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[/etc/passwd] PASSED [ 84%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[/var/log/auth.log] PASSED [ 84%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[test/../../../secret.txt] PASSED [ 85%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[....//....//secret.txt] PASSED [ 85%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[..%2f..%2f..%2fetc%2fpasswd] PASSED [ 86%]
+tests/e2e/test_45_cdp_path_traversal.py::test_path_traversal_filename[test.txt\x00.exe] PASSED [ 86%]
+tests/e2e/test_45_cdp_path_traversal.py::test_normal_filename_accepted PASSED [ 87%]
+tests/e2e/test_45_cdp_path_traversal.py::test_filename_with_subdir_rejected_or_sanitized PASSED [ 87%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_zero_rejected PASSED [ 88%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_negative_rejected PASSED [ 88%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_oversized_returns_empty PASSED [ 88%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_size_zero_rejected PASSED [ 89%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_size_negative_rejected PASSED [ 89%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_size_oversized_rejected PASSED [ 90%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_page_size_at_upper_bound PASSED [ 90%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_missing_page_uses_default PASSED [ 91%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_missing_page_size_uses_default PASSED [ 91%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_missing_both_pagination_params PASSED [ 92%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_non_integer_page_rejected PASSED [ 92%]
+tests/e2e/test_46_cdp_pagination_boundary.py::test_non_integer_page_size_rejected PASSED [ 92%]
+tests/e2e/test_47_cdp_collaborator_self_removal.py::test_read_collaborator_self_removal PASSED [ 93%]
+tests/e2e/test_47_cdp_collaborator_self_removal.py::test_write_collaborator_self_removal PASSED [ 93%]
+tests/e2e/test_47_cdp_collaborator_self_removal.py::test_admin_collaborator_self_removal PASSED [ 94%]
+tests/e2e/test_47_cdp_collaborator_self_removal.py::test_owner_not_in_collaborator_list PASSED [ 94%]
+tests/e2e/test_47_cdp_collaborator_self_removal.py::test_collaborator_cannot_remove_others PASSED [ 95%]
+tests/e2e/test_16_tauri_config.py::test_tauri_conf_exists PASSED         [ 95%]
+tests/e2e/test_16_tauri_config.py::test_no_remote_debugging_9222 PASSED  [ 96%]
+tests/e2e/test_16_tauri_config.py::test_allow_insecure_content_present FAILED [ 96%]
+tests/e2e/test_16_tauri_config.py::test_with_global_tauri_false PASSED   [ 96%]
+tests/e2e/test_16_tauri_config.py::test_csp_allows_localhost_8000 PASSED [ 97%]
+tests/e2e/test_16_tauri_config.py::test_csp_blocks_unsafe_eval PASSED    [ 97%]
+tests/e2e/test_16_tauri_config.py::test_csp_has_default_src_self PASSED  [ 98%]
+tests/e2e/test_16_tauri_config.py::test_release_tauri_conf_matches SKIPPEDG知识库平台\frontend\src-
+tauri\tauri.conf.json)                                                   [ 98%]
+tests/e2e/test_17_tauri_mixed_content.py::test_https_to_http_fetch_succeeds PASSED [ 99%]
+tests/e2e/test_17_tauri_mixed_content.py::test_no_mixed_content_warning PASSED [ 99%]
+tests/e2e/test_17_tauri_mixed_content.py::test_websocket_to_backend PASSED [100%]
+
+================================== FAILURES ===================================
+E   AssertionError: Neither table nor empty state found on KB detail page
+    assert (False or False)
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:9223
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:9223 "GET /json HTTP/1.1" 200 538
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/knowledge-bases HTTP/1.1" 200 272
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/documents/upload HTTP/1.1" 200 124
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/21 HTTP/1.1" 200 355
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/21 HTTP/1.1" 200 352
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_21_cdp_kb_detail.py:159: AssertionError: Neither table nor empty state found on KB detail page
+E   TimeoutError: Timeout after 5s: Upload modal did not close
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 5s: Upload modal did not close
+E   AssertionError: Delete button not found for document 'del_test_564908.txt'
+    assert False
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/documents/upload HTTP/1.1" 200 124
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/22 HTTP/1.1" 200 361
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/22 HTTP/1.1" 200 363
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/22 HTTP/1.1" 200 358
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_21_cdp_kb_detail.py:356: AssertionError: Delete button not found for document 'del_test_564908.txt'
+E   RuntimeError: JS error: InvalidStateError: Failed to set the 'value' property on 'HTMLInputElement': This input element accepts a filename, which may only be programmatically set to the empty string.
+        at <anonymous>:11:24
+        at <anonymous>:23:11
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\cdp_client.py:105: RuntimeError: JS error: InvalidStateError: Failed to set the 'value' property on 'HTMLInputElement': This input element accepts a filename, which may only be programmatically set to the empty string.
+E   AssertionError: Collaborator modal did not open or has no content
+    assert False
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_21_cdp_kb_detail.py:480: AssertionError: Collaborator modal did not open or has no content
+E   AssertionError: Collaborator 'e2e_user_ecc76dc8' not found in collaborator list
+    assert False
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/knowledge-bases/39/collaborators HTTP/1.1" 200 103
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_21_cdp_kb_detail.py:521: AssertionError: Collaborator 'e2e_user_ecc76dc8' not found in collaborator list
+E   AssertionError: KB option 'CDP_Docs_KB_3f81dc54' not found in dropdown
+    assert False
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_22_cdp_documents.py:201: AssertionError: KB option 'CDP_Docs_KB_3f81dc54' not found in dropdown
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:9223
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:9223 "GET /json HTTP/1.1" 200 539
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/knowledge-bases HTTP/1.1" 200 256
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/documents/upload HTTP/1.1" 200 124
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/24 HTTP/1.1" 200 357
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/24 HTTP/1.1" 200 352
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/evaluation/runs?kb_id=41&num_questions=5 HTTP/1.1" 200 205
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/evaluation/runs/6 HTTP/1.1" 200 377
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:9223
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:9223 "GET /json HTTP/1.1" 200 535
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/chat/sessions HTTP/1.1" 200 182
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/chat/sessions/22/messages HTTP/1.1" 200 None
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/chat/messages/28/feedback HTTP/1.1" 200 197
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/auth/me HTTP/1.1" 200 123
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+E   AssertionError: Sessions page did not render new button or list/empty
+    assert False
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:9223
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:9223 "GET /json HTTP/1.1" 200 535
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/chat/sessions HTTP/1.1" 200 183
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_25_cdp_sessions.py:130: AssertionError: Sessions page did not render new button or list/empty
+E   TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+E   TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+E   TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/chat/sessions HTTP/1.1" 200 183
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+E   TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+E   AssertionError: Model selector dropdown options not rendered
+    assert False
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_27_cdp_chat_deep.py:484: AssertionError: Model selector dropdown options not rendered
+E   AssertionError: 404 text not found on not-found page
+    assert False
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:9223
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:9223 "GET /json HTTP/1.1" 200 534
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_28_cdp_404.py:52: AssertionError: 404 text not found on not-found page
+E   TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+E   TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+E   TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+E   AssertionError: Document list not rendered (no .ant-table or .ant-empty)
+    assert False
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/knowledge-bases?page=1&page_size=50 HTTP/1.1" 200 3116
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_31_cdp_kb_lifecycle.py:138: AssertionError: Document list not rendered (no .ant-table or .ant-empty)
+E   TimeoutError: Timeout after 5s: Upload modal did not close
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 5s: Upload modal did not close
+E   AssertionError: Document not done within 60s, last status=None
+    assert None == 'done'
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/documents/None HTTP/1.1" 400 121
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_31_cdp_kb_lifecycle.py:266: AssertionError: Document not done within 60s, last status=None
+E   TimeoutError: Timeout after 5s: Preview modal did not close
+----------------------------- Captured log setup ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "GET /api/v1/auth/me HTTP/1.1" 200 123
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 5s: Preview modal did not close
+E   TimeoutError: Timeout after 5s: Element .ant-popconfirm, .ant-popover not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 5s: Element .ant-popconfirm, .ant-popover not found
+E   TimeoutError: Timeout after 15s: Element .ant-table not found
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "PUT /api/v1/users/48/status HTTP/1.1" 200 145
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-table not found
+E   TimeoutError: Timeout after 15s: Element .ant-table not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-table not found
+E   AssertionError: Login should succeed for enabled user, got 401: {"code":10001,"message":"账户已被禁用","data":null}
+    assert 401 == 200
+     +  where 401 = <Response [401]>.status_code
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/auth/login HTTP/1.1" 401 57
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_34_cdp_user_management.py:302: AssertionError: Login should succeed for enabled user, got 401: {"code":10001,"message":"账户已被禁用","data":null}
+E   TimeoutError: Timeout after 15s: Element .ant-table not found
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-table not found
+E   assert 401 == 200
+     +  where 401 = <Response [401]>.status_code
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "POST /api/v1/auth/login HTTP/1.1" 401 57
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_34_cdp_user_management.py:346: assert 401 == 200
+E   TimeoutError: Timeout after 15s: Element .ant-table not found
+------------------------------ Captured log call ------------------------------
+DEBUG    urllib3.connectionpool:connectionpool.py:241 Starting new HTTP connection (1): localhost:8000
+DEBUG    urllib3.connectionpool:connectionpool.py:544 http://localhost:8000 "PUT /api/v1/users/48/role HTTP/1.1" 200 145
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 15s: Element .ant-table not found
+E   TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\helpers\waiters.py:25: TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+E   AssertionError: additionalBrowserArgs must contain --allow-running-insecure-content (HTTPS tauri.localhost -> HTTP localhost:8000 requires this flag)
+    assert '--allow-running-insecure-content' in '--remote-debugging-port=9223'
+C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\test_16_tauri_config.py:72: AssertionError: additionalBrowserArgs must contain --allow-running-insecure-content (HTTPS tauri.localhost -> HTTP localhost:8000 requires this flag)
+============================== warnings summary ===============================
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\config\__init__.py:1464
+  C:\Users\15116\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\config\__init__.py:1464: PytestConfigWarning: Unknown config option: timeout
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+tests\e2e\conftest.py:53
+  C:\Users\15116\Desktop\aiplatform\backend\tests\e2e\conftest.py:53: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    item.add_marker(pytest.mark.timeout(180))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================ slowest 20 durations =============================
+60.45s call     tests/e2e/test_31_cdp_kb_lifecycle.py::test_wait_parse_done
+60.39s setup    tests/e2e/test_23_cdp_evaluation.py::test_eval_history_table_renders
+20.17s call     tests/e2e/test_34_cdp_user_management.py::test_demote_to_user
+17.82s call     tests/e2e/test_38_cdp_navigation_layout.py::test_theme_toggle
+17.06s call     tests/e2e/test_36_cdp_feedback_flow.py::test_filter_by_kb
+17.05s call     tests/e2e/test_36_cdp_feedback_flow.py::test_filter_by_type
+16.77s call     tests/e2e/test_38_cdp_navigation_layout.py::test_notification_popover
+15.67s call     tests/e2e/test_24_cdp_feedback.py::test_feedback_page_loads
+15.59s call     tests/e2e/test_23_cdp_evaluation.py::test_eval_history_table_renders
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_filter_by_rating
+15.58s call     tests/e2e/test_23_cdp_evaluation.py::test_eval_trend_chart
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_feedback_filter_bar
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_filter_by_type
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_feedback_stats_overview
+15.58s call     tests/e2e/test_23_cdp_evaluation.py::test_trigger_eval_submit
+15.58s call     tests/e2e/test_23_cdp_evaluation.py::test_eval_detail_modal
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_low_rated_table
+15.58s call     tests/e2e/test_23_cdp_evaluation.py::test_evaluation_page_loads
+15.58s call     tests/e2e/test_24_cdp_feedback.py::test_feedback_trend_analysis
+15.57s call     tests/e2e/test_24_cdp_feedback.py::test_feedback_type_chart
+=========================== short test summary info ===========================
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_kb_detail_page_loads - AssertionError: Neither table nor empty state found on KB detail page
+assert (False or False)
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_upload_document_via_ui - TimeoutError: Timeout after 5s: Upload modal did not close
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_delete_document - AssertionError: Delete button not found for document 'del_test_564908.txt'
+assert False
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_edit_kb_info - RuntimeError: JS error: InvalidStateError: Failed to set the 'value' property on 'HTMLInputElement': This input element accepts a filename, which may only be programmatically set to the empty string.
+    at <anonymous>:11:24
+    at <anonymous>:23:11
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_collaborator_modal_open - AssertionError: Collaborator modal did not open or has no content
+assert False
+FAILED tests/e2e/test_21_cdp_kb_detail.py::test_add_collaborator - AssertionError: Collaborator 'e2e_user_ecc76dc8' not found in collaborator list
+assert False
+FAILED tests/e2e/test_22_cdp_documents.py::test_filter_by_kb - AssertionError: KB option 'CDP_Docs_KB_3f81dc54' not found in dropdown
+assert False
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_evaluation_page_loads - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_trigger_eval_modal_opens - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_trigger_eval_submit - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_eval_history_table_renders - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_eval_detail_modal - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_23_cdp_evaluation.py::test_eval_trend_chart - TimeoutError: Timeout after 15s: Element .ant-card, .ant-table, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_feedback_page_loads - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_feedback_filter_bar - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_filter_by_rating - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_filter_by_type - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_feedback_stats_overview - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_feedback_type_chart - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_feedback_trend_analysis - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_24_cdp_feedback.py::test_low_rated_table - TimeoutError: Timeout after 15s: Element .ant-statistic, .ant-card, .ant-empty not found
+FAILED tests/e2e/test_25_cdp_sessions.py::test_sessions_page_loads - AssertionError: Sessions page did not render new button or list/empty
+assert False
+FAILED tests/e2e/test_25_cdp_sessions.py::test_session_list_columns - TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+FAILED tests/e2e/test_25_cdp_sessions.py::test_filter_by_kb - TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+FAILED tests/e2e/test_25_cdp_sessions.py::test_delete_session - TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+FAILED tests/e2e/test_25_cdp_sessions.py::test_click_session_navigate_to_chat - TimeoutError: Timeout after 10s: Element .ant-list-item, .ant-empty not found
+FAILED tests/e2e/test_27_cdp_chat_deep.py::test_model_selector - AssertionError: Model selector dropdown options not rendered
+assert False
+FAILED tests/e2e/test_28_cdp_404.py::test_404_page_renders - AssertionError: 404 text not found on not-found page
+assert False
+FAILED tests/e2e/test_29_cdp_navigation.py::test_theme_toggle - TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+FAILED tests/e2e/test_29_cdp_navigation.py::test_user_avatar_menu - TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+FAILED tests/e2e/test_29_cdp_navigation.py::test_notification_popover - TimeoutError: Timeout after 15s: URL did not change to contain #/dashboard
+FAILED tests/e2e/test_31_cdp_kb_lifecycle.py::test_enter_kb_detail - AssertionError: Document list not rendered (no .ant-table or .ant-empty)
+assert False
+FAILED tests/e2e/test_31_cdp_kb_lifecycle.py::test_upload_document - TimeoutError: Timeout after 5s: Upload modal did not close
+FAILED tests/e2e/test_31_cdp_kb_lifecycle.py::test_wait_parse_done - AssertionError: Document not done within 60s, last status=None
+assert None == 'done'
+FAILED tests/e2e/test_31_cdp_kb_lifecycle.py::test_preview_document - TimeoutError: Timeout after 5s: Preview modal did not close
+FAILED tests/e2e/test_31_cdp_kb_lifecycle.py::test_delete_document - TimeoutError: Timeout after 5s: Element .ant-popconfirm, .ant-popover not found
+FAILED tests/e2e/test_34_cdp_user_management.py::test_disable_user_ui - TimeoutError: Timeout after 15s: Element .ant-table not found
+FAILED tests/e2e/test_34_cdp_user_management.py::test_enable_user_ui - TimeoutError: Timeout after 15s: Element .ant-table not found
+FAILED tests/e2e/test_34_cdp_user_management.py::test_enable_user_effect - AssertionError: Login should succeed for enabled user, got 401: {"code":10001,"message":"账户已被禁用","data":null}
+assert 401 == 200
+ +  where 401 = <Response [401]>.status_code
+FAILED tests/e2e/test_34_cdp_user_management.py::test_promote_to_admin_ui - TimeoutError: Timeout after 15s: Element .ant-table not found
+FAILED tests/e2e/test_34_cdp_user_management.py::test_promote_to_admin_effect - assert 401 == 200
+ +  where 401 = <Response [401]>.status_code
+FAILED tests/e2e/test_34_cdp_user_management.py::test_demote_to_user - TimeoutError: Timeout after 15s: Element .ant-table not found
+FAILED tests/e2e/test_38_cdp_navigation_layout.py::test_theme_toggle - TimeoutError: Timeout after 10s: URL did not change to contain #/dashboard
+FAILED tests/e2e/test_16_tauri_config.py::test_allow_insecure_content_present - AssertionError: additionalBrowserArgs must contain --allow-running-insecure-content (HTTPS tauri.localhost -> HTTP localhost:8000 requires this flag)
+assert '--allow-running-insecure-content' in '--remote-debugging-port=9223'
+===== 44 failed, 169 passed, 12 skipped, 2 warnings in 955.91s (0:15:55) ======
